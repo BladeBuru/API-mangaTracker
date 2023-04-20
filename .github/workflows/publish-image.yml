@@ -2,7 +2,7 @@ name: CI/CD Build & Publish Image
 
 on:
   push:
-    branches: [ "cicd-ga" ]
+    branches: [ "master" ]
 
 permissions: write-all
 
