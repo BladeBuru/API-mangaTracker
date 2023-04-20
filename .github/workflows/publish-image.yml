@@ -7,7 +7,7 @@ on:
 permissions: write-all
 
 jobs:
-  publish-wm-web-image:
+  publish-manga-tracker-api-image:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
