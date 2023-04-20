@@ -24,6 +24,6 @@ jobs:
       - 
         name: Build, Run & Publish Docker image
         run: |
-          docker build -t ghcr.io/FLT-Yann/manga-tracker-api:latest .
-          docker run -d -p 80:80 ghcr.io/FLT-Yann/manga-tracker-api:latest
-          docker push ghcr.io/FLT-Yann/manga-tracker-api:latest
+          docker build -t ghcr.io/flt-yann/manga-tracker-api:latest .
+          docker run -d -p 80:80 ghcr.io/flt-yann/manga-tracker-api:latest
+          docker push ghcr.io/flt-yann/manga-tracker-api:latest
