@@ -2,7 +2,7 @@ name: Source Code Formatting & Linting
 
 on:
   push:
-    branches: ["dev"]
+    branches: ["cicd/code-quality"]
 
 jobs:
   quality-check:
