@@ -1,0 +1,29 @@
+name: CI/CD Build & Publish Image
+
+on:
+  push:
+    branches: [ "master" ]
+
+permissions: write-all
+
+jobs:
+  publish-manga-tracker-api-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - 
+        name: Checkout
+        uses: actions/checkout@v3
+      - 
+        name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - 
+        name: Build, Run & Publish Docker image
+        run: |
+          docker build -t ghcr.io/flt-yann/manga-tracker-api:latest .
+          docker run -d -p 80:80 ghcr.io/flt-yann/manga-tracker-api:latest
+          docker push ghcr.io/flt-yann/manga-tracker-api:latest
