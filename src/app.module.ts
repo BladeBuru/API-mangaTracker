@@ -3,8 +3,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import * as Joi from '@hapi/joi';
-import { UserModule } from './Module/userModule';
-import { DatabaseModule } from './Module/database.module';
+import { UserModule } from './user/userModule';
+import { DatabaseModule } from './database.module';
 
 @Module({
   imports: [
