@@ -19,5 +19,11 @@ jobs:
         name: Code Formatting
         run: npm run format
       -
+        name: Auto Commit Code Formatting
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: Auto Commit Code Formatting
+          branch: ${{ github.head_ref }}
+      -
         name: Code Linting
         run: npm run lint
