@@ -5,10 +5,14 @@ import {
   SwaggerDocumentOptions,
   SwaggerModule,
 } from '@nestjs/swagger';
+import {ConfigService} from "@nestjs/config";
+import {ValidationPipe} from "@nestjs/common";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-
+  const configs: ConfigService = app.get(ConfigService);
+  const port: number = configs.get<number>('PORT');
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   const config = new DocumentBuilder()
     .setTitle('Manga Tracker API')
     .setDescription(
@@ -22,7 +26,8 @@ async function bootstrap() {
   };
   const document = SwaggerModule.createDocument(app, config, options);
   SwaggerModule.setup('api', app, document);
-
-  await app.listen(3000);
+  await app.listen(port, () => {
+    console.log('[WEB]', `http://localhost:${port}`);
+  });
 }
 bootstrap().then(() => console.log('Server started'));

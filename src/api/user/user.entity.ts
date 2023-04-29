@@ -13,5 +13,8 @@ class User {
 
   @Column()
   password: string;
+
+  @Column({ type: 'timestamp', nullable: true, default: null })
+  public lastLoginAt: Date | null;
 }
 export default User;
