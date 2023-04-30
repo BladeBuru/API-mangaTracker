@@ -1,17 +1,23 @@
+import { ApiProperty } from '@nestjs/swagger';
+
 export class RetrieveMangaTrendsDto {
+  @ApiProperty()
   title: string;
 
-  mediumCover: string;
+  @ApiProperty()
+  mediumCoverUrl: string;
 
-  largeCover: string;
+  @ApiProperty()
+  largeCoverUrl: string;
 
+  @ApiProperty()
   rank: number;
 
   static fromMal(malData: any) {
     const dto = new RetrieveMangaTrendsDto();
     dto.title = malData['node']['title'];
-    dto.mediumCover = malData['node']['main_picture']['medium'];
-    dto.largeCover = malData['node']['main_picture']['large'];
+    dto.mediumCoverUrl = malData['node']['main_picture']['medium'];
+    dto.largeCoverUrl = malData['node']['main_picture']['large'];
     dto.rank = malData['ranking']['rank'];
     return dto;
   }
