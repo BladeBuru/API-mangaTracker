@@ -5,3 +5,8 @@ export class UpdateNameDto {
     @IsOptional()
     public readonly name?: string;
 }
+export class UpdatePasswordDto {
+    @IsString()
+    @IsOptional()
+    public readonly password?: string;
+}

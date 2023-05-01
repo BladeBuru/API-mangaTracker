@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Request } from 'express';
-import { UpdateNameDto } from './user.dto';
+import {UpdateNameDto, UpdatePasswordDto} from './user.dto';
 import User from "./user.entity";
 
 @Injectable()
@@ -16,5 +16,16 @@ export class UserService {
         user.username = body.name;
 
         return this.repository.save(user);
+    }
+
+    public async updatePassword(body: UpdatePasswordDto, req: Request): Promise<User> {
+        const user: User = <User>req.user;
+        user.password = body.password;
+        return this.repository.save(user);
+    }
+
+    public async deleteUser(id: string, req: Request): Promise<User> {
+        const user: User = <User>req.user;
+        return this.repository.remove(user);
     }
 }
