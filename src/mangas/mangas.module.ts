@@ -3,6 +3,9 @@ import { MangasController } from './mangas.controller';
 import { MangasService } from './mangas.service';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { HelperService } from './helper.service';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Manga } from './manga.entity';
 
 @Module({
   imports: [
@@ -11,14 +14,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       useFactory: async (configService: ConfigService) => ({
         timeout: configService.get('HTTP_TIMEOUT'),
         maxRedirects: configService.get('HTTP_MAX_REDIRECTS'),
-        headers: {
-          'X-MAL-CLIENT-ID': configService.get('MAL_ACCESS_TOKEN'),
-        },
       }),
       inject: [ConfigService],
     }),
+    TypeOrmModule.forFeature([Manga]),
   ],
   controllers: [MangasController],
-  providers: [MangasService],
+  providers: [MangasService, HelperService],
 })
 export class MangasModule {}

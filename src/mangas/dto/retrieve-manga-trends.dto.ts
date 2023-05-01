@@ -2,7 +2,13 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class RetrieveMangaTrendsDto {
   @ApiProperty()
+  muId: number;
+
+  @ApiProperty()
   title: string;
+
+  @ApiProperty()
+  year: number;
 
   @ApiProperty()
   mediumCoverUrl: string;
@@ -11,14 +17,16 @@ export class RetrieveMangaTrendsDto {
   largeCoverUrl: string;
 
   @ApiProperty()
-  rank: number;
+  rating: number;
 
-  static fromMal(malData: any) {
+  static fromMu(data: any) {
     const dto = new RetrieveMangaTrendsDto();
-    dto.title = malData['node']['title'];
-    dto.mediumCoverUrl = malData['node']['main_picture']['medium'];
-    dto.largeCoverUrl = malData['node']['main_picture']['large'];
-    dto.rank = malData['ranking']['rank'];
+    dto.muId = data['record']['series_id'];
+    dto.title = data['record']['title'];
+    dto.year = data['record']['year'];
+    dto.mediumCoverUrl = data['record']['image']['url']['thumb'];
+    dto.largeCoverUrl = data['record']['image']['url']['original'];
+    dto.rating = data['record']['bayesian_rating'];
     return dto;
   }
 }

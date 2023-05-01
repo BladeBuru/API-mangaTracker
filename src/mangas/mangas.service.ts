@@ -3,57 +3,79 @@ import { Injectable, Logger } from '@nestjs/common';
 import { RetrieveMangaTrendsDto } from './dto/retrieve-manga-trends.dto';
 import { catchError, firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
-import { MAL_TRENDS_URL } from './constants';
+import {
+  MAL_DETAIL_URL,
+  MAL_TRENDS_URL,
+  MU_DETAIL_URL,
+  MU_TRENDS_URL,
+} from './constants';
+import { HelperService } from './helper.service';
+import { MangaDetailsDto } from './dto/manga-details.dto';
+import { Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Manga } from './manga.entity';
 
 @Injectable()
 export class MangasService {
-  constructor(private readonly httpService: HttpService) {}
+  constructor(
+    private readonly httpService: HttpService,
+    private readonly helperService: HelperService,
+    @InjectRepository(Manga)
+    private readonly mangaRepository: Repository<Manga>,
+  ) {}
 
   private readonly logger = new Logger(MangasService.name);
 
   async retrieveMangaTrends(
-    limit?: string,
-    offset?: string,
+    limit?: number,
+    offset?: number,
   ): Promise<RetrieveMangaTrendsDto[]> {
-    this.logger.debug(limit);
-    this.logger.debug(offset);
-    const url = this.formatRequestForMalApi(MAL_TRENDS_URL, {
-      limit: limit,
-      offset: offset,
+    const url = this.helperService.formatRequestForMalApi(MU_TRENDS_URL, {
+      limit: limit !== undefined ? limit.toString() : undefined,
+      offset: offset !== undefined ? offset.toString() : undefined,
     });
+    const payload = {
+      orderby: 'rating',
+      perpage: limit,
+      page: offset,
+    };
     const { data } = await firstValueFrom(
-      this.httpService.get<RetrieveMangaTrendsDto[]>(url).pipe(
+      this.httpService.post<RetrieveMangaTrendsDto[]>(url, payload).pipe(
         catchError((error: AxiosError) => {
           this.logger.error(error.response.data);
           throw 'Impossible to retrieve trends from external service';
         }),
       ),
     );
-    const nbMangas = data['data'].length;
+    const nbMangas = data['results'].length;
     const mangas: RetrieveMangaTrendsDto[] = new Array(nbMangas);
     for (let i = 0; i < nbMangas; i++) {
-      mangas[i] = RetrieveMangaTrendsDto.fromMal(data['data'][i]);
+      mangas[i] = RetrieveMangaTrendsDto.fromMu(data['results'][i]);
     }
     return mangas;
   }
 
-  formatRequestForMalApi(
-    url: string,
-    parameters: { [key: string]: string },
-  ): string {
-    let formattedRequest = url;
-    let firstParameter = true;
+  async getMangaDetails(malId: number): Promise<MangaDetailsDto> {
+    const url = MU_DETAIL_URL.concat(malId.toString());
 
-    for (const key in parameters) {
-      const currentParam = parameters[key];
-      if (typeof currentParam !== 'undefined') {
-        formattedRequest = formattedRequest.concat(
-          (firstParameter ? '?' : '&') + key + '=' + currentParam,
-        );
-        firstParameter = false;
-      }
-    }
-    this.logger.debug(formattedRequest);
-    return formattedRequest;
+    const { data } = await firstValueFrom(
+      this.httpService.get<MangaDetailsDto>(url).pipe(
+        catchError((error: AxiosError) => {
+          this.logger.error(error.response.data);
+          throw 'Impossible to retrieve manga details from external service';
+        }),
+      ),
+    );
+    this.logger.debug(data);
+    return data;
+  }
+
+  async saveMangaToLibrary(malId: number): Promise<Manga> {
+    const mangaDto = await this.getMangaDetails(malId);
+    const manga = MangaDetailsDto.toModel(mangaDto);
+
+    this.logger.debug(manga);
+    //await this.mangaRepository.save(manga);
+    return manga;
   }
 }
