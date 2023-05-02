@@ -3,12 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { RetrieveMangaTrendsDto } from './dto/retrieve-manga-trends.dto';
 import { catchError, firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
-import {
-  MAL_DETAIL_URL,
-  MAL_TRENDS_URL,
-  MU_DETAIL_URL,
-  MU_TRENDS_URL,
-} from './constants';
+import { MU_DETAIL_URL, MU_TRENDS_URL } from './constants';
 import { HelperService } from './helper.service';
 import { MangaDetailsDto } from './dto/manga-details.dto';
 import { Repository } from 'typeorm';
@@ -59,22 +54,22 @@ export class MangasService {
     const url = MU_DETAIL_URL.concat(malId.toString());
 
     const { data } = await firstValueFrom(
-      this.httpService.get<MangaDetailsDto>(url).pipe(
+      this.httpService.get<any>(url).pipe(
         catchError((error: AxiosError) => {
           this.logger.error(error.response.data);
           throw 'Impossible to retrieve manga details from external service';
         }),
       ),
     );
-    this.logger.debug(data);
-    return data;
+
+    return MangaDetailsDto.fromMU(data);
   }
 
   async saveMangaToLibrary(malId: number): Promise<Manga> {
     const mangaDto = await this.getMangaDetails(malId);
-    const manga = MangaDetailsDto.toModel(mangaDto);
+    const manga = Manga.fromMU(mangaDto);
 
-    this.logger.debug(manga);
+    this.logger.debug(JSON.stringify(manga));
     //await this.mangaRepository.save(manga);
     return manga;
   }

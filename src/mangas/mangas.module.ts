@@ -6,6 +6,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { HelperService } from './helper.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Manga } from './manga.entity';
+import { UserManga } from './user-manga.entity';
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { Manga } from './manga.entity';
       }),
       inject: [ConfigService],
     }),
-    TypeOrmModule.forFeature([Manga]),
+    TypeOrmModule.forFeature([Manga, UserManga]),
   ],
   controllers: [MangasController],
   providers: [MangasService, HelperService],

@@ -9,26 +9,23 @@ export class MangaDetailsDto {
   @IsString()
   title: string;
 
+  @IsString()
+  description: string;
+
   @IsNumber()
   year: number;
 
   @IsString()
-  mediumCoverUrl: string;
+  smallCoverUrl: string;
 
   @IsString()
-  largeCoverUrl: string;
+  mediumCoverUrl: string;
 
   @IsNumber()
   rating: number;
 
-  @IsArray()
-  genres: string[];
-
   @IsNumber()
-  latest_chapter: number;
-
-  @IsString()
-  status: string;
+  latestChapter: number;
 
   @IsBoolean()
   completed: boolean;
@@ -36,5 +33,20 @@ export class MangaDetailsDto {
   static toModel(mangaDetailsDto: MangaDetailsDto): Manga {
     const data = classToPlain(mangaDetailsDto);
     return plainToClass(Manga, data);
+  }
+
+  static fromMU(muObject: any): MangaDetailsDto {
+    const mangaDetailsDto = new MangaDetailsDto();
+    mangaDetailsDto['title'] = muObject['title'];
+    mangaDetailsDto['description'] = muObject['description'];
+    mangaDetailsDto['smallCoverUrl'] = muObject['image']['url']['thumb'];
+    mangaDetailsDto['mediumCoverUrl'] = muObject['image']['url']['original'];
+    mangaDetailsDto['year'] = muObject['year'];
+    mangaDetailsDto['rating'] = muObject['bayesian_rating'];
+    mangaDetailsDto['latestChapter'] = muObject['latest_chapter'];
+    mangaDetailsDto['completed'] = muObject['completed'];
+    mangaDetailsDto['muId'] = muObject['series_id'];
+    console.log(mangaDetailsDto['description']);
+    return mangaDetailsDto;
   }
 }

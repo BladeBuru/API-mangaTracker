@@ -69,6 +69,6 @@ export class MangasController {
   })
   @Post('save')
   async save(@Body() saveMangaDto: SaveMangaDto): Promise<Manga> {
-    return await this.mangasService.saveMangaToLibrary(saveMangaDto.malId);
+    return await this.mangasService.saveMangaToLibrary(saveMangaDto.muId);
   }
 }
