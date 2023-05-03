@@ -1,9 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, IsNumber } from 'class-validator';
+import { IsNumber, Min } from 'class-validator';
 
 export class SaveMangaDto {
   @ApiProperty({ description: 'MU ID of the manga' })
   @IsNumber()
-  @IsInt()
+  @Min(0)
   muId: number;
+
+  @ApiProperty({ description: 'User ID' })
+  @IsNumber()
+  @Min(0)
+  userId: number;
 }

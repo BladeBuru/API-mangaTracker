@@ -16,16 +16,13 @@ export class Manga {
   @Column()
   mediumCoverUrl: string;
 
-  @Column()
-  muId: number;
+  @Column({ type: 'bigint' })
+  muId: string;
 
   @Column({ default: 0 })
   totalChapters: number;
 
-  @Column({ default: 0 })
-  readChapters: number;
-
-  @Column()
+  @Column('decimal', { precision: 3, scale: 2 })
   rating: number;
 
   @Column()
@@ -41,7 +38,7 @@ export class Manga {
     manga['year'] = mangaDetailsDto['year'];
     manga['smallCoverUrl'] = mangaDetailsDto['smallCoverUrl'];
     manga['mediumCoverUrl'] = mangaDetailsDto['mediumCoverUrl'];
-    manga['muId'] = mangaDetailsDto['muId'];
+    manga['muId'] = mangaDetailsDto['muId'].toString();
     manga['totalChapters'] = mangaDetailsDto['latestChapter'];
     manga['rating'] = mangaDetailsDto['rating'];
     return manga;

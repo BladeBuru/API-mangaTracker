@@ -7,6 +7,7 @@ import { HelperService } from './helper.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Manga } from './manga.entity';
 import { UserManga } from './user-manga.entity';
+import User from 'src/user/user.entity';
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { UserManga } from './user-manga.entity';
       }),
       inject: [ConfigService],
     }),
-    TypeOrmModule.forFeature([Manga, UserManga]),
+    TypeOrmModule.forFeature([Manga, User, UserManga]),
   ],
   controllers: [MangasController],
   providers: [MangasService, HelperService],

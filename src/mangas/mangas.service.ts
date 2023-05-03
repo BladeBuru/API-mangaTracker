@@ -1,5 +1,10 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { RetrieveMangaTrendsDto } from './dto/retrieve-manga-trends.dto';
 import { catchError, firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
@@ -9,6 +14,8 @@ import { MangaDetailsDto } from './dto/manga-details.dto';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Manga } from './manga.entity';
+import { UserManga } from './user-manga.entity';
+import User from 'src/user/user.entity';
 
 @Injectable()
 export class MangasService {
@@ -17,6 +24,10 @@ export class MangasService {
     private readonly helperService: HelperService,
     @InjectRepository(Manga)
     private readonly mangaRepository: Repository<Manga>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    @InjectRepository(UserManga)
+    private readonly userMangaRepository: Repository<UserManga>,
   ) {}
 
   private readonly logger = new Logger(MangasService.name);
@@ -56,21 +67,52 @@ export class MangasService {
     const { data } = await firstValueFrom(
       this.httpService.get<any>(url).pipe(
         catchError((error: AxiosError) => {
-          this.logger.error(error.response.data);
+          this.logger.error(error.response.status);
           throw 'Impossible to retrieve manga details from external service';
         }),
       ),
     );
-
+    console.log(JSON.stringify(data));
     return MangaDetailsDto.fromMU(data);
   }
 
-  async saveMangaToLibrary(malId: number): Promise<Manga> {
-    const mangaDto = await this.getMangaDetails(malId);
+  async saveMangaToLibrary(
+    muId: number,
+    userId: number,
+  ): Promise<MangaDetailsDto> {
+    const mangaDto = await this.getMangaDetails(muId);
     const manga = Manga.fromMU(mangaDto);
 
-    this.logger.debug(JSON.stringify(manga));
-    //await this.mangaRepository.save(manga);
-    return manga;
+    // User Entity
+    const userEntity = await this.userRepository.findOneBy({
+      id: userId,
+    });
+
+    if (userEntity === null)
+      throw new NotFoundException(`User with id ${userId} does not exist`);
+
+    // Manga Entity
+    let mangaEntity = await this.mangaRepository.findOneBy({
+      muId: muId.toString(),
+    });
+
+    if (mangaEntity === null) {
+      mangaEntity = await this.mangaRepository.save(manga);
+    }
+
+    // UserManga Entity
+    const userMangaEntityInDB = await this.userMangaRepository.findOneBy({
+      user: userEntity,
+      manga: mangaEntity,
+    });
+
+    if (userMangaEntityInDB !== null)
+      throw new BadRequestException('Manga already saved');
+
+    const userManga = new UserManga();
+    userManga.user = userEntity;
+    userManga.manga = mangaEntity;
+    await this.userMangaRepository.save(userManga);
+    return mangaDto;
   }
 }

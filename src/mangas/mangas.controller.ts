@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Query,
+  UseInterceptors,
 } from '@nestjs/common';
 import { RetrieveMangaTrendsDto } from './dto/retrieve-manga-trends.dto';
 import { MangasService } from './mangas.service';
@@ -14,6 +15,7 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { MangaDetailsDto } from './dto/manga-details.dto';
 import { SaveMangaDto } from './dto/save-manga.dto';
 import { Manga } from './manga.entity';
+import { NotFoundInterceptor } from 'src/interceptors/not-found.interceptor';
 
 @ApiTags('Mangas')
 @Controller('mangas')
@@ -67,8 +69,12 @@ export class MangasController {
       "Request has been validated. Add the manga with given id to user's collection",
     type: MangaDetailsDto,
   })
+  @UseInterceptors(NotFoundInterceptor)
   @Post('save')
-  async save(@Body() saveMangaDto: SaveMangaDto): Promise<Manga> {
-    return await this.mangasService.saveMangaToLibrary(saveMangaDto.muId);
+  async save(@Body() saveMangaDto: SaveMangaDto): Promise<MangaDetailsDto> {
+    return await this.mangasService.saveMangaToLibrary(
+      saveMangaDto.muId,
+      saveMangaDto.userId,
+    );
   }
 }

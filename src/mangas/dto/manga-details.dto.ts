@@ -1,6 +1,6 @@
-import { plainToClass, classToPlain } from 'class-transformer';
+import { plainToClass, classToPlain, Exclude } from 'class-transformer';
 import { Manga } from '../manga.entity';
-import { IsArray, IsBoolean, IsNumber, IsString } from 'class-validator';
+import { IsBoolean, IsNumber, IsString } from 'class-validator';
 
 export class MangaDetailsDto {
   @IsNumber()
@@ -25,7 +25,7 @@ export class MangaDetailsDto {
   rating: number;
 
   @IsNumber()
-  latestChapter: number;
+  totalChapters: number;
 
   @IsBoolean()
   completed: boolean;
@@ -43,10 +43,9 @@ export class MangaDetailsDto {
     mangaDetailsDto['mediumCoverUrl'] = muObject['image']['url']['original'];
     mangaDetailsDto['year'] = muObject['year'];
     mangaDetailsDto['rating'] = muObject['bayesian_rating'];
-    mangaDetailsDto['latestChapter'] = muObject['latest_chapter'];
+    mangaDetailsDto['totalChapters'] = muObject['latest_chapter'];
     mangaDetailsDto['completed'] = muObject['completed'];
     mangaDetailsDto['muId'] = muObject['series_id'];
-    console.log(mangaDetailsDto['description']);
     return mangaDetailsDto;
   }
 }
