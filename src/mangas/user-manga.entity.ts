@@ -3,6 +3,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
@@ -14,9 +15,11 @@ export class UserManga {
   id: number;
 
   @ManyToOne(() => User, (user) => user.userMangas)
+  @JoinColumn({ name: 'user_id' })
   user: User;
 
   @ManyToOne(() => Manga, (manga) => manga.userMangas)
+  @JoinColumn({ name: 'manga_id' })
   manga: Manga;
 
   @CreateDateColumn()

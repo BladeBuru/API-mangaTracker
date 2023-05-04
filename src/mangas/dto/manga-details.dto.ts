@@ -1,6 +1,6 @@
-import { plainToClass, classToPlain, Exclude } from 'class-transformer';
+import { plainToClass, classToPlain } from 'class-transformer';
 import { Manga } from '../manga.entity';
-import { IsBoolean, IsNumber, IsString } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class MangaDetailsDto {
   @IsNumber()
@@ -23,6 +23,10 @@ export class MangaDetailsDto {
 
   @IsNumber()
   rating: number;
+
+  @IsNumber()
+  @IsOptional()
+  readChapters: number;
 
   @IsNumber()
   totalChapters: number;

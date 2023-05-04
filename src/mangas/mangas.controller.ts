@@ -8,14 +8,14 @@ import {
   Query,
   UseInterceptors,
 } from '@nestjs/common';
-import { RetrieveMangaTrendsDto } from './dto/retrieve-manga-trends.dto';
+import { MangaQuickViewDto } from './dto/manga-quick-view';
 import { MangasService } from './mangas.service';
 import { RetrieveMangaTrendsInternalDto } from './dto/retrieve-manga-trends-internal.dto';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { MangaDetailsDto } from './dto/manga-details.dto';
 import { SaveMangaDto } from './dto/save-manga.dto';
-import { Manga } from './manga.entity';
 import { NotFoundInterceptor } from 'src/interceptors/not-found.interceptor';
+import { SavedMangaDto } from './dto/saved-manga.dto';
 
 @ApiTags('Mangas')
 @Controller('mangas')
@@ -32,14 +32,37 @@ export class MangasController {
     status: 200,
     description:
       'Request has been validated. Retrieve the top mangas according to their rating',
-    type: RetrieveMangaTrendsDto,
+    type: MangaQuickViewDto,
   })
   @Get('top')
   async top(
     @Query()
     filters: RetrieveMangaTrendsInternalDto,
-  ): Promise<RetrieveMangaTrendsDto[]> {
-    return this.mangasService.retrieveMangaTrends(
+  ): Promise<MangaQuickViewDto[]> {
+    return this.mangasService.retrieveMangaTrendsOrNews(
+      'top',
+      filters.limit,
+      filters.offset,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Retrieve the top mangas according to their year of release',
+  })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Request has been validated. Retrieve the top mangas according to their year of release',
+    type: MangaQuickViewDto,
+  })
+  @Get('latest')
+  async latest(
+    @Query()
+    filters: RetrieveMangaTrendsInternalDto,
+  ): Promise<MangaQuickViewDto[]> {
+    return this.mangasService.retrieveMangaTrendsOrNews(
+      'latest',
       filters.limit,
       filters.offset,
     );
@@ -76,5 +99,19 @@ export class MangasController {
       saveMangaDto.muId,
       saveMangaDto.userId,
     );
+  }
+
+  @ApiOperation({ summary: 'Return mangas in user library' })
+  @ApiResponse({
+    status: 200,
+    description: 'Request has been validated. Return mangas in user library',
+    type: MangaQuickViewDto,
+  })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  @Post('saved')
+  async saved(
+    @Body() savedMangaDto: SavedMangaDto,
+  ): Promise<MangaQuickViewDto[]> {
+    return this.mangasService.getUserMangas(savedMangaDto.userId);
   }
 }

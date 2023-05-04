@@ -25,5 +25,6 @@ export class RetrieveMangaTrendsInternalDto {
   @IsNumber()
   @IsInt()
   @Min(1)
+  @Max(400)
   offset?: number;
 }

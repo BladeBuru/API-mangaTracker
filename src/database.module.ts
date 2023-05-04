@@ -17,6 +17,7 @@ import { UserManga } from './mangas/user-manga.entity';
         username: configService.get('POSTGRES_USER'),
         password: configService.get('POSTGRES_PASSWORD'),
         database: configService.get('POSTGRES_DB'),
+        logging: true,
         entities: [userEntity, Manga, UserManga],
         synchronize: true,
       }),
