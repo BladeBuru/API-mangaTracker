@@ -1,5 +1,7 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {Column, Entity, OneToMany, PrimaryGeneratedColumn} from 'typeorm';
 import {Exclude} from "class-transformer";
+import {UserFavoriteManga} from "@/api/user/userFavoris.entity";
+
 
 @Entity()
 class User {
@@ -18,5 +20,8 @@ class User {
 
   @Column({ type: 'timestamp', nullable: true, default: null })
   public lastLoginAt: Date | null;
+
+  @OneToMany(() => UserFavoriteManga, (userFavoriteManga) => userFavoriteManga.user)
+  favoriteMangas: UserFavoriteManga[];
 }
 export default User;

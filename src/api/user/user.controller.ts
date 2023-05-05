@@ -64,6 +64,4 @@ export class UserController {
     private deleteUser(@Param('id') id: string, @Req() req: Request): Promise<User> {
         return this.service.deleteUser(id, req);
     }
-
-
 }

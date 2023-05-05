@@ -28,4 +28,5 @@ export class UserService {
         const user: User = <User>req.user;
         return this.repository.remove(user);
     }
+
 }
