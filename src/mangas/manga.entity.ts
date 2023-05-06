@@ -32,7 +32,6 @@ export class Manga {
   userMangas: UserManga[];
 
   static fromMU(mangaDetailsDto: MangaDetailsDto): Manga {
-    console.log(mangaDetailsDto);
     const manga = new Manga();
     manga['title'] = mangaDetailsDto['title'];
     manga['year'] = mangaDetailsDto['year'];

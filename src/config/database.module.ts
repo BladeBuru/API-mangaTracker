@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import userEntity from './user/user.entity';
-import { Manga } from './mangas/manga.entity';
-import { UserManga } from './mangas/user-manga.entity';
+import userEntity from '../user/user.entity';
+import { Manga } from '../mangas/manga.entity';
+import { UserManga } from '../mangas/user-manga.entity';
 
 @Module({
   imports: [

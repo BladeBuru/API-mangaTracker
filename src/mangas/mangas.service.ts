@@ -1,35 +1,22 @@
 import { HttpService } from '@nestjs/axios';
 import {
-  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { MangaQuickViewDto } from './dto/manga-quick-view';
+import { MangaQuickViewDto } from './dto/manga-quick-view.dto';
 import { catchError, firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
-import { MU_DETAIL_URL, MU_TRENDS_URL } from './constants';
+import { MU_DETAIL_URL, MU_TRENDS_URL, NSFW_GENRES } from './constants';
 import { HelperService } from './helper.service';
 import { MangaDetailsDto } from './dto/manga-details.dto';
-import { Repository } from 'typeorm';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Manga } from './manga.entity';
-import { UserManga } from './user-manga.entity';
-import User from 'src/user/user.entity';
-import { UserService } from 'src/user/user.service';
 
 @Injectable()
 export class MangasService {
   constructor(
     private readonly httpService: HttpService,
-    private readonly userService: UserService,
     private readonly helperService: HelperService,
-    @InjectRepository(Manga)
-    private readonly mangaRepository: Repository<Manga>,
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
-    @InjectRepository(UserManga)
-    private readonly userMangaRepository: Repository<UserManga>,
   ) {}
 
   private readonly logger = new Logger(MangasService.name);
@@ -45,7 +32,7 @@ export class MangasService {
     });
     const payload = {
       orderby: filter === 'top' ? 'rating' : 'year',
-      exclude_genre: ['Mature'],
+      exclude_genre: NSFW_GENRES,
       perpage: limit,
       page: offset,
     };
@@ -65,111 +52,25 @@ export class MangasService {
     return mangas;
   }
 
-  async getMangaDetails(malId: number): Promise<MangaDetailsDto> {
-    const url = MU_DETAIL_URL.concat(malId.toString());
+  async getMangaDetails(muId: number): Promise<MangaDetailsDto> {
+    const url = MU_DETAIL_URL.concat(muId.toString());
 
     const { data } = await firstValueFrom(
       this.httpService.get<any>(url).pipe(
         catchError((error: AxiosError) => {
-          this.logger.error(error.response.status);
-          throw 'Impossible to retrieve manga details from external service';
+          this.logger.error(`${error.response.status}: ${error.response.data}`);
+          if (error.response.status === 404) {
+            throw new NotFoundException(
+              `Manga with id ${muId} cannot be found`,
+            );
+          } else {
+            throw new ServiceUnavailableException(
+              'Impossible to retrieve manga details from external API. Service might be unavailable',
+            );
+          }
         }),
       ),
     );
-    console.log(JSON.stringify(data));
     return MangaDetailsDto.fromMU(data);
-  }
-
-  async saveMangaToLibrary(
-    muId: number,
-    userId: number,
-  ): Promise<MangaDetailsDto> {
-    const mangaDto = await this.getMangaDetails(muId);
-    const manga = Manga.fromMU(mangaDto);
-
-    const userEntity = await this.userService.returnUserIfExist(userId);
-
-    if (userEntity === null)
-      throw new NotFoundException(`User with id ${userId} does not exist`);
-
-    let mangaEntity = await this.returnMangaIfExist(muId.toString());
-
-    if (mangaEntity === null) {
-      mangaEntity = await this.mangaRepository.save(manga);
-    }
-
-    const userMangaEntityInDB = await this.userMangaRepository.findOneBy({
-      user: userEntity,
-      manga: mangaEntity,
-    });
-
-    if (userMangaEntityInDB !== null)
-      throw new BadRequestException('Manga already saved');
-
-    const userManga = new UserManga();
-    userManga.user = userEntity;
-    userManga.manga = mangaEntity;
-    await this.userMangaRepository.save(userManga);
-    return mangaDto;
-  }
-
-  async getUserMangas(userId: number): Promise<MangaQuickViewDto[]> {
-    const userMangas = await this.mangaRepository
-      .createQueryBuilder('manga')
-      .leftJoinAndSelect(
-        UserManga,
-        'userManga',
-        'userManga.manga_id = manga.id',
-      )
-      .leftJoinAndSelect(User, 'user', 'user.id = userManga.user_id')
-      .where('user.id = :id', { id: userId })
-      .getRawMany();
-
-    console.log(JSON.stringify(userMangas));
-
-    const nbMangas = userMangas.length;
-    const userMangasQuickView: MangaQuickViewDto[] = new Array(nbMangas);
-    for (let i = 0; i < nbMangas; i++) {
-      userMangasQuickView[i] = MangaQuickViewDto.fromLibrary(userMangas[i]);
-    }
-    return userMangasQuickView;
-  }
-
-  async returnMangaIfExist(muId: string): Promise<Manga> {
-    const mangaEntity = await this.mangaRepository.findOneBy({
-      muId: muId,
-    });
-
-    return mangaEntity;
-  }
-
-  async deleteMangaFromLibrary(userId: number, muId: number): Promise<boolean> {
-    const userEntity = await this.userService.returnUserIfExist(userId);
-
-    if (userEntity === null)
-      throw new NotFoundException(`User with id ${userId} does not exist`);
-
-    console.log(userEntity);
-    const mangaEntity = await this.returnMangaIfExist(muId.toString());
-
-    if (mangaEntity === null)
-      throw new NotFoundException(`Manga with id ${muId} does not exist`);
-
-    const deletedMangaInLibrary = await this.userMangaRepository
-      .createQueryBuilder('userManga')
-      .leftJoinAndSelect(Manga, 'manga', 'manga.id = userManga.manga_id')
-      .leftJoinAndSelect(User, 'user', 'user.id = userManga.user_id')
-      .where('user.id = :id', { id: userId })
-      .andWhere('manga.muId = :muId', { muId: muId.toString() })
-      .getMany()
-      .then((targetedMangasInLibrary) => {
-        return this.userMangaRepository.remove(targetedMangasInLibrary);
-      });
-
-    if (deletedMangaInLibrary.length != 1)
-      throw new NotFoundException(
-        `Nothing found in user's library for userId: ${userId} and muId: ${muId} `,
-      );
-    return true;
   }
 }
