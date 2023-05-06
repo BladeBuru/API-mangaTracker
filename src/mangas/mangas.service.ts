@@ -135,11 +135,41 @@ export class MangasService {
     return userMangasQuickView;
   }
 
-  async returnMangaIfExist(mangaId: string): Promise<Manga> {
+  async returnMangaIfExist(muId: string): Promise<Manga> {
     const mangaEntity = await this.mangaRepository.findOneBy({
-      muId: mangaId,
+      muId: muId,
     });
 
     return mangaEntity;
+  }
+
+  async deleteMangaFromLibrary(userId: number, muId: number): Promise<boolean> {
+    const userEntity = await this.userService.returnUserIfExist(userId);
+
+    if (userEntity === null)
+      throw new NotFoundException(`User with id ${userId} does not exist`);
+
+    console.log(userEntity);
+    const mangaEntity = await this.returnMangaIfExist(muId.toString());
+
+    if (mangaEntity === null)
+      throw new NotFoundException(`Manga with id ${muId} does not exist`);
+
+    const deletedMangaInLibrary = await this.userMangaRepository
+      .createQueryBuilder('userManga')
+      .leftJoinAndSelect(Manga, 'manga', 'manga.id = userManga.manga_id')
+      .leftJoinAndSelect(User, 'user', 'user.id = userManga.user_id')
+      .where('user.id = :id', { id: userId })
+      .andWhere('manga.muId = :muId', { muId: muId.toString() })
+      .getMany()
+      .then((targetedMangasInLibrary) => {
+        return this.userMangaRepository.remove(targetedMangasInLibrary);
+      });
+
+    if (deletedMangaInLibrary.length != 1)
+      throw new NotFoundException(
+        `Nothing found in user's library for userId: ${userId} and muId: ${muId} `,
+      );
+    return true;
   }
 }

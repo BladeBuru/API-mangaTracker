@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Logger,
   Param,
@@ -113,5 +114,21 @@ export class MangasController {
     @Body() savedMangaDto: SavedMangaDto,
   ): Promise<MangaQuickViewDto[]> {
     return this.mangasService.getUserMangas(savedMangaDto.userId);
+  }
+
+  @ApiOperation({ summary: 'Delete given manga in user library' })
+  @ApiResponse({
+    status: 200,
+    description: 'Return true if the manga has been deleted from user library',
+    type: MangaQuickViewDto,
+  })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  @ApiResponse({ status: 404, description: 'Entry not found' })
+  @Delete('delete')
+  async delete(@Body() deleteMangaDto: SaveMangaDto): Promise<boolean> {
+    return await this.mangasService.deleteMangaFromLibrary(
+      deleteMangaDto.userId,
+      deleteMangaDto.muId,
+    );
   }
 }
