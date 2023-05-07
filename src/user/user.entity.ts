@@ -1,4 +1,13 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { UserManga } from 'src/mangas/user-manga.entity';
+import { Manga } from 'src/mangas/manga.entity';
+import {
+  Column,
+  Entity,
+  JoinTable,
+  ManyToMany,
+  OneToMany,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 
 @Entity()
 class User {
@@ -13,5 +22,12 @@ class User {
 
   @Column()
   password: string;
+
+  @ManyToMany(() => Manga)
+  @JoinTable()
+  favorites: Manga[];
+
+  @OneToMany(() => UserManga, (userManga) => userManga.user)
+  userMangas: UserManga[];
 }
 export default User;

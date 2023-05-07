@@ -45,6 +45,8 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+The server will start running at `http://localhost:3000`
+
 ## Test
 
 ```bash

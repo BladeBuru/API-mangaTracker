@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import userEntity from './user/user.entity';
+import userEntity from '../user/user.entity';
+import { Manga } from '../mangas/manga.entity';
+import { UserManga } from '../mangas/user-manga.entity';
 
 @Module({
   imports: [
@@ -15,7 +17,8 @@ import userEntity from './user/user.entity';
         username: configService.get('POSTGRES_USER'),
         password: configService.get('POSTGRES_PASSWORD'),
         database: configService.get('POSTGRES_DB'),
-        entities: [userEntity],
+        logging: configService.get('TYPEORM_DEBUG_LOGGING'),
+        entities: [userEntity, Manga, UserManga],
         synchronize: true,
       }),
     }),

@@ -13,6 +13,14 @@ export class UserService {
   async findAll(): Promise<userEntity[]> {
     return await this.userRepository.find();
   }
+
+  async returnUserIfExist(userId: number): Promise<userEntity> {
+    const userEntity = await this.userRepository.findOneBy({
+      id: userId,
+    });
+
+    return userEntity;
+  }
 }
 @Module({
   imports: [TypeOrmModule.forFeature([userEntity])],

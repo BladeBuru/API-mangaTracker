@@ -4,7 +4,10 @@ import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import * as Joi from '@hapi/joi';
 import { UserModule } from './user/userModule';
-import { DatabaseModule } from './database.module';
+import { DatabaseModule } from './config/database.module';
+import { MangasModule } from './mangas/mangas.module';
+import { LibraryModule } from './library/library.module';
+import { GlobalHttpModule } from './config/http.module';
 
 @Module({
   imports: [
@@ -17,8 +20,11 @@ import { DatabaseModule } from './database.module';
         POSTGRES_DB: Joi.string().required(),
       }),
     }),
+    GlobalHttpModule,
     UserModule,
     DatabaseModule,
+    MangasModule,
+    LibraryModule,
   ],
   controllers: [AppController],
   providers: [AppService],
