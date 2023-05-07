@@ -2,10 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Request } from 'express';
-import {UpdateNameDto, UpdatePasswordDto} from './user.dto';
-import userEntity from "./user.entity";
-import User from "./user.entity";
-
+import { UpdateNameDto, UpdatePasswordDto } from './user.dto';
+import userEntity from './user.entity';
+import User from './user.entity';
 
 @Injectable()
 export class UserService {
@@ -20,7 +19,10 @@ export class UserService {
     return this.repository.save(user);
   }
 
-  public async updatePassword(body: UpdatePasswordDto, req: Request): Promise<User> {
+  public async updatePassword(
+    body: UpdatePasswordDto,
+    req: Request,
+  ): Promise<User> {
     const user: User = <User>req.user;
     user.password = body.password;
     return this.repository.save(user);
