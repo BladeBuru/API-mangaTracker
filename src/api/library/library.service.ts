@@ -3,15 +3,15 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { UserService } from 'src/user/user.service';
+import { UserService } from 'src/api/user/user.service';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
-import User from 'src/user/user.entity';
-import { Manga } from 'src/mangas/manga.entity';
-import { UserManga } from 'src/mangas/user-manga.entity';
-import { MangasService } from 'src/mangas/mangas.service';
-import { MangaDetailsDto } from 'src/mangas/dto/manga-details.dto';
-import { MangaQuickViewDto } from 'src/mangas/dto/manga-quick-view.dto';
+import User from 'src/api/user/user.entity';
+import { Manga } from 'src/api/mangas/manga.entity';
+import { UserManga } from 'src/api/mangas/user-manga.entity';
+import { MangasService } from 'src/api/mangas/mangas.service';
+import { MangaDetailsDto } from 'src/api/mangas/dto/manga-details.dto';
+import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
 
 @Injectable()
 export class LibraryService {
