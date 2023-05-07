@@ -1,5 +1,5 @@
-import { UserManga } from 'src/mangas/user-manga.entity';
-import { Manga } from 'src/mangas/manga.entity';
+import { UserManga } from 'src/api/mangas/user-manga.entity';
+import { Manga } from 'src/api/mangas/manga.entity';
 import {
   Column,
   Entity,
@@ -29,5 +29,8 @@ class User {
 
   @OneToMany(() => UserManga, (userManga) => userManga.user)
   userMangas: UserManga[];
+
+  @Column({ type: 'timestamp', nullable: true, default: null })
+  public lastLoginAt: Date | null;
 }
 export default User;
