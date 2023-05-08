@@ -1,14 +1,14 @@
 import { IsOptional, IsString } from 'class-validator';
-import {ApiProperty} from "@nestjs/swagger";
+import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateNameDto {
-    @ApiProperty()
+  @ApiProperty()
   @IsString()
   @IsOptional()
   public readonly name?: string;
 }
 export class UpdatePasswordDto {
-    @ApiProperty()
+  @ApiProperty()
   @IsString()
   @IsOptional()
   public readonly password?: string;

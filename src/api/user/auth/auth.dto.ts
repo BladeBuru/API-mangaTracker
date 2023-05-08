@@ -1,6 +1,6 @@
 import { Trim } from 'class-sanitizer';
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
-import {ApiProperty} from "@nestjs/swagger";
+import { ApiProperty } from '@nestjs/swagger';
 
 export class RegisterDto {
   @ApiProperty()
@@ -24,7 +24,7 @@ export class LoginDto {
   @Trim()
   @IsEmail()
   public readonly email: string;
-  
+
   @ApiProperty()
   @IsString()
   public readonly password: string;
