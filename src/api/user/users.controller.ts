@@ -7,16 +7,17 @@ import {
   Put,
   Body,
   Inject,
-  Delete, Param
+  Delete,
+  Param,
 } from '@nestjs/common';
 import { Request } from 'express';
 
-import {UpdateNameDto, UpdatePasswordDto} from './user.dto';
+import { UpdateNameDto, UpdatePasswordDto } from './user.dto';
 
 import { UserService } from './user.service';
-import User from "./user.entity";
-import {JwtAuthGuard} from "./auth/auth.guard";
-import {ApiOperation, ApiResponse, ApiTags} from "@nestjs/swagger";
+import User from './user.entity';
+import { JwtAuthGuard } from './auth/auth.guard';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Users')
 @Controller('user')
@@ -34,7 +35,10 @@ export class UserController {
   @Put('name')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor)
-  private updateName(@Body() body: UpdateNameDto, @Req() req: Request): Promise<User> {
+  private updateName(
+    @Body() body: UpdateNameDto,
+    @Req() req: Request,
+  ): Promise<User> {
     return this.service.updateName(body, req);
   }
 
@@ -48,7 +52,10 @@ export class UserController {
   @Put('password')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor)
-  private updatePassword(@Body() body: UpdatePasswordDto, @Req() req: Request): Promise<User> {
+  private updatePassword(
+    @Body() body: UpdatePasswordDto,
+    @Req() req: Request,
+  ): Promise<User> {
     return this.service.updatePassword(body, req);
   }
 
@@ -62,9 +69,10 @@ export class UserController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor)
-  private deleteUser(@Param('id') id: string, @Req() req: Request): Promise<User> {
+  private deleteUser(
+    @Param('id') id: string,
+    @Req() req: Request,
+  ): Promise<User> {
     return this.service.deleteUser(id, req);
   }
-
-
 }

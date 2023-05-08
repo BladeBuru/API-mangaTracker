@@ -1,20 +1,19 @@
 import { Injectable, ExecutionContext } from '@nestjs/common';
 import { AuthGuard, IAuthGuard } from '@nestjs/passport';
 import { Request } from 'express';
-import User from "../user.entity";
-
+import User from '../user.entity';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') implements IAuthGuard {
-    public handleRequest(err: unknown, user: User): any {
-        return user;
-    }
+  public handleRequest(err: unknown, user: User): any {
+    return user;
+  }
 
-    public async canActivate(context: ExecutionContext): Promise<boolean> {
-        await super.canActivate(context);
+  public async canActivate(context: ExecutionContext): Promise<boolean> {
+    await super.canActivate(context);
 
-        const { user }: Request = context.switchToHttp().getRequest();
+    const { user }: Request = context.switchToHttp().getRequest();
 
-        return !!user;
-    }
+    return !!user;
+  }
 }
