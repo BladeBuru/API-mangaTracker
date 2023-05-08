@@ -5,10 +5,10 @@ import {
   Post,
   UseInterceptors,
 } from '@nestjs/common';
-import { NotFoundInterceptor } from 'src/interceptors/not-found.interceptor';
-import { MangaDetailsDto } from 'src/mangas/dto/manga-details.dto';
+import { NotFoundInterceptor } from 'src/api/interceptors/not-found.interceptor';
+import { MangaDetailsDto } from 'src/api/mangas/dto/manga-details.dto';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { MangaQuickViewDto } from 'src/mangas/dto/manga-quick-view.dto';
+import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
 import { SaveMangaDto } from './dto/save-manga.dto';
 import { SavedMangaDto } from './dto/saved-manga.dto';
 import { LibraryService } from './library.service';
