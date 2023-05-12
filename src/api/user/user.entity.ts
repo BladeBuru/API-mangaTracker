@@ -1,13 +1,11 @@
 import { UserManga } from 'src/api/mangas/user-manga.entity';
-import { Manga } from 'src/api/mangas/manga.entity';
 import {
   Column,
   Entity,
-  JoinTable,
-  ManyToMany,
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import {UserMangaFavorite} from "@/api/favorites/user-manga-favorite.entity";
 
 @Entity()
 class User {
@@ -23,9 +21,8 @@ class User {
   @Column()
   password: string;
 
-  @ManyToMany(() => Manga)
-  @JoinTable()
-  favorites: Manga[];
+  @OneToMany(() => UserMangaFavorite, (userFavoriteManga) => userFavoriteManga.user)
+  favoriteMangas: UserMangaFavorite[];
 
   @OneToMany(() => UserManga, (userManga) => userManga.user)
   userMangas: UserManga[];
