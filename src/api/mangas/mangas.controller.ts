@@ -1,9 +1,10 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import {Controller, Get, Param, Query, UseGuards} from '@nestjs/common';
 import { MangaQuickViewDto } from './dto/manga-quick-view.dto';
 import { MangasService } from './mangas.service';
 import { RetrieveMangaTrendsInternalDto } from './dto/retrieve-manga-trends-internal.dto';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { MangaDetailsDto } from './dto/manga-details.dto';
+import {JwtAuthGuard} from "@/api/user/auth/auth.guard";
 
 @ApiTags('Mangas')
 @Controller('mangas')
@@ -20,6 +21,7 @@ export class MangasController {
       'Request has been validated. Retrieve the top mangas according to their rating',
     type: MangaQuickViewDto,
   })
+  @UseGuards(JwtAuthGuard)
   @Get('top')
   async top(
     @Query()
@@ -42,6 +44,7 @@ export class MangasController {
       'Request has been validated. Retrieve the top mangas according to their year of release',
     type: MangaQuickViewDto,
   })
+  @UseGuards(JwtAuthGuard)
   @Get('latest')
   async latest(
     @Query()
@@ -63,6 +66,7 @@ export class MangasController {
     description: 'Request has been validated. Get the manga with given id',
     type: MangaDetailsDto,
   })
+  @UseGuards(JwtAuthGuard)
   @Get(':id')
   async mangaDetails(@Param('id') id: number): Promise<MangaDetailsDto> {
     return await this.mangasService.getMangaDetails(id);
