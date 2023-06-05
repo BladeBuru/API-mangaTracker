@@ -76,7 +76,7 @@ export class LibraryService {
 
   async returnMangaIfExist(muId: string): Promise<Manga> {
     const mangaEntity = await this.mangaRepository.findOneBy({
-      muId: muId,
+      mu_id: muId,
     });
 
     return mangaEntity;
@@ -100,7 +100,7 @@ export class LibraryService {
       .leftJoinAndSelect(Manga, 'manga', 'manga.id = userManga.manga_id')
       .leftJoinAndSelect(User, 'user', 'user.id = userManga.user_id')
       .where('user.id = :id', { id: userId })
-      .andWhere('manga.muId = :muId', { muId: muId.toString() })
+      .andWhere('manga.mu_id = :muId', { muId: muId.toString() })
       .getMany()
       .then((targetedMangasInLibrary) => {
         return this.userMangaRepository.remove(targetedMangasInLibrary);
@@ -110,6 +110,34 @@ export class LibraryService {
       throw new NotFoundException(
         `Nothing found in user's library for userId: ${userId} and muId: ${muId} `,
       );
+    return true;
+  }
+
+  async updateChapter(
+    userId: number,
+    muId: number,
+    readChapters: number,
+  ): Promise<boolean> {
+    const userEntity = await this.userService.returnUserIfExist(userId);
+
+    if (userEntity === null)
+      throw new NotFoundException(`User with id ${userId} does not exist`);
+
+    const mangaEntity = await this.returnMangaIfExist(muId.toString());
+
+    if (mangaEntity === null)
+      throw new NotFoundException(
+        `Manga with id ${muId} does not exist or is not present in user\'s library`,
+      );
+
+    await this.userMangaRepository
+      .createQueryBuilder()
+      .update(UserManga)
+      .set({ user_read_chapters: readChapters })
+      .where('user_id = :id', { id: userId })
+      .andWhere('manga_id = :muId', { muId: muId.toString() })
+      .execute();
+
     return true;
   }
 }
