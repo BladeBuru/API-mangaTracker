@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Post,
+  Put,
   UseInterceptors,
 } from '@nestjs/common';
 import { NotFoundInterceptor } from 'src/api/interceptors/not-found.interceptor';
@@ -12,6 +13,7 @@ import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
 import { SaveMangaDto } from './dto/save-manga.dto';
 import { SavedMangaDto } from './dto/saved-manga.dto';
 import { LibraryService } from './library.service';
+import { UpdateChapterDto } from './dto/update-chapter-dto';
 
 @ApiTags('Library')
 @Controller('library')
@@ -65,5 +67,18 @@ export class LibraryController {
       deleteMangaDto.userId,
       deleteMangaDto.muId,
     );
+  }
+
+  @Put('chapter')
+  async updateChapter(
+    @Body() updateChapterDto: UpdateChapterDto,
+  ): Promise<UpdateChapterDto> {
+    await this.libraryService.updateChapter(
+      updateChapterDto.userId,
+      updateChapterDto.muId,
+      updateChapterDto.readChapters,
+    );
+
+    return updateChapterDto;
   }
 }

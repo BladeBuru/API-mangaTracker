@@ -38,13 +38,13 @@ export class MangaQuickViewDto {
 
   static fromLibrary(data: any) {
     const dto = new MangaQuickViewDto();
-    dto.muId = data['manga_muId'];
+    dto.muId = data['manga_mu_id'];
     dto.title = data['manga_title'];
     dto.year = data['manga_year'];
-    dto.mediumCoverUrl = data['manga_smallCoverUrl'];
-    dto.largeCoverUrl = data['manga_mediumCoverUrl'];
-    dto.rating = data['userManga_userRating'];
-    dto.readChapters = data['userManga_userReadChapters'];
+    dto.mediumCoverUrl = data['manga_small_cover_url'];
+    dto.largeCoverUrl = data['manga_medium_cover_url'];
+    dto.rating = data['userManga_user_rating'];
+    dto.readChapters = data['userManga_user_read_chapters'];
     return dto;
   }
 }
