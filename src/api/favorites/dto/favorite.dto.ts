@@ -1,3 +1,3 @@
 export class FavoritesDto {
-    mangaId: number;
+  mangaId: number;
 }
