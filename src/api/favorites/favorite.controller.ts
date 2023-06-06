@@ -1,6 +1,6 @@
 import {
     Body,
-    Controller, Get,
+    Controller, createParamDecorator, Delete, ExecutionContext, Get,
     Inject, Post, Request, UseGuards,
 } from '@nestjs/common';
 
@@ -8,6 +8,14 @@ import {ApiOperation, ApiResponse, ApiTags} from "@nestjs/swagger";
 import {JwtAuthGuard} from "@/api/user/auth/auth.guard";
 import {FavoriteService} from "@/api/favorites/favorite.service";
 import {MangaQuickViewDto} from "@/api/mangas/dto/manga-quick-view.dto";
+import {AuthenticatedUser} from "@/api/user/auth/authentificated-user.interface";
+import {FavoritesDto} from "@/api/favorites/dto/favorite.dto";
+const CurrentUser = createParamDecorator(
+    (data: unknown, context: ExecutionContext): AuthenticatedUser => {
+        const request = context.switchToHttp().getRequest();
+        return request.user;
+    },
+);
 @ApiTags('favorites)')
 @Controller('favorites')
 export class FavoriteController {
@@ -22,11 +30,12 @@ export class FavoriteController {
         status: 200,
         description:
             'Request has been validated. the favoris has been added',
+        type: MangaQuickViewDto,
     })
     @UseGuards(JwtAuthGuard)
     @Post('favorites')
-    async favorites(@Body() body: { mangaId: number }, @Request() req): Promise<void> {
-        await this.service.addFavoriteManga(body.mangaId, req.user.id);
+    async favorites(@Body() body: FavoritesDto, @CurrentUser() user: AuthenticatedUser):Promise<MangaQuickViewDto[]> {
+      return   await this.service.addFavoriteManga(body.mangaId, user);
     }
 
     @ApiOperation({
@@ -37,12 +46,13 @@ export class FavoriteController {
         status: 200,
         description:
             'list of users favorites mangas',
+            type: MangaQuickViewDto,
     }
     )
     @UseGuards(JwtAuthGuard)
     @Get('favorites')
-    async getFavorites(@Request() req):Promise<MangaQuickViewDto[]>{
-        return await this.service.getFavoriteManga(req.user.id);
+    async getFavorites( @CurrentUser() user: AuthenticatedUser):Promise<MangaQuickViewDto[]>{
+        return await this.service.getFavoriteManga(user.id);
     }
 
     @ApiOperation({
@@ -53,10 +63,11 @@ export class FavoriteController {
         status: 200,
         description:
             'the manga has been deleted from users favorites',
+        type: MangaQuickViewDto,
     })
     @UseGuards(JwtAuthGuard)
-    @Post('delete')
-    async deleteFavorites(@Body() body: { mangaId: number }, @Request() req): Promise<void>{
-        await this.service.deleteFavoriteManga(body.mangaId, req.user.id);
+    @Delete ('delete')
+    async deleteFavorites(@Body() body: FavoritesDto, @CurrentUser() user: AuthenticatedUser): Promise<MangaQuickViewDto[]>{
+       return  await this.service.deleteFavoriteManga(body.mangaId, user);
     }
 }
