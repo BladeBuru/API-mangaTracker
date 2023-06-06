@@ -12,6 +12,7 @@ import { UserManga } from 'src/api/mangas/user-manga.entity';
 import { MangasService } from 'src/api/mangas/mangas.service';
 import { MangaDetailsDto } from 'src/api/mangas/dto/manga-details.dto';
 import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
+import { ChapterException } from './exceptions/chapter.exception';
 
 @Injectable()
 export class LibraryService {
@@ -128,6 +129,11 @@ export class LibraryService {
     if (mangaEntity === null)
       throw new NotFoundException(
         `Manga with id ${muId} does not exist or is not present in user\'s library`,
+      );
+
+    if (readChapters > mangaEntity.total_chapters)
+      throw new ChapterException(
+        `${readChapters} (new value) is above ${mangaEntity.total_chapters} (total number of chapters)`,
       );
 
     await this.userMangaRepository

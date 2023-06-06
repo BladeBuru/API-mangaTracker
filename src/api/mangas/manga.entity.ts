@@ -38,7 +38,7 @@ export class Manga {
     manga['small_cover_url'] = mangaDetailsDto['small_cover_url'];
     manga['medium_cover_url'] = mangaDetailsDto['medium_cover_url'];
     manga['mu_id'] = mangaDetailsDto['mu_id'].toString();
-    manga['total_chapters'] = mangaDetailsDto['latest_chapter'];
+    manga['total_chapters'] = mangaDetailsDto['total_chapters'];
     manga['rating'] = mangaDetailsDto['rating'];
     return manga;
   }
