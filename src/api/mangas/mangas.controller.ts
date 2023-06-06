@@ -1,10 +1,10 @@
-import {Controller, Get, Param, Query, UseGuards} from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { MangaQuickViewDto } from './dto/manga-quick-view.dto';
 import { MangasService } from './mangas.service';
 import { RetrieveMangaTrendsInternalDto } from './dto/retrieve-manga-trends-internal.dto';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { MangaDetailsDto } from './dto/manga-details.dto';
-import {JwtAuthGuard} from "@/api/user/auth/auth.guard";
+import { JwtAuthGuard } from '@/api/user/auth/auth.guard';
 
 @ApiTags('Mangas')
 @Controller('mangas')
