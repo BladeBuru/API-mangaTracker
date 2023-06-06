@@ -1,6 +1,7 @@
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 import { MangaDetailsDto } from './dto/manga-details.dto';
 import { UserManga } from './user-manga.entity';
+import { UserMangaFavorite } from '@/api/favorites/user-manga-favorite.entity';
 
 @Entity()
 export class Manga {
@@ -30,6 +31,12 @@ export class Manga {
 
   @OneToMany(() => UserManga, (userManga) => userManga.manga)
   userMangas: UserManga[];
+
+  @OneToMany(
+    () => UserMangaFavorite,
+    (userFavoriteManga) => userFavoriteManga.manga,
+  )
+  favoriteMangas: UserMangaFavorite[];
 
   static fromMU(mangaDetailsDto: MangaDetailsDto): Manga {
     const manga = new Manga();
