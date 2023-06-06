@@ -2,7 +2,8 @@ import {
   Body,
   Controller,
   Delete,
-  Post, UseGuards,
+  Post,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { NotFoundInterceptor } from 'src/api/interceptors/not-found.interceptor';
@@ -12,7 +13,7 @@ import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
 import { SaveMangaDto } from './dto/save-manga.dto';
 import { SavedMangaDto } from './dto/saved-manga.dto';
 import { LibraryService } from './library.service';
-import {JwtAuthGuard} from "@/api/user/auth/auth.guard";
+import { JwtAuthGuard } from '@/api/user/auth/auth.guard';
 
 @ApiTags('Library')
 @Controller('library')
