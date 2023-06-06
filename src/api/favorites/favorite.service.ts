@@ -8,6 +8,7 @@ import User from 'src/api/user/user.entity';
 import { Manga } from 'src/api/mangas/manga.entity';
 import {UserMangaFavorite} from "@/api/favorites/user-manga-favorite.entity";
 import {MangaQuickViewDto} from "@/api/mangas/dto/manga-quick-view.dto";
+import {AuthenticatedUser} from "@/api/user/auth/authentificated-user.interface";
 
 @Injectable()
 export class FavoriteService {
@@ -21,18 +22,19 @@ export class FavoriteService {
 
 
 
-    async addFavoriteManga(mangaId: number, user: User): Promise<void> {
+    async addFavoriteManga(mangaId: number, user: AuthenticatedUser): Promise<MangaQuickViewDto[]> {
         const manga: Manga = await this.mangaRepository.findOne({
             where: { id: mangaId },
             relations: ['favoriteMangas'],
         });
         const userFavoriteManga = new UserMangaFavorite();
-        userFavoriteManga.user = user;
+        userFavoriteManga.user = user as User;
         userFavoriteManga.manga = manga;
         if (await this.userFavoriteMangaRepository.findOneBy(userFavoriteManga)) {
             return;
         }
         await this.userFavoriteMangaRepository.save(userFavoriteManga);
+        return this.getFavoriteManga(user.id);
     }
     async getFavoriteManga(userId: number): Promise<MangaQuickViewDto[]> {
         const userMangas = await this.mangaRepository
@@ -55,7 +57,7 @@ export class FavoriteService {
         return userMangasQuickView;
     }
 
-    async deleteFavoriteManga(mangaId: number,user: User): Promise<void> {
+    async deleteFavoriteManga(mangaId: number,user: User):  Promise<MangaQuickViewDto[]>{
         const manga: Manga = await this.mangaRepository.findOne({
             where: { id: mangaId },
             relations: ['favoriteMangas'],
@@ -64,5 +66,6 @@ export class FavoriteService {
         userFavoriteManga.user = user;
         userFavoriteManga.manga = manga;
         await this.userFavoriteMangaRepository.delete(userFavoriteManga)
+        return this.getFavoriteManga(user.id);
     }
 }
