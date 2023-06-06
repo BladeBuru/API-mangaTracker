@@ -1,73 +1,84 @@
 import {
-    Body,
-    Controller, createParamDecorator, Delete, ExecutionContext, Get,
-    Inject, Post, Request, UseGuards,
+  Body,
+  Controller,
+  createParamDecorator,
+  Delete,
+  ExecutionContext,
+  Get,
+  Inject,
+  Post,
+  Request,
+  UseGuards,
 } from '@nestjs/common';
 
-import {ApiOperation, ApiResponse, ApiTags} from "@nestjs/swagger";
-import {JwtAuthGuard} from "@/api/user/auth/auth.guard";
-import {FavoriteService} from "@/api/favorites/favorite.service";
-import {MangaQuickViewDto} from "@/api/mangas/dto/manga-quick-view.dto";
-import {AuthenticatedUser} from "@/api/user/auth/authentificated-user.interface";
-import {FavoritesDto} from "@/api/favorites/dto/favorite.dto";
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from '@/api/user/auth/auth.guard';
+import { FavoriteService } from '@/api/favorites/favorite.service';
+import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
+import { AuthenticatedUser } from '@/api/user/auth/authentificated-user.interface';
+import { FavoritesDto } from '@/api/favorites/dto/favorite.dto';
 const CurrentUser = createParamDecorator(
-    (data: unknown, context: ExecutionContext): AuthenticatedUser => {
-        const request = context.switchToHttp().getRequest();
-        return request.user;
-    },
+  (data: unknown, context: ExecutionContext): AuthenticatedUser => {
+    const request = context.switchToHttp().getRequest();
+    return request.user;
+  },
 );
 @ApiTags('favorites)')
 @Controller('favorites')
 export class FavoriteController {
-    @Inject(FavoriteService)
-    private readonly service: FavoriteService;
+  @Inject(FavoriteService)
+  private readonly service: FavoriteService;
 
-    @ApiOperation({
-        summary: 'Add a manga to users favorites mangas'
-    })
-    @ApiResponse({ status: 400, description: 'Bad Request' })
-    @ApiResponse({
-        status: 200,
-        description:
-            'Request has been validated. the favoris has been added',
-        type: MangaQuickViewDto,
-    })
-    @UseGuards(JwtAuthGuard)
-    @Post('favorites')
-    async favorites(@Body() body: FavoritesDto, @CurrentUser() user: AuthenticatedUser):Promise<MangaQuickViewDto[]> {
-      return   await this.service.addFavoriteManga(body.mangaId, user);
-    }
+  @ApiOperation({
+    summary: 'Add a manga to users favorites mangas',
+  })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  @ApiResponse({
+    status: 200,
+    description: 'Request has been validated. the favoris has been added',
+    type: MangaQuickViewDto,
+  })
+  @UseGuards(JwtAuthGuard)
+  @Post('favorites')
+  async favorites(
+    @Body() body: FavoritesDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<MangaQuickViewDto[]> {
+    return await this.service.addFavoriteManga(body.mangaId, user);
+  }
 
-    @ApiOperation({
-        summary: 'Get the list of users favorites mangas'
-    })
-    @ApiResponse({ status: 400, description: 'Bad Request' })
-    @ApiResponse({
-        status: 200,
-        description:
-            'list of users favorites mangas',
-            type: MangaQuickViewDto,
-    }
-    )
-    @UseGuards(JwtAuthGuard)
-    @Get('favorites')
-    async getFavorites( @CurrentUser() user: AuthenticatedUser):Promise<MangaQuickViewDto[]>{
-        return await this.service.getFavoriteManga(user.id);
-    }
+  @ApiOperation({
+    summary: 'Get the list of users favorites mangas',
+  })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  @ApiResponse({
+    status: 200,
+    description: 'list of users favorites mangas',
+    type: MangaQuickViewDto,
+  })
+  @UseGuards(JwtAuthGuard)
+  @Get('favorites')
+  async getFavorites(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<MangaQuickViewDto[]> {
+    return await this.service.getFavoriteManga(user.id);
+  }
 
-    @ApiOperation({
-        summary: 'Delete a manga from users favorites'
-    })
-    @ApiResponse({ status: 400, description: 'Bad Request' })
-    @ApiResponse({
-        status: 200,
-        description:
-            'the manga has been deleted from users favorites',
-        type: MangaQuickViewDto,
-    })
-    @UseGuards(JwtAuthGuard)
-    @Delete ('delete')
-    async deleteFavorites(@Body() body: FavoritesDto, @CurrentUser() user: AuthenticatedUser): Promise<MangaQuickViewDto[]>{
-       return  await this.service.deleteFavoriteManga(body.mangaId, user);
-    }
+  @ApiOperation({
+    summary: 'Delete a manga from users favorites',
+  })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  @ApiResponse({
+    status: 200,
+    description: 'the manga has been deleted from users favorites',
+    type: MangaQuickViewDto,
+  })
+  @UseGuards(JwtAuthGuard)
+  @Delete('delete')
+  async deleteFavorites(
+    @Body() body: FavoritesDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<MangaQuickViewDto[]> {
+    return await this.service.deleteFavoriteManga(body.mangaId, user);
+  }
 }

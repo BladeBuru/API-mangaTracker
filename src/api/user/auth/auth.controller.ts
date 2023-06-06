@@ -6,7 +6,9 @@ import {
   ClassSerializerInterceptor,
   UseInterceptors,
   UseGuards,
-  Req, ExecutionContext, createParamDecorator,
+  Req,
+  ExecutionContext,
+  createParamDecorator,
 } from '@nestjs/common';
 import { RegisterDto, LoginDto } from './auth.dto';
 import { JwtAuthGuard } from './auth.guard';
@@ -14,7 +16,7 @@ import { AuthService } from './auth.service';
 import { Request } from 'express';
 import User from '../user.entity';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import {AuthenticatedUser} from "@/api/user/auth/authentificated-user.interface";
+import { AuthenticatedUser } from '@/api/user/auth/authentificated-user.interface';
 
 @ApiTags('Auth')
 @Controller('auth')

@@ -1,27 +1,19 @@
-import {Column, OneToMany, PrimaryGeneratedColumn} from "typeorm";
-import {UserMangaFavorite} from "@/api/favorites/user-manga-favorite.entity";
-import {UserManga} from "@/api/mangas/user-manga.entity";
+import { Column, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { UserMangaFavorite } from '@/api/favorites/user-manga-favorite.entity';
+import { UserManga } from '@/api/mangas/user-manga.entity';
 
 export interface AuthenticatedUser {
+  id: number;
 
-    id: number;
+  username: string;
 
+  email: string;
 
-    username: string;
+  password: string;
 
+  favoriteMangas: UserMangaFavorite[];
 
-    email: string;
+  userMangas: UserManga[];
 
-
-    password: string;
-
-
-    favoriteMangas: UserMangaFavorite[];
-
-
-    userMangas: UserManga[];
-
-
-    lastLoginAt: Date | null;
-
+  lastLoginAt: Date | null;
 }
