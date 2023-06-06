@@ -36,3 +36,4 @@ lerna-debug.log*
 
 # Environment
 .env
+src/common/envs/development.env
