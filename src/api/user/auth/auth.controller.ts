@@ -15,7 +15,6 @@ import { Request } from 'express';
 import User from '../user.entity';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
-
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
