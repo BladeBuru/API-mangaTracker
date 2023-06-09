@@ -14,11 +14,11 @@ export class UserManga {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => User, (user) => user.userMangas)
+  @ManyToOne(() => User, (user) => user.userMangas, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @ManyToOne(() => Manga, (manga) => manga.userMangas)
+  @ManyToOne(() => Manga, (manga) => manga.userMangas, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'manga_id' })
   manga: Manga;
 
