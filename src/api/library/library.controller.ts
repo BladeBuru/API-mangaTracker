@@ -4,6 +4,7 @@ import {
   Delete,
   Post,
   Put,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { NotFoundInterceptor } from 'src/api/interceptors/not-found.interceptor';
@@ -13,6 +14,7 @@ import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
 import { SaveMangaDto } from './dto/save-manga.dto';
 import { SavedMangaDto } from './dto/saved-manga.dto';
 import { LibraryService } from './library.service';
+import { JwtAuthGuard } from '@/api/user/auth/auth.guard';
 import { UpdateChapterDto } from './dto/update-chapter-dto';
 
 @ApiTags('Library')
@@ -32,6 +34,7 @@ export class LibraryController {
   })
   @UseInterceptors(NotFoundInterceptor)
   @Post('save')
+  @UseGuards(JwtAuthGuard)
   async save(@Body() saveMangaDto: SaveMangaDto): Promise<MangaDetailsDto> {
     return await this.libraryService.saveManga(
       saveMangaDto.muId,
@@ -47,6 +50,7 @@ export class LibraryController {
   })
   @ApiResponse({ status: 400, description: 'Bad Request' })
   @Post('all')
+  @UseGuards(JwtAuthGuard)
   async all(
     @Body() savedMangaDto: SavedMangaDto,
   ): Promise<MangaQuickViewDto[]> {
@@ -62,6 +66,7 @@ export class LibraryController {
   @ApiResponse({ status: 400, description: 'Bad Request' })
   @ApiResponse({ status: 404, description: 'Entry not found' })
   @Delete('delete')
+  @UseGuards(JwtAuthGuard)
   async delete(@Body() deleteMangaDto: SaveMangaDto): Promise<boolean> {
     return await this.libraryService.deleteManga(
       deleteMangaDto.userId,
