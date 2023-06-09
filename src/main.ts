@@ -14,6 +14,10 @@ async function bootstrap() {
       process.env.NODE_ENV === 'development' ? ['debug'] : ['error', 'warn'],
   });
 
+  if (process.env.NODE_ENV === 'development') {
+    app.enableCors();
+  }
+
   const configService = app.get(ConfigService);
 
   app.useGlobalPipes(
