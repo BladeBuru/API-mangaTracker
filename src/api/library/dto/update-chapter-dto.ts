@@ -1,5 +1,5 @@
-import { IsNumber, IsOptional, Min } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNumber, Min } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateChapterDto {
   @ApiProperty()
