@@ -74,7 +74,14 @@ export class LibraryController {
     );
   }
 
+  @ApiOperation({
+    summary: 'Update given user manga progress with specified value',
+  })
+  @ApiResponse({ status: 200, description: 'Chapter has been updated' })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  @ApiResponse({ status: 404, description: 'Manga or User not found' })
   @Put('chapter')
+  @UseGuards(JwtAuthGuard)
   async updateChapter(
     @Body() updateChapterDto: UpdateChapterDto,
   ): Promise<UpdateChapterDto> {
