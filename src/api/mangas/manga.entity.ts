@@ -12,16 +12,16 @@ export class Manga {
   title: string;
 
   @Column()
-  smallCoverUrl: string;
+  small_cover_url: string;
 
   @Column()
-  mediumCoverUrl: string;
+  medium_cover_url: string;
 
-  @Column({ type: 'bigint' })
-  muId: string;
+  @Column({ type: 'bigint', unique: true })
+  mu_id: string;
 
   @Column({ default: 0 })
-  totalChapters: number;
+  total_chapters: number;
 
   @Column('decimal', { precision: 3, scale: 2 })
   rating: number;
@@ -30,7 +30,7 @@ export class Manga {
   year: number;
 
   @OneToMany(() => UserManga, (userManga) => userManga.manga)
-  userMangas: UserManga[];
+  user_mangas: UserManga[];
 
   @OneToMany(
     () => UserMangaFavorite,
@@ -42,10 +42,10 @@ export class Manga {
     const manga = new Manga();
     manga['title'] = mangaDetailsDto['title'];
     manga['year'] = mangaDetailsDto['year'];
-    manga['smallCoverUrl'] = mangaDetailsDto['smallCoverUrl'];
-    manga['mediumCoverUrl'] = mangaDetailsDto['mediumCoverUrl'];
-    manga['muId'] = mangaDetailsDto['muId'].toString();
-    manga['totalChapters'] = mangaDetailsDto['latestChapter'];
+    manga['small_cover_url'] = mangaDetailsDto['small_cover_url'];
+    manga['medium_cover_url'] = mangaDetailsDto['medium_cover_url'];
+    manga['mu_id'] = mangaDetailsDto['mu_id'].toString();
+    manga['total_chapters'] = mangaDetailsDto['total_chapters'];
     manga['rating'] = mangaDetailsDto['rating'];
     return manga;
   }
