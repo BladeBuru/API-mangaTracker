@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNumber, IsOptional } from 'class-validator';
+import { UserManga } from '../user-manga.entity';
 
 export class MangaQuickViewDto {
   @ApiProperty()
@@ -25,6 +26,11 @@ export class MangaQuickViewDto {
   @ApiPropertyOptional()
   readChapters: number;
 
+  @IsNumber()
+  @IsOptional()
+  @ApiPropertyOptional()
+  totalChapters: number;
+
   static fromMu(data: any) {
     const dto = new MangaQuickViewDto();
     dto.muId = data['record']['series_id'];
@@ -36,15 +42,16 @@ export class MangaQuickViewDto {
     return dto;
   }
 
-  static fromLibrary(data: any) {
+  static fromLibrary(userManga: UserManga) {
     const dto = new MangaQuickViewDto();
-    dto.muId = data['manga_muId'];
-    dto.title = data['manga_title'];
-    dto.year = data['manga_year'];
-    dto.mediumCoverUrl = data['manga_smallCoverUrl'];
-    dto.largeCoverUrl = data['manga_mediumCoverUrl'];
-    dto.rating = data['userManga_userRating'];
-    dto.readChapters = data['userManga_userReadChapters'];
+    dto.muId = parseInt(userManga.manga.mu_id);
+    dto.title = userManga.manga.title;
+    dto.year = userManga.manga.year;
+    dto.mediumCoverUrl = userManga.manga.small_cover_url;
+    dto.largeCoverUrl = userManga.manga.medium_cover_url;
+    dto.rating = userManga.user_rating;
+    dto.readChapters = userManga.user_read_chapters;
+    dto.totalChapters = userManga.manga.total_chapters;
     return dto;
   }
 }
