@@ -12,46 +12,70 @@ export class MangasController {
   constructor(private readonly mangasService: MangasService) {}
 
   @ApiOperation({
-    summary: 'Retrieve the top mangas according to their rating',
+    summary: 'Retrieve the popular mangas according to their rating',
   })
   @ApiResponse({ status: 400, description: 'Bad Request' })
   @ApiResponse({
     status: 200,
     description:
-      'Request has been validated. Retrieve the top mangas according to their rating',
+      'Request has been validated. Retrieve the popular mangas according to their rating',
     type: MangaQuickViewDto,
   })
   @UseGuards(JwtAuthGuard)
-  @Get('top')
+  @Get('popular')
   async top(
     @Query()
     filters: RetrieveMangaTrendsInternalDto,
   ): Promise<MangaQuickViewDto[]> {
-    return this.mangasService.retrieveMangaTrendsOrNews(
-      'top',
+    return this.mangasService.retrieveManga(
+      'rating',
       filters.limit,
       filters.offset,
     );
   }
 
   @ApiOperation({
-    summary: 'Retrieve the top mangas according to their year of release',
+    summary: 'Retrieve mangas according to their year of release',
   })
   @ApiResponse({ status: 400, description: 'Bad Request' })
   @ApiResponse({
     status: 200,
     description:
-      'Request has been validated. Retrieve the top mangas according to their year of release',
+      'Request has been validated. Retrieve mangas according to their year of release',
     type: MangaQuickViewDto,
   })
   @UseGuards(JwtAuthGuard)
-  @Get('latest')
-  async latest(
+  @Get('new')
+  async new(
     @Query()
     filters: RetrieveMangaTrendsInternalDto,
   ): Promise<MangaQuickViewDto[]> {
-    return this.mangasService.retrieveMangaTrendsOrNews(
-      'latest',
+    return this.mangasService.retrieveManga(
+      'year',
+      filters.limit,
+      filters.offset,
+    );
+  }
+
+  @ApiOperation({
+    summary:
+      'Retrieve mangas according to their position in the weekly ranking',
+  })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Request has been validated. Retrieve mangas according to their position in the weekly ranking',
+    type: MangaQuickViewDto,
+  })
+  @UseGuards(JwtAuthGuard)
+  @Get('trending')
+  async trending(
+    @Query()
+    filters: RetrieveMangaTrendsInternalDto,
+  ): Promise<MangaQuickViewDto[]> {
+    return this.mangasService.retrieveManga(
+      'week_pos',
       filters.limit,
       filters.offset,
     );
