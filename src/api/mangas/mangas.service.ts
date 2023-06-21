@@ -45,7 +45,6 @@ export class MangasService {
       ),
     );
     const nbMangas = data['results'].length;
-    this.logger.debug(data['results'][0]);
     const mangas: MangaQuickViewDto[] = new Array(nbMangas);
     for (let i = 0; i < nbMangas; i++) {
       mangas[i] = MangaQuickViewDto.fromMu(data['results'][i]);
