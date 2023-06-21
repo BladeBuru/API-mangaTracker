@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Post,
+  Put,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -14,6 +15,7 @@ import { SaveMangaDto } from './dto/save-manga.dto';
 import { SavedMangaDto } from './dto/saved-manga.dto';
 import { LibraryService } from './library.service';
 import { JwtAuthGuard } from '@/api/user/auth/auth.guard';
+import { UpdateChapterDto } from './dto/update-chapter-dto';
 
 @ApiTags('Library')
 @Controller('library')
@@ -70,5 +72,25 @@ export class LibraryController {
       deleteMangaDto.userId,
       deleteMangaDto.muId,
     );
+  }
+
+  @ApiOperation({
+    summary: 'Update given user manga progress with specified value',
+  })
+  @ApiResponse({ status: 200, description: 'Chapter has been updated' })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  @ApiResponse({ status: 404, description: 'Manga or User not found' })
+  @Put('chapter')
+  @UseGuards(JwtAuthGuard)
+  async updateChapter(
+    @Body() updateChapterDto: UpdateChapterDto,
+  ): Promise<UpdateChapterDto> {
+    await this.libraryService.updateChapter(
+      updateChapterDto.userId,
+      updateChapterDto.muId,
+      updateChapterDto.readChapters,
+    );
+
+    return updateChapterDto;
   }
 }

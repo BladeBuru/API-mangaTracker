@@ -7,7 +7,6 @@ import { Manga } from 'src/api/mangas/manga.entity';
 import { UserMangaFavorite } from '@/api/favorites/user-manga-favorite.entity';
 import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
 
-
 @Injectable()
 export class FavoriteService {
   @InjectRepository(Manga)
@@ -18,8 +17,8 @@ export class FavoriteService {
   private readonly userRepository: Repository<User>;
 
   async addFavoriteManga(
-      mangaId: number,
-      userId: number,
+    mangaId: number,
+    userId: number,
   ): Promise<MangaQuickViewDto[]> {
     const manga: Manga = await this.mangaRepository.findOne({
       where: { id: mangaId },
