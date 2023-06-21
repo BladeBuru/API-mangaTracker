@@ -6,7 +6,7 @@ import {
   Inject,
   Post,
   Request,
-  UseGuards
+  UseGuards,
 } from '@nestjs/common';
 
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -47,11 +47,8 @@ export class FavoriteController {
   })
   @UseGuards(JwtAuthGuard)
   @Get('favorites')
-  async getFavorites(
-      @Request() req
-  ): Promise<MangaQuickViewDto[]> {
+  async getFavorites(@Request() req): Promise<MangaQuickViewDto[]> {
     return await this.service.getFavoriteManga(req.user.id);
-
   }
 
   @ApiOperation({
