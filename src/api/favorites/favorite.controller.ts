@@ -32,12 +32,9 @@ export class FavoriteController {
   })
   @UseGuards(JwtAuthGuard)
   @Post('favorites')
-  async favorites(
-      @Body() body: FavoritesDto,
-  ): Promise<MangaQuickViewDto[]> {
+  async favorites(@Body() body: FavoritesDto): Promise<MangaQuickViewDto[]> {
     return await this.service.addFavoriteManga(body.mangaId, body.userId);
   }
-
 
   @ApiOperation({
     summary: 'Get the list of users favorites mangas',
@@ -54,6 +51,7 @@ export class FavoriteController {
       @Request() req
   ): Promise<MangaQuickViewDto[]> {
     return await this.service.getFavoriteManga(req.user.id);
+
   }
 
   @ApiOperation({
