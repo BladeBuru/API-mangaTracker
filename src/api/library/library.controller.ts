@@ -13,7 +13,7 @@ import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
 import { SaveMangaDto } from './dto/save-manga.dto';
 import { LibraryService } from './library.service';
 import { JwtAuthGuard } from '@/api/user/auth/auth.guard';
-import {UserDecorator} from "@/shared/Decorator/user.decorator";
+import { UserDecorator } from '@/shared/Decorator/user.decorator';
 
 @ApiTags('Library')
 @Controller('library')
@@ -33,11 +33,11 @@ export class LibraryController {
   @UseInterceptors(NotFoundInterceptor)
   @Post('save')
   @UseGuards(JwtAuthGuard)
-  async save(@Body() saveMangaDto: SaveMangaDto,@UserDecorator() user : any): Promise<MangaDetailsDto> {
-    return await this.libraryService.saveManga(
-      saveMangaDto.muId,
-      user.id,
-    );
+  async save(
+    @Body() saveMangaDto: SaveMangaDto,
+    @UserDecorator() user: any,
+  ): Promise<MangaDetailsDto> {
+    return await this.libraryService.saveManga(saveMangaDto.muId, user.id);
   }
 
   @ApiOperation({ summary: 'Return all mangas in user library' })
@@ -49,9 +49,7 @@ export class LibraryController {
   @ApiResponse({ status: 400, description: 'Bad Request' })
   @Post('all')
   @UseGuards(JwtAuthGuard)
-  async all(
-    @UserDecorator() user : any,
-  ): Promise<MangaQuickViewDto[]> {
+  async all(@UserDecorator() user: any): Promise<MangaQuickViewDto[]> {
     return this.libraryService.getMangas(user.id);
   }
 
@@ -65,10 +63,10 @@ export class LibraryController {
   @ApiResponse({ status: 404, description: 'Entry not found' })
   @Delete('delete')
   @UseGuards(JwtAuthGuard)
-  async delete(@Body() deleteMangaDto: SaveMangaDto,@UserDecorator() user : any): Promise<boolean> {
-    return await this.libraryService.deleteManga(
-      user.id,
-      deleteMangaDto.muId,
-    );
+  async delete(
+    @Body() deleteMangaDto: SaveMangaDto,
+    @UserDecorator() user: any,
+  ): Promise<boolean> {
+    return await this.libraryService.deleteManga(user.id, deleteMangaDto.muId);
   }
 }
