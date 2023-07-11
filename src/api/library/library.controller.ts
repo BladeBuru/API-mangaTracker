@@ -14,6 +14,7 @@ import { SaveMangaDto } from './dto/save-manga.dto';
 import { SavedMangaDto } from './dto/saved-manga.dto';
 import { LibraryService } from './library.service';
 import { JwtAuthGuard } from '@/api/user/auth/auth.guard';
+import {UserDecorator} from "@/shared/Decorator/user.decorator";
 
 @ApiTags('Library')
 @Controller('library')
@@ -33,10 +34,10 @@ export class LibraryController {
   @UseInterceptors(NotFoundInterceptor)
   @Post('save')
   @UseGuards(JwtAuthGuard)
-  async save(@Body() saveMangaDto: SaveMangaDto): Promise<MangaDetailsDto> {
+  async save(@Body() saveMangaDto: SaveMangaDto,@UserDecorator() user : any): Promise<MangaDetailsDto> {
     return await this.libraryService.saveManga(
       saveMangaDto.muId,
-      saveMangaDto.userId,
+      user.id,
     );
   }
 
@@ -65,9 +66,9 @@ export class LibraryController {
   @ApiResponse({ status: 404, description: 'Entry not found' })
   @Delete('delete')
   @UseGuards(JwtAuthGuard)
-  async delete(@Body() deleteMangaDto: SaveMangaDto): Promise<boolean> {
+  async delete(@Body() deleteMangaDto: SaveMangaDto,@UserDecorator() user : any): Promise<boolean> {
     return await this.libraryService.deleteManga(
-      deleteMangaDto.userId,
+      user.id,
       deleteMangaDto.muId,
     );
   }
