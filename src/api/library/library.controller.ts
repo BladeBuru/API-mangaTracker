@@ -11,7 +11,6 @@ import { MangaDetailsDto } from 'src/api/mangas/dto/manga-details.dto';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
 import { SaveMangaDto } from './dto/save-manga.dto';
-import { SavedMangaDto } from './dto/saved-manga.dto';
 import { LibraryService } from './library.service';
 import { JwtAuthGuard } from '@/api/user/auth/auth.guard';
 import {UserDecorator} from "@/shared/Decorator/user.decorator";
@@ -51,9 +50,9 @@ export class LibraryController {
   @Post('all')
   @UseGuards(JwtAuthGuard)
   async all(
-    @Body() savedMangaDto: SavedMangaDto,
+    @UserDecorator() user : any,
   ): Promise<MangaQuickViewDto[]> {
-    return this.libraryService.getMangas(savedMangaDto.userId);
+    return this.libraryService.getMangas(user.id);
   }
 
   @ApiOperation({ summary: 'Delete given manga in user library' })
