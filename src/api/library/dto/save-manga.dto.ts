@@ -6,5 +6,4 @@ export class SaveMangaDto {
   @IsNumber()
   @Min(0)
   muId: number;
-
 }

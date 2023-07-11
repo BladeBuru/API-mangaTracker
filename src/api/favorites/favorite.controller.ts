@@ -5,7 +5,7 @@ import {
   Get,
   Inject,
   Post,
-  UseGuards
+  UseGuards,
 } from '@nestjs/common';
 
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -13,7 +13,7 @@ import { JwtAuthGuard } from '@/api/user/auth/auth.guard';
 import { FavoriteService } from '@/api/favorites/favorite.service';
 import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
 import { FavoritesDto } from '@/api/favorites/dto/favorite.dto';
-import {UserDecorator} from "@/shared/Decorator/user.decorator";
+import { UserDecorator } from '@/shared/Decorator/user.decorator';
 
 @ApiTags('favorites)')
 @Controller('favorites')
@@ -33,11 +33,11 @@ export class FavoriteController {
   @UseGuards(JwtAuthGuard)
   @Post('favorites')
   async favorites(
-      @Body() body: FavoritesDto,@UserDecorator() user : any,
+    @Body() body: FavoritesDto,
+    @UserDecorator() user: any,
   ): Promise<MangaQuickViewDto[]> {
     return await this.service.addFavoriteManga(body.mangaId, user.id);
   }
-
 
   @ApiOperation({
     summary: 'Get the list of users favorites mangas',
@@ -50,9 +50,7 @@ export class FavoriteController {
   })
   @UseGuards(JwtAuthGuard)
   @Get('favorites')
-  async getFavorites(
-      @UserDecorator() user : any,
-  ): Promise<MangaQuickViewDto[]> {
+  async getFavorites(@UserDecorator() user: any): Promise<MangaQuickViewDto[]> {
     return await this.service.getFavoriteManga(user.id);
   }
 
@@ -68,7 +66,8 @@ export class FavoriteController {
   @UseGuards(JwtAuthGuard)
   @Delete('delete')
   async deleteFavorites(
-    @Body() body: FavoritesDto,@UserDecorator() user : any,
+    @Body() body: FavoritesDto,
+    @UserDecorator() user: any,
   ): Promise<MangaQuickViewDto[]> {
     return await this.service.deleteFavoriteManga(body.mangaId, user.id);
   }
