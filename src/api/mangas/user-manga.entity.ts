@@ -9,25 +9,25 @@ import {
 } from 'typeorm';
 import { Manga } from './manga.entity';
 
-@Entity()
+@Entity('user_manga')
 export class UserManga {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => User, (user) => user.userMangas)
+  @ManyToOne(() => User, (user) => user.user_mangas, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @ManyToOne(() => Manga, (manga) => manga.userMangas)
-  @JoinColumn({ name: 'manga_id' })
+  @ManyToOne(() => Manga, (manga) => manga.user_mangas, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'manga_id', referencedColumnName: 'mu_id' })
   manga: Manga;
 
   @CreateDateColumn()
-  addingDate: Date;
+  adding_date: Date;
 
   @Column({ default: 0 })
-  userRating: number;
+  user_rating: number;
 
   @Column({ default: 0 })
-  userReadChapters: number;
+  user_read_chapters: number;
 }

@@ -12,12 +12,15 @@ import { UserManga } from 'src/api/mangas/user-manga.entity';
 import { MangasService } from 'src/api/mangas/mangas.service';
 import { MangaDetailsDto } from 'src/api/mangas/dto/manga-details.dto';
 import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
+import { ChapterException } from './exceptions/chapter.exception';
 
 @Injectable()
 export class LibraryService {
   constructor(
     private readonly userService: UserService,
     private readonly mangasService: MangasService,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     @InjectRepository(Manga)
     private readonly mangaRepository: Repository<Manga>,
     @InjectRepository(UserManga)
@@ -55,34 +58,58 @@ export class LibraryService {
   }
 
   async getMangas(userId: number): Promise<MangaQuickViewDto[]> {
-    const userMangas = await this.mangaRepository
-      .createQueryBuilder('manga')
-      .leftJoinAndSelect(
-        UserManga,
-        'userManga',
-        'userManga.manga_id = manga.id',
-      )
-      .leftJoinAndSelect(User, 'user', 'user.id = userManga.user_id')
-      .where('user.id = :id', { id: userId })
-      .getRawMany();
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['user_mangas', 'user_mangas.manga'],
+    });
 
-    const nbMangas = userMangas.length;
+    const nbMangas = user.user_mangas.length;
+
     const userMangasQuickView: MangaQuickViewDto[] = new Array(nbMangas);
     for (let i = 0; i < nbMangas; i++) {
-      userMangasQuickView[i] = MangaQuickViewDto.fromLibrary(userMangas[i]);
+      userMangasQuickView[i] = MangaQuickViewDto.fromLibrary(
+        user.user_mangas[i],
+      );
     }
     return userMangasQuickView;
   }
 
   async returnMangaIfExist(muId: string): Promise<Manga> {
     const mangaEntity = await this.mangaRepository.findOneBy({
-      muId: muId,
+      mu_id: muId,
     });
 
     return mangaEntity;
   }
 
   async deleteManga(userId: number, muId: number): Promise<boolean> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['user_mangas', 'user_mangas.manga'],
+    });
+
+    if (user === null)
+      throw new NotFoundException(`User with id ${userId} does not exist`);
+
+    const mangaToDelete = user.user_mangas.filter(
+      (userManga) => userManga.manga.mu_id === muId.toString(),
+    );
+
+    if (mangaToDelete.length === 1) {
+      await this.userMangaRepository.remove(mangaToDelete[0]);
+    } else {
+      throw new NotFoundException(
+        `Nothing found in user's library for userId: ${userId} and muId: ${muId} `,
+      );
+    }
+    return true;
+  }
+
+  async updateChapter(
+    userId: number,
+    muId: number,
+    readChapters: number,
+  ): Promise<boolean> {
     const userEntity = await this.userService.returnUserIfExist(userId);
 
     if (userEntity === null)
@@ -95,21 +122,19 @@ export class LibraryService {
         `Manga with id ${muId} does not exist or is not present in user\'s library`,
       );
 
-    const deletedMangaInLibrary = await this.userMangaRepository
-      .createQueryBuilder('userManga')
-      .leftJoinAndSelect(Manga, 'manga', 'manga.id = userManga.manga_id')
-      .leftJoinAndSelect(User, 'user', 'user.id = userManga.user_id')
-      .where('user.id = :id', { id: userId })
-      .andWhere('manga.muId = :muId', { muId: muId.toString() })
-      .getMany()
-      .then((targetedMangasInLibrary) => {
-        return this.userMangaRepository.remove(targetedMangasInLibrary);
-      });
-
-    if (deletedMangaInLibrary.length != 1)
-      throw new NotFoundException(
-        `Nothing found in user's library for userId: ${userId} and muId: ${muId} `,
+    if (readChapters > mangaEntity.total_chapters)
+      throw new ChapterException(
+        `${readChapters} (new value) is above ${mangaEntity.total_chapters} (total number of chapters)`,
       );
+
+    await this.userMangaRepository
+      .createQueryBuilder()
+      .update(UserManga)
+      .set({ user_read_chapters: readChapters })
+      .where('user_id = :id', { id: userId })
+      .andWhere('manga_id = :muId', { muId: muId.toString() })
+      .execute();
+
     return true;
   }
 }
