@@ -23,7 +23,7 @@ class User {
   favoriteMangas: UserMangaFavorite[];
 
   @OneToMany(() => UserManga, (userManga) => userManga.user)
-  userMangas: UserManga[];
+  user_mangas: UserManga[];
 
   @Column({ type: 'timestamp', nullable: true, default: null })
   public lastLoginAt: Date | null;

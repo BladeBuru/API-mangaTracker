@@ -66,13 +66,13 @@ export class MangaDetailsDto {
     const mangaDetailsDto = new MangaDetailsDto();
     mangaDetailsDto['title'] = muObject['title'];
     mangaDetailsDto['description'] = muObject['description'];
-    mangaDetailsDto['smallCoverUrl'] = muObject['image']['url']['thumb'];
-    mangaDetailsDto['mediumCoverUrl'] = muObject['image']['url']['original'];
+    mangaDetailsDto['small_cover_url'] = muObject['image']['url']['thumb'];
+    mangaDetailsDto['medium_cover_url'] = muObject['image']['url']['original'];
     mangaDetailsDto['year'] = muObject['year'];
     mangaDetailsDto['rating'] = muObject['bayesian_rating'];
-    mangaDetailsDto['totalChapters'] = muObject['latest_chapter'];
+    mangaDetailsDto['total_chapters'] = muObject['latest_chapter'];
     mangaDetailsDto['completed'] = muObject['completed'];
-    mangaDetailsDto['muId'] = muObject['series_id'];
+    mangaDetailsDto['mu_id'] = muObject['series_id'];
     mangaDetailsDto['authors'] = muObject['authors'];
     mangaDetailsDto['genres'] = muObject['genres'];
     mangaDetailsDto['anime'] = muObject['anime'];
