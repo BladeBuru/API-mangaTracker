@@ -12,10 +12,10 @@ import { MangaDetailsDto } from 'src/api/mangas/dto/manga-details.dto';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
 import { SaveMangaDto } from './dto/save-manga.dto';
-import { SavedMangaDto } from './dto/saved-manga.dto';
 import { LibraryService } from './library.service';
 import { JwtAuthGuard } from '@/api/user/auth/auth.guard';
-import { UpdateChapterDto } from './dto/update-chapter-dto';
+import { UserDecorator } from '@/shared/Decorator/user.decorator';
+import { UpdateChapterDto } from '@/api/library/dto/update-chapter-dto';
 
 @ApiTags('Library')
 @Controller('library')
@@ -35,11 +35,11 @@ export class LibraryController {
   @UseInterceptors(NotFoundInterceptor)
   @Post('save')
   @UseGuards(JwtAuthGuard)
-  async save(@Body() saveMangaDto: SaveMangaDto): Promise<MangaDetailsDto> {
-    return await this.libraryService.saveManga(
-      saveMangaDto.muId,
-      saveMangaDto.userId,
-    );
+  async save(
+    @Body() saveMangaDto: SaveMangaDto,
+    @UserDecorator() user: any,
+  ): Promise<MangaDetailsDto> {
+    return await this.libraryService.saveManga(saveMangaDto.muId, user.id);
   }
 
   @ApiOperation({ summary: 'Return all mangas in user library' })
@@ -51,10 +51,8 @@ export class LibraryController {
   @ApiResponse({ status: 400, description: 'Bad Request' })
   @Post('all')
   @UseGuards(JwtAuthGuard)
-  async all(
-    @Body() savedMangaDto: SavedMangaDto,
-  ): Promise<MangaQuickViewDto[]> {
-    return this.libraryService.getMangas(savedMangaDto.userId);
+  async all(@UserDecorator() user: any): Promise<MangaQuickViewDto[]> {
+    return this.libraryService.getMangas(user.id);
   }
 
   @ApiOperation({ summary: 'Delete given manga in user library' })
@@ -67,13 +65,12 @@ export class LibraryController {
   @ApiResponse({ status: 404, description: 'Entry not found' })
   @Delete('delete')
   @UseGuards(JwtAuthGuard)
-  async delete(@Body() deleteMangaDto: SaveMangaDto): Promise<boolean> {
-    return await this.libraryService.deleteManga(
-      deleteMangaDto.userId,
-      deleteMangaDto.muId,
-    );
+  async delete(
+    @Body() deleteMangaDto: SaveMangaDto,
+    @UserDecorator() user: any,
+  ): Promise<boolean> {
+    return await this.libraryService.deleteManga(user.id, deleteMangaDto.muId);
   }
-
   @ApiOperation({
     summary: 'Update given user manga progress with specified value',
   })
@@ -84,9 +81,10 @@ export class LibraryController {
   @UseGuards(JwtAuthGuard)
   async updateChapter(
     @Body() updateChapterDto: UpdateChapterDto,
+    @UserDecorator() user: any,
   ): Promise<UpdateChapterDto> {
     await this.libraryService.updateChapter(
-      updateChapterDto.userId,
+      user.id,
       updateChapterDto.muId,
       updateChapterDto.readChapters,
     );

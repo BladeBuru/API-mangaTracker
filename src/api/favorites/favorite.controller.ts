@@ -13,6 +13,7 @@ import { JwtAuthGuard } from '@/api/user/auth/auth.guard';
 import { FavoriteService } from '@/api/favorites/favorite.service';
 import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
 import { FavoritesDto } from '@/api/favorites/dto/favorite.dto';
+import { UserDecorator } from '@/shared/Decorator/user.decorator';
 
 @ApiTags('favorites)')
 @Controller('favorites')
@@ -31,8 +32,11 @@ export class FavoriteController {
   })
   @UseGuards(JwtAuthGuard)
   @Post('favorites')
-  async favorites(@Body() body: FavoritesDto): Promise<MangaQuickViewDto[]> {
-    return await this.service.addFavoriteManga(body.mangaId, body.userId);
+  async favorites(
+    @Body() body: FavoritesDto,
+    @UserDecorator() user: any,
+  ): Promise<MangaQuickViewDto[]> {
+    return await this.service.addFavoriteManga(body.mangaId, user.id);
   }
 
   @ApiOperation({
@@ -46,8 +50,8 @@ export class FavoriteController {
   })
   @UseGuards(JwtAuthGuard)
   @Get('favorites')
-  async getFavorites(@Body() body: FavoritesDto): Promise<MangaQuickViewDto[]> {
-    return await this.service.getFavoriteManga(body.userId);
+  async getFavorites(@UserDecorator() user: any): Promise<MangaQuickViewDto[]> {
+    return await this.service.getFavoriteManga(user.id);
   }
 
   @ApiOperation({
@@ -63,7 +67,8 @@ export class FavoriteController {
   @Delete('delete')
   async deleteFavorites(
     @Body() body: FavoritesDto,
+    @UserDecorator() user: any,
   ): Promise<MangaQuickViewDto[]> {
-    return await this.service.deleteFavoriteManga(body.mangaId, body.userId);
+    return await this.service.deleteFavoriteManga(body.mangaId, user.id);
   }
 }

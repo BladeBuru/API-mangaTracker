@@ -5,9 +5,4 @@ export class FavoritesDto {
   @IsNumber()
   @Min(0)
   mangaId: number;
-
-  @ApiProperty({ description: 'User ID' })
-  @IsNumber()
-  @Min(0)
-  userId: number;
 }

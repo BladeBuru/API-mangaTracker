@@ -6,11 +6,6 @@ export class UpdateChapterDto {
   @IsNumber()
   muId: number;
 
-  @ApiProperty({ description: 'User ID' })
-  @IsNumber()
-  @Min(0)
-  userId: number;
-
   @ApiProperty()
   @IsNumber()
   @Min(0)
