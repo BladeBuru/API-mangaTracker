@@ -7,8 +7,4 @@ export class SaveMangaDto {
   @Min(0)
   muId: number;
 
-  @ApiProperty({ description: 'User ID' })
-  @IsNumber()
-  @Min(0)
-  userId: number;
 }
