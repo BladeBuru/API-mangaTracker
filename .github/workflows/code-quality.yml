@@ -16,6 +16,9 @@ jobs:
         name: Install Packages
         run: npm ci
       -
+        name: API Build Status
+        run: npm run build
+      -
         name: Code Formatting
         run: npm run format
       -
