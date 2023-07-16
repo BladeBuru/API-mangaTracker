@@ -21,17 +21,17 @@ export class MangasService {
 
   private readonly logger = new Logger(MangasService.name);
 
-  async retrieveMangaTrendsOrNews(
+  async retrieveManga(
     filter: string,
     limit?: number,
     offset?: number,
   ): Promise<MangaQuickViewDto[]> {
-    const url = this.helperService.formatRequestForMalApi(MU_TRENDS_URL, {
+    const url = this.helperService.formatRequestForMuApi(MU_TRENDS_URL, {
       limit: limit !== undefined ? limit.toString() : undefined,
       offset: offset !== undefined ? offset.toString() : undefined,
     });
     const payload = {
-      orderby: filter === 'top' ? 'rating' : 'year',
+      orderby: filter,
       exclude_genre: NSFW_GENRES,
       perpage: limit,
       page: offset,
@@ -40,7 +40,7 @@ export class MangasService {
       this.httpService.post<MangaQuickViewDto[]>(url, payload).pipe(
         catchError((error: AxiosError) => {
           this.logger.error(error.code);
-          throw 'Impossible to retrieve trends from external service';
+          throw `Impossible to retrieve mangas with filter ${filter} from external service`;
         }),
       ),
     );

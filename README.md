@@ -62,10 +62,24 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
-## Swagger
+## API Documentation (Swagger)
 
 After starting the developement server, you can access API's endpoints specifications at the following address:
 
 ```bash
 http://localhost:3000/api
 ```
+
+## Local Development Database
+
+> The following procedure has been tested on a Linux environment. It might need a few adjustment for Windows or Mac users.  
+
+1. Go inside the `devtools` folder at the root of the project
+
+2. Run `docker-compose up -d` to deploy the Docker Container hosting the Postgres Database
+
+3. You can now connect to the newly deployed database with `psql -h localhost -p 6543 -U postgres -d postgres`
+
+4. Inside your shell terminal, execute the database init script with `psql -h localhost -p 6543 -U postgres -d postgres -f init-local-db.sql`
+
+5. Replace your environment variables with the ones from your local database

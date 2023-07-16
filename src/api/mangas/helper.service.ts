@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 @Injectable()
 export class HelperService {
-  formatRequestForMalApi(
+  formatRequestForMuApi(
     url: string,
     parameters: { [key: string]: string },
   ): string {
