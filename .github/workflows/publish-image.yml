@@ -1,8 +1,11 @@
 name: CI/CD Build & Publish Image
 
 on:
-  pull_request:
+  push:
     branches: [ "master" ]
+
+env:
+  BRANCH_NAME: ${{ github.base_ref || github.ref_name }}
 
 permissions: write-all
 
@@ -24,6 +27,6 @@ jobs:
       - 
         name: Build, Run & Publish Docker image
         run: |
-          docker build -t ghcr.io/flt-yann/manga-tracker-api:latest .
-          docker run -d -p 80:80 ghcr.io/flt-yann/manga-tracker-api:latest
-          docker push ghcr.io/flt-yann/manga-tracker-api:latest
+          docker build -t ghcr.io/flt-yann/manga-tracker-api:${{ BRANCH_NAME }}-latest .
+          docker run -d -p 80:80 ghcr.io/flt-yann/manga-tracker-api:${{ BRANCH_NAME }}-latest
+          docker push ghcr.io/flt-yann/manga-tracker-api:${{ BRANCH_NAME }}-latest

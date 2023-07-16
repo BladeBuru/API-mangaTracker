@@ -39,7 +39,7 @@ export class MangasService {
     const { data } = await firstValueFrom(
       this.httpService.post<MangaQuickViewDto[]>(url, payload).pipe(
         catchError((error: AxiosError) => {
-          this.logger.error(error.response.data);
+          this.logger.error(error.code);
           throw `Impossible to retrieve mangas with filter ${filter} from external service`;
         }),
       ),
