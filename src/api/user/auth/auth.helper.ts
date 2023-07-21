@@ -1,12 +1,10 @@
-import {
-  Injectable,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import User from '../user.entity';
-import {TokenDto} from "@/api/user/auth/auth.dto";
+import { TokenDto } from '@/api/user/auth/auth.dto';
 
 @Injectable()
 export class AuthHelper {
@@ -18,9 +16,9 @@ export class AuthHelper {
   constructor(jwt: JwtService) {
     this.jwt = jwt;
   }
-    public async decode(token: string): Promise<unknown> {
-        return this.jwt.decode(token, null);
-    }
+  public async decode(token: string): Promise<unknown> {
+    return this.jwt.decode(token, null);
+  }
   // Get User by User ID we get from decode()
   public async validateUser(decoded: any): Promise<User> {
     return this.repository.findOneBy({ id: decoded.id });
@@ -28,27 +26,26 @@ export class AuthHelper {
 
   // Generate JWT Token
   public async generateToken(user: User): Promise<TokenDto> {
-   let dto = new TokenDto();
-   dto.accessToken =  await this.jwt.signAsync(
-        {
-          id: user.id,
-        },
-        {
-          secret: process.env.JWT_KEY,
-          expiresIn: process.env.JWT_KEY_EXPIRES_IN,
-
-        },
+    let dto = new TokenDto();
+    dto.accessToken = await this.jwt.signAsync(
+      {
+        id: user.id,
+      },
+      {
+        secret: process.env.JWT_KEY,
+        expiresIn: process.env.JWT_KEY_EXPIRES_IN,
+      },
     );
     dto.refreshToken = await this.jwt.signAsync(
-        {
-            id: user.id,
-        },
-        {
-            secret: process.env.JWT_REFRESH_SECRET,
-            expiresIn: process.env.JWT_REFRESH_SECRET_EXPIRES_IN,
-        }
+      {
+        id: user.id,
+      },
+      {
+        secret: process.env.JWT_REFRESH_SECRET,
+        expiresIn: process.env.JWT_REFRESH_SECRET_EXPIRES_IN,
+      },
     );
-  return dto;
+    return dto;
   }
 
   // Validate User's password

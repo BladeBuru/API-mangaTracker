@@ -15,7 +15,7 @@ import { SaveMangaDto } from './dto/save-manga.dto';
 import { LibraryService } from './library.service';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { UpdateChapterDto } from '@/api/library/dto/update-chapter-dto';
-import { JwtAuthGuard } from "@/api/user/auth/guard/auth.guard";
+import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 
 @ApiTags('Library')
 @Controller('library')

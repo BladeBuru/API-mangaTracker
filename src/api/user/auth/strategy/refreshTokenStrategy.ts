@@ -6,7 +6,10 @@ import { AuthHelper } from '../auth.helper';
 import User from '../../user.entity';
 
 @Injectable()
-export class RefreshTokenStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
+export class RefreshTokenStrategy extends PassportStrategy(
+  Strategy,
+  'jwt-refresh',
+) {
   @Inject(AuthHelper)
   private readonly helper: AuthHelper;
 

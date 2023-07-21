@@ -6,14 +6,13 @@ import {
   ClassSerializerInterceptor,
   UseInterceptors,
   UseGuards,
-
 } from '@nestjs/common';
-import {RegisterDto, LoginDto, TokenDto} from './auth.dto';
+import { RegisterDto, LoginDto, TokenDto } from './auth.dto';
 import { AuthService } from './auth.service';
 import User from '../user.entity';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import {RefreshTokenGuard} from "@/api/user/auth/guard/refreshToken.guard";
-import {UserDecorator} from "@/shared/Decorator/user.decorator";
+import { RefreshTokenGuard } from '@/api/user/auth/guard/refreshToken.guard';
+import { UserDecorator } from '@/shared/Decorator/user.decorator';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -55,7 +54,7 @@ export class AuthController {
   })
   @Post('refresh')
   @UseGuards(RefreshTokenGuard)
-  private refresh( @UserDecorator() user: any): Promise<TokenDto> {
+  private refresh(@UserDecorator() user: any): Promise<TokenDto> {
     return this.service.refresh(<User>user);
   }
 }

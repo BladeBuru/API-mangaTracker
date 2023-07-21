@@ -35,7 +35,7 @@ export class TokenDto {
   @IsString()
   public accessToken: string;
 
-    @ApiProperty()
-    @IsString()
-    public refreshToken: string;
+  @ApiProperty()
+  @IsString()
+  public refreshToken: string;
 }

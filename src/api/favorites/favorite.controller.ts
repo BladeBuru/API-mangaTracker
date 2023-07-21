@@ -13,7 +13,7 @@ import { FavoriteService } from '@/api/favorites/favorite.service';
 import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
 import { FavoritesDto } from '@/api/favorites/dto/favorite.dto';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
-import { JwtAuthGuard } from "@/api/user/auth/guard/auth.guard";
+import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 
 @ApiTags('favorites)')
 @Controller('favorites')
