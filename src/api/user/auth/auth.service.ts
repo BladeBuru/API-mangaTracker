@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { RegisterDto, LoginDto } from './auth.dto';
+import {RegisterDto, LoginDto, TokenDto} from './auth.dto';
 import { AuthHelper } from './auth.helper';
 import User from '../user.entity';
 
@@ -30,7 +30,7 @@ export class AuthService {
     return this.repository.save(user);
   }
 
-  public async login(body: LoginDto): Promise<string | never> {
+  public async login(body: LoginDto): Promise<TokenDto> {
     const { email, password }: LoginDto = body;
     const user: User = await this.repository.findOne({ where: { email } });
 
@@ -52,7 +52,7 @@ export class AuthService {
     return this.helper.generateToken(user);
   }
 
-  public async refresh(user: User): Promise<string> {
+  public async refresh(user: User): Promise<TokenDto> {
     await this.repository.update(user.id, { lastLoginAt: new Date() });
 
     return this.helper.generateToken(user);

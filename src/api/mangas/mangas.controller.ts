@@ -4,7 +4,7 @@ import { MangasService } from './mangas.service';
 import { RetrieveMangaTrendsInternalDto } from './dto/retrieve-manga-trends-internal.dto';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { MangaDetailsDto } from './dto/manga-details.dto';
-import { JwtAuthGuard } from '@/api/user/auth/auth.guard';
+import { JwtAuthGuard } from "@/api/user/auth/guard/auth.guard";
 
 @ApiTags('Mangas')
 @Controller('mangas')
