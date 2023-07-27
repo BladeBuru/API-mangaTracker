@@ -29,3 +29,13 @@ export class LoginDto {
   @IsString()
   public readonly password: string;
 }
+
+export class TokenDto {
+  @ApiProperty()
+  @IsString()
+  public accessToken: string;
+
+  @ApiProperty()
+  @IsString()
+  public refreshToken: string;
+}

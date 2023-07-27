@@ -13,9 +13,9 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
 import { SaveMangaDto } from './dto/save-manga.dto';
 import { LibraryService } from './library.service';
-import { JwtAuthGuard } from '@/api/user/auth/auth.guard';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { UpdateChapterDto } from '@/api/library/dto/update-chapter-dto';
+import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 
 @ApiTags('Library')
 @Controller('library')

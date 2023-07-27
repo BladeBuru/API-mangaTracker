@@ -6,14 +6,13 @@ import {
   ClassSerializerInterceptor,
   UseInterceptors,
   UseGuards,
-  Req,
 } from '@nestjs/common';
-import { RegisterDto, LoginDto } from './auth.dto';
-import { JwtAuthGuard } from './auth.guard';
+import { RegisterDto, LoginDto, TokenDto } from './auth.dto';
 import { AuthService } from './auth.service';
-import { Request } from 'express';
 import User from '../user.entity';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { RefreshTokenGuard } from '@/api/user/auth/guard/refreshToken.guard';
+import { UserDecorator } from '@/shared/Decorator/user.decorator';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -39,10 +38,10 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'token',
-    type: User,
+    type: TokenDto,
   })
   @Post('login')
-  private login(@Body() body: LoginDto): Promise<string | never> {
+  private login(@Body() body: LoginDto): Promise<TokenDto> {
     return this.service.login(body);
   }
 
@@ -50,12 +49,12 @@ export class AuthController {
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({
     status: 200,
-    description: 'New token',
-    type: User,
+    description: 'New tokens',
+    type: TokenDto,
   })
   @Post('refresh')
-  @UseGuards(JwtAuthGuard)
-  private refresh(@Req() { user }: Request): Promise<string | never> {
+  @UseGuards(RefreshTokenGuard)
+  private refresh(@UserDecorator() user: any): Promise<TokenDto> {
     return this.service.refresh(<User>user);
   }
 }

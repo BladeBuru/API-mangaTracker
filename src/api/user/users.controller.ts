@@ -16,7 +16,7 @@ import { UpdateNameDto, UpdatePasswordDto } from './user.dto';
 
 import { UserService } from './user.service';
 import User from './user.entity';
-import { JwtAuthGuard } from './auth/auth.guard';
+import { JwtAuthGuard } from './auth/guard/auth.guard';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Users')
