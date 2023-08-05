@@ -1,10 +1,8 @@
-name: Postman Regression Tests
+name: Postman TNR
 
 on:
     pull_request:
         branches: ["dev"]
-    push:
-        branches: ["cicd/integration-env"]
 
 jobs:
     postman-tests:
@@ -42,7 +40,7 @@ jobs:
           name: Create and Populate Env File
           run: |
             touch src/common/envs/development.env
-            echo PORT=${{ secrets.TNR_API_PORT }} >> src/common/envs/development.env
+            echo PORT=3000 >> src/common/envs/development.env
             echo NODE_ENV=${{ secrets.TNR_NODE_ENV }} >> src/common/envs/development.env
             echo DATABASE_HOST=${{ secrets.TNR_DATABASE_HOST }} >> src/common/envs/development.env
             echo DATABASE_NAME=${{ secrets.TNR_DATABASE_NAME }} >> src/common/envs/development.env
@@ -55,7 +53,7 @@ jobs:
             echo JWT_REFRESH_SECRET=${{ secrets.TNR_JWT_REFRESH_KEY }} >> src/common/envs/development.env
             echo JWT_REFRESH_SECRET_EXPIRES_IN=${{ secrets.TNR_JWT_REFRESH_SECRET_EXPIRES_IN }} >> src/common/envs/development.env
             echo HTTP_TIMEOUT=${{ secrets.TNR_HTTP_TIMEOUT}} >> src/common/envs/development.env
-            echo HTTP_MAX_REDIRECT=${{ secrets.TNR_HTTP_MAX_REDIRECT }} >> src/common/envs/development.env
+            echo HTTP_MAX_REDIRECT=1 >> src/common/envs/development.env
             echo ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT=${{ secrets.TNR_ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT }} >> src/common/envs/development.env
             echo DISABLE_ERROR_MESSAGES_FOR_API_CLIENT=${{ secrets.TNR_DISABLE_ERROR_MESSAGES_FOR_API_CLIENT }} >> src/common/envs/development.env
             echo TYPEORM_DEBUG_LOGGING=${{ secrets.TNR_TYPEORM_DEBUG_LOGGING }} >> src/common/envs/development.env
