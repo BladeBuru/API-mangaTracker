@@ -41,28 +41,28 @@ jobs:
         -
           name: Create and Populate Env File
           run: |
-            touch .env
-            echo PORT=${{ secrets.TNR_API_PORT }} >> .env
-            echo NODE_ENV=${{ secrets.TNR_NODE_ENV }} >> .env
-            echo DATABASE_HOST=${{ secrets.TNR_DATABASE_HOST }} >> .env
-            echo DATABASE_NAME=${{ secrets.TNR_DATABASE_NAME }} >> .env
-            echo DATABASE_USER=${{ secrets.TNR_DATABASE_USER }} >> .env
-            echo DATABASE_PASSWORD=${{ secrets.TNR_DATABASE_PASSWORD }} >> .env
-            echo DATABASE_PORT=${{ secrets.TNR_DATABASE_PORT }} >> .env
-            echo DATABASE_SCHEMA=${{ secrets.TNR_DATABASE_SCHEMA }} >> .env
-            echo JWT_KEY=${{ secrets.TNR_JWT_KEY }} >> .env
-            echo JWT_KEY_EXPIRES_IN=${{ secrets.TNR_JWT_EXPIRES }} >> .env
-            echo JWT_REFRESH_SECRET=${{ secrets.TNR_JWT_REFRESH_KEY }} >> .env
-            echo JWT_REFRESH_SECRET_EXPIRES_IN=${{ secrets.TNR_JWT_REFRESH_SECRET_EXPIRES_IN }} >> .env
-            echo HTTP_TIMEOUT=${{ secrets.TNR_HTTP_TIMEOUT}} >> .env
-            echo HTTP_MAX_REDIRECT=${{ secrets.TNR_HTTP_MAX_REDIRECT }} >> .env
-            echo ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT=${{ secrets.TNR_ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT }} >> .env
-            echo DISABLE_ERROR_MESSAGES_FOR_API_CLIENT=${{ secrets.TNR_DISABLE_ERROR_MESSAGES_FOR_API_CLIENT }} >> .env
-            echo TYPEORM_DEBUG_LOGGING=${{ secrets.TNR_TYPEORM_DEBUG_LOGGING }} >> .env
+            touch src/common/envs/development.env
+            echo PORT=${{ secrets.TNR_API_PORT }} >> src/common/envs/development.env
+            echo NODE_ENV=${{ secrets.TNR_NODE_ENV }} >> src/common/envs/development.env
+            echo DATABASE_HOST=${{ secrets.TNR_DATABASE_HOST }} >> src/common/envs/development.env
+            echo DATABASE_NAME=${{ secrets.TNR_DATABASE_NAME }} >> src/common/envs/development.env
+            echo DATABASE_USER=${{ secrets.TNR_DATABASE_USER }} >> src/common/envs/development.env
+            echo DATABASE_PASSWORD=${{ secrets.TNR_DATABASE_PASSWORD }} >> src/common/envs/development.env
+            echo DATABASE_PORT=${{ secrets.TNR_DATABASE_PORT }} >> src/common/envs/development.env
+            echo DATABASE_SCHEMA=${{ secrets.TNR_DATABASE_SCHEMA }} >> src/common/envs/development.env
+            echo JWT_KEY=${{ secrets.TNR_JWT_KEY }} >> src/common/envs/development.env
+            echo JWT_KEY_EXPIRES_IN=${{ secrets.TNR_JWT_EXPIRES }} >> src/common/envs/development.env
+            echo JWT_REFRESH_SECRET=${{ secrets.TNR_JWT_REFRESH_KEY }} >> src/common/envs/development.env
+            echo JWT_REFRESH_SECRET_EXPIRES_IN=${{ secrets.TNR_JWT_REFRESH_SECRET_EXPIRES_IN }} >> src/common/envs/development.env
+            echo HTTP_TIMEOUT=${{ secrets.TNR_HTTP_TIMEOUT}} >> src/common/envs/development.env
+            echo HTTP_MAX_REDIRECT=${{ secrets.TNR_HTTP_MAX_REDIRECT }} >> src/common/envs/development.env
+            echo ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT=${{ secrets.TNR_ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT }} >> src/common/envs/development.env
+            echo DISABLE_ERROR_MESSAGES_FOR_API_CLIENT=${{ secrets.TNR_DISABLE_ERROR_MESSAGES_FOR_API_CLIENT }} >> src/common/envs/development.env
+            echo TYPEORM_DEBUG_LOGGING=${{ secrets.TNR_TYPEORM_DEBUG_LOGGING }} >> src/common/envs/development.env
             echo "cat .env"
-            cat .env
+            cat src/common/envs/development.env
             echo "ls -a ."
-            ls -a .
+            ls -a src/common/envs
         -
           name: Run the API and Postman's tests
           run: |
