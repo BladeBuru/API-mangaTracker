@@ -59,10 +59,6 @@ jobs:
             echo ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT=${{ secrets.TNR_ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT }} >> src/common/envs/development.env
             echo DISABLE_ERROR_MESSAGES_FOR_API_CLIENT=${{ secrets.TNR_DISABLE_ERROR_MESSAGES_FOR_API_CLIENT }} >> src/common/envs/development.env
             echo TYPEORM_DEBUG_LOGGING=${{ secrets.TNR_TYPEORM_DEBUG_LOGGING }} >> src/common/envs/development.env
-            echo "cat .env"
-            cat src/common/envs/development.env
-            echo "ls -a ."
-            ls -a src/common/envs
         -
           name: Run the API and Postman's tests
           run: |
