@@ -39,7 +39,7 @@ jobs:
           name: Install newman
           run: npm install -g newman
         -
-          name: Create Env File
+          name: Create and Populate Env File
           run: |
             touch .env
             echo PORT=${{ secrets.TNR_API_PORT }} >> .env
@@ -59,6 +59,10 @@ jobs:
             echo ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT=${{ secrets.TNR_ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT }} >> .env
             echo DISABLE_ERROR_MESSAGES_FOR_API_CLIENT=${{ secrets.TNR_DISABLE_ERROR_MESSAGES_FOR_API_CLIENT }} >> .env
             echo TYPEORM_DEBUG_LOGGING=${{ secrets.TNR_TYPEORM_DEBUG_LOGGING }} >> .env
+            echo "cat .env"
+            cat .env
+            echo "ls -a ."
+            ls -a .
         -
           name: Run the API and Postman's tests
           run: |
