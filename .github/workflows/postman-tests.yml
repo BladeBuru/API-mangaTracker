@@ -1,0 +1,46 @@
+name: Postman Regression Tests
+
+on:
+    pull_request:
+        branches: ["dev"]
+    push:
+        branches: ["cicd/integration-env"]
+
+jobs:
+    postman-tests:
+      runs-on: ubuntu-latest
+      timeout-minutes: 10
+
+      services:
+          postgres:
+            image: postgres
+
+            env:
+              POSTGRES_PASSWORD: postgres
+              POSTGRES_USER: postgres
+              POSTGRES_DB: mt_db
+            
+            options: >-
+              --health-cmd pg_isready
+              --health-interval 10s
+              --health-timeout 5s
+              --health-retries 5
+            ports:
+              - 5432:5432
+
+      steps:
+        -
+          name: Checkout
+          uses: actions/checkout@v3
+        -
+          name: Install Packages
+          run: npm ci
+        -
+          name: Install newman
+          run: npm install -g newman
+        -
+          name: Run the API and Postman's tests
+          run: |
+            npm run start:dev &
+            sleep 60
+            newman run https://api.postman.com/collections/21616667-b4278202-be33-4b8c-a274-5113955e6838?access_key=${{ secrets.POSTMAN_API_ACCESS_KEY }}
