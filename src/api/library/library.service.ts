@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -13,12 +14,14 @@ import { MangasService } from 'src/api/mangas/mangas.service';
 import { MangaDetailsDto } from 'src/api/mangas/dto/manga-details.dto';
 import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
 import { ChapterException } from './exceptions/chapter.exception';
+import { UpdateMangaService } from '../mangas/update-manga.service';
 
 @Injectable()
 export class LibraryService {
   constructor(
     private readonly userService: UserService,
     private readonly mangasService: MangasService,
+    private readonly updateMangaService: UpdateMangaService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(Manga)
@@ -27,44 +30,55 @@ export class LibraryService {
     private readonly userMangaRepository: Repository<UserManga>,
   ) {}
 
-  async saveManga(muId: number, userId: number): Promise<MangaDetailsDto> {
+  async saveManga(muId: number, user: User): Promise<MangaDetailsDto> {
     const mangaDto = await this.mangasService.getMangaDetails(muId);
     const manga = Manga.fromMU(mangaDto);
 
-    const userEntity = await this.userService.returnUserIfExist(userId);
-
-    if (userEntity === null)
-      throw new NotFoundException(`User with id ${userId} does not exist`);
-
-    let mangaEntity = await this.returnMangaIfExist(muId.toString());
+    let mangaEntity = await this.mangasService.returnMangaIfExist(
+      muId.toString(),
+    );
 
     if (mangaEntity === null) {
       mangaEntity = await this.mangaRepository.save(manga);
     }
 
     const userMangaEntityInDB = await this.userMangaRepository.findOneBy({
-      user: userEntity,
-      manga: mangaEntity,
+      user: { id: user.id },
+      manga: { mu_id: mangaEntity.mu_id },
     });
 
     if (userMangaEntityInDB !== null)
       throw new BadRequestException('Manga already saved');
 
     const userManga = new UserManga();
-    userManga.user = userEntity;
+    userManga.user = user;
     userManga.manga = mangaEntity;
     await this.userMangaRepository.save(userManga);
     return mangaDto;
   }
 
   async getMangas(userId: number): Promise<MangaQuickViewDto[]> {
-    const user = await this.userRepository.findOne({
+    let user = await this.userRepository.findOne({
       where: { id: userId },
       relations: ['user_mangas', 'user_mangas.manga'],
     });
 
-    const nbMangas = user.user_mangas.length;
+    const mangaIds = await this.getMangasIds(user.user_mangas);
+    const updatedMangas: Manga[] =
+      await this.updateMangaService.checkIfMangaArrayInfoIsOutdated(mangaIds);
 
+    /* 
+    New request for getting updated content if previous mangas were
+    outdated 
+    */
+    if (updatedMangas.length !== 0) {
+      user = await this.userRepository.findOne({
+        where: { id: userId },
+        relations: ['user_mangas', 'user_mangas.manga'],
+      });
+    }
+
+    const nbMangas = user.user_mangas.length;
     const userMangasQuickView: MangaQuickViewDto[] = new Array(nbMangas);
     for (let i = 0; i < nbMangas; i++) {
       userMangasQuickView[i] = MangaQuickViewDto.fromLibrary(
@@ -74,12 +88,12 @@ export class LibraryService {
     return userMangasQuickView;
   }
 
-  async returnMangaIfExist(muId: string): Promise<Manga> {
-    const mangaEntity = await this.mangaRepository.findOneBy({
-      mu_id: muId,
+  async getMangasIds(userMangas: UserManga[]): Promise<number[]> {
+    const mangasIds: number[] = [];
+    userMangas.forEach((userManga) => {
+      mangasIds.push(parseInt(userManga.manga.mu_id));
     });
-
-    return mangaEntity;
+    return mangasIds;
   }
 
   async deleteManga(userId: number, muId: number): Promise<boolean> {
@@ -97,6 +111,10 @@ export class LibraryService {
 
     if (mangaToDelete.length === 1) {
       await this.userMangaRepository.remove(mangaToDelete[0]);
+    } else if (mangaToDelete.length > 1) {
+      throw new ConflictException(
+        'Too much records found in user library for given muId',
+      );
     } else {
       throw new NotFoundException(
         `Nothing found in user's library for userId: ${userId} and muId: ${muId} `,
@@ -115,7 +133,9 @@ export class LibraryService {
     if (userEntity === null)
       throw new NotFoundException(`User with id ${userId} does not exist`);
 
-    const mangaEntity = await this.returnMangaIfExist(muId.toString());
+    const mangaEntity = await this.mangasService.returnMangaIfExist(
+      muId.toString(),
+    );
 
     if (mangaEntity === null)
       throw new NotFoundException(

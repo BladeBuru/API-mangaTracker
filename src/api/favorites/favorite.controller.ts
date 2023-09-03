@@ -15,7 +15,7 @@ import { FavoritesDto } from '@/api/favorites/dto/favorite.dto';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 
-@ApiTags('favorites)')
+@ApiTags('Favorites')
 @Controller('favorites')
 export class FavoriteController {
   @Inject(FavoriteService)
@@ -31,7 +31,7 @@ export class FavoriteController {
     type: MangaQuickViewDto,
   })
   @UseGuards(JwtAuthGuard)
-  @Post('favorites')
+  @Post('save')
   async favorites(
     @Body() body: FavoritesDto,
     @UserDecorator() user: any,
@@ -49,7 +49,7 @@ export class FavoriteController {
     type: MangaQuickViewDto,
   })
   @UseGuards(JwtAuthGuard)
-  @Get('favorites')
+  @Get('all')
   async getFavorites(@UserDecorator() user: any): Promise<MangaQuickViewDto[]> {
     return await this.service.getFavoriteManga(user.id);
   }

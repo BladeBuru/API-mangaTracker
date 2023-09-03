@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   Post,
   Put,
   UseGuards,
@@ -49,7 +50,7 @@ export class LibraryController {
     type: MangaQuickViewDto,
   })
   @ApiResponse({ status: 400, description: 'Bad Request' })
-  @Post('all')
+  @Get('all')
   @UseGuards(JwtAuthGuard)
   async all(@UserDecorator() user: any): Promise<MangaQuickViewDto[]> {
     return this.libraryService.getMangas(user.id);

@@ -1,4 +1,11 @@
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import { MangaDetailsDto } from './dto/manga-details.dto';
 import { UserManga } from './user-manga.entity';
 import { UserMangaFavorite } from '@/api/favorites/user-manga-favorite.entity';
@@ -28,6 +35,12 @@ export class Manga {
 
   @Column()
   year: number;
+
+  @CreateDateColumn()
+  created_at: Date;
+
+  @UpdateDateColumn()
+  updated_at: Date;
 
   @OneToMany(() => UserManga, (userManga) => userManga.manga)
   user_mangas: UserManga[];
