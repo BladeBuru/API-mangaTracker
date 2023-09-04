@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MangaDetailsDto } from './dto/manga-details.dto';
 import { MangasService } from './mangas.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Manga } from './manga.entity';
 import { Repository } from 'typeorm';
 import { DateHelper } from '@/common/helper/date.helper';
+import { UserManga } from './user-manga.entity';
 
 @Injectable()
 export class UpdateMangaService {
@@ -19,26 +19,22 @@ export class UpdateMangaService {
 
   async checkIfMangaArrayInfoIsOutdated(muIds: number[]): Promise<Manga[]> {
     const updatedMangas: Manga[] = [];
-    muIds.forEach(async (muId) => {
-      const updatedManga: Manga = await this.checkIfMangaInfoIsOutdated(muId);
+    for (const muId of muIds) {
+      const updatedManga: Manga = await this.checkIfMangaInfoIsOutdated(
+        Number(muId),
+      );
+
       if (updatedManga !== null) updatedMangas.push(updatedManga);
-    });
+    }
     return updatedMangas;
   }
 
   async checkIfMangaInfoIsOutdated(muId: number): Promise<Manga> {
-    const mangaEntity = await this.mangasService.returnMangaIfExist(
+    const mangaEntity: Manga = await this.mangasService.returnMangaIfExist(
       muId.toString(),
     );
 
-    this.logger.debug(`Checking if info is outdated for ${mangaEntity}`);
-    this.logger.debug(
-      `Delta: ${DateHelper.deltaDays(mangaEntity.updated_at, new Date())}`,
-    );
-
     if (!this.isMangaInfoOutdated(mangaEntity)) return;
-
-    this.logger.debug(`Manga Info outdated ${mangaEntity}`);
 
     await this.updateMangaInfo(mangaEntity);
 
@@ -53,6 +49,7 @@ export class UpdateMangaService {
   }
 
   async updateMangaInfo(manga: Manga): Promise<void> {
+    this.logger.log(`Updating Info for Manga: ${manga.title}`);
     const freshMangaDto = await this.mangasService.getMangaDetails(
       Number(manga.mu_id),
     );
@@ -67,5 +64,13 @@ export class UpdateMangaService {
         year: freshMangaDto.year,
       },
     );
+  }
+
+  async getMangasIds(userMangas: UserManga[]): Promise<number[]> {
+    const mangasIds: number[] = [];
+    userMangas.forEach((userManga) => {
+      mangasIds.push(parseInt(userManga.manga.mu_id));
+    });
+    return mangasIds;
   }
 }

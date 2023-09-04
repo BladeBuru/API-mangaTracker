@@ -63,7 +63,9 @@ export class LibraryService {
       relations: ['user_mangas', 'user_mangas.manga'],
     });
 
-    const mangaIds = await this.getMangasIds(user.user_mangas);
+    const mangaIds = await this.updateMangaService.getMangasIds(
+      user.user_mangas,
+    );
     const updatedMangas: Manga[] =
       await this.updateMangaService.checkIfMangaArrayInfoIsOutdated(mangaIds);
 
@@ -86,14 +88,6 @@ export class LibraryService {
       );
     }
     return userMangasQuickView;
-  }
-
-  async getMangasIds(userMangas: UserManga[]): Promise<number[]> {
-    const mangasIds: number[] = [];
-    userMangas.forEach((userManga) => {
-      mangasIds.push(parseInt(userManga.manga.mu_id));
-    });
-    return mangasIds;
   }
 
   async deleteManga(userId: number, muId: number): Promise<boolean> {

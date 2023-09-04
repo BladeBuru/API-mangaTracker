@@ -26,7 +26,7 @@ export class AuthHelper {
 
   // Generate JWT Token
   public async generateToken(user: User): Promise<TokenDto> {
-    let dto = new TokenDto();
+    const dto = new TokenDto();
     dto.accessToken = await this.jwt.signAsync(
       {
         id: user.id,
