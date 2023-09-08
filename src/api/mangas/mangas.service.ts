@@ -11,12 +11,17 @@ import { AxiosError } from 'axios';
 import { MU_DETAIL_URL, MU_TRENDS_URL, NSFW_GENRES } from './constants';
 import { HelperService } from './helper.service';
 import { MangaDetailsDto } from './dto/manga-details.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Manga } from './manga.entity';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class MangasService {
   constructor(
     private readonly httpService: HttpService,
     private readonly helperService: HelperService,
+    @InjectRepository(Manga)
+    private readonly mangaRepository: Repository<Manga>,
   ) {}
 
   private readonly logger = new Logger(MangasService.name);
@@ -72,5 +77,13 @@ export class MangasService {
       ),
     );
     return MangaDetailsDto.fromMU(data);
+  }
+
+  async returnMangaIfExist(muId: string): Promise<Manga> {
+    const mangaEntity = await this.mangaRepository.findOneBy({
+      mu_id: muId,
+    });
+
+    return mangaEntity;
   }
 }
