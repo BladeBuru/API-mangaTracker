@@ -2,7 +2,7 @@ name: CI/CD Build & Publish Image
 
 on:
   push:
-    branches: [ "master", "integration", "cicd/integration-env" ]
+    branches: [ "master", "integration" ]
 
 env:
   BASE_BRANCH_NAME: ${{ github.base_ref || github.ref_name }}
