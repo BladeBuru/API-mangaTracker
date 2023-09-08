@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Logger,
   Param,
   Post,
   Query,
@@ -117,6 +118,10 @@ export class MangasController {
   async searchManga(
     @Body() searchMangaDto: SearchMangaDto,
   ): Promise<MangaQuickViewDto[]> {
-    return await this.mangasService.searchManga(searchMangaDto.search_pattern);
+    return await this.mangasService.searchManga(
+      searchMangaDto.search_pattern,
+      searchMangaDto.limit,
+      searchMangaDto.offset,
+    );
   }
 }

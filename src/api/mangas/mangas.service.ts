@@ -84,9 +84,12 @@ export class MangasService {
     return mangaEntity;
   }
 
-  async searchManga(searchPattern: string) {
+  async searchManga(searchPattern: string, limit: number, offset: number) {
     const payload = {
       search: searchPattern,
+      perpage: limit,
+      page: offset,
+      exclude_genre: NSFW_GENRES,
     };
     const { data } = await firstValueFrom(
       this.httpService.post<MangaQuickViewDto[]>(MU_TRENDS_URL, payload).pipe(
