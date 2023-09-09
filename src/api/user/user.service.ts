@@ -2,9 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Request } from 'express';
-import { UpdateNameDto, UpdatePasswordDto } from './user.dto';
+import { UpdatePasswordDto } from './dto/update-password.dto';
 import userEntity from './user.entity';
 import User from './user.entity';
+import { UpdateNameDto } from './dto/update-name.dto';
 
 @Injectable()
 export class UserService {
