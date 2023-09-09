@@ -1,10 +1,20 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Logger,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { MangaQuickViewDto } from './dto/manga-quick-view.dto';
 import { MangasService } from './mangas.service';
 import { RetrieveMangaTrendsInternalDto } from './dto/retrieve-manga-trends-internal.dto';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { MangaDetailsDto } from './dto/manga-details.dto';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
+import { SearchMangaDto } from './dto/search-manga.dto';
 
 @ApiTags('Mangas')
 @Controller('mangas')
@@ -94,5 +104,24 @@ export class MangasController {
   @Get(':id')
   async mangaDetails(@Param('id') id: number): Promise<MangaDetailsDto> {
     return await this.mangasService.getMangaDetails(id);
+  }
+
+  @ApiOperation({ summary: 'Search for mangas matching the given pattern' })
+  @ApiResponse({
+    status: 200,
+    description: 'Return an array of mangas matching the given pattern',
+    type: MangaQuickViewDto,
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden Access' })
+  @Post('search')
+  @UseGuards(JwtAuthGuard)
+  async searchManga(
+    @Body() searchMangaDto: SearchMangaDto,
+  ): Promise<MangaQuickViewDto[]> {
+    return await this.mangasService.searchManga(
+      searchMangaDto.search_pattern,
+      searchMangaDto.limit,
+      searchMangaDto.offset,
+    );
   }
 }

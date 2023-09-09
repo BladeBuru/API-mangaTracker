@@ -54,4 +54,12 @@ export class MangaQuickViewDto {
     dto.totalChapters = userManga.manga.total_chapters;
     return dto;
   }
+
+  static arrayFromMu(array: any): MangaQuickViewDto[] {
+    const mangas: MangaQuickViewDto[] = new Array(array.length);
+    for (let i = 0; i < array.length; i++) {
+      mangas[i] = MangaQuickViewDto.fromMu(array[i]);
+    }
+    return mangas;
+  }
 }

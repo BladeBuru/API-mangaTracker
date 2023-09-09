@@ -9,15 +9,19 @@ import {
   Inject,
   Delete,
   Param,
+  Get,
 } from '@nestjs/common';
 import { Request } from 'express';
 
-import { UpdateNameDto, UpdatePasswordDto } from './user.dto';
+import { UpdateNameDto } from './dto/update-name.dto';
+import { UpdatePasswordDto } from './dto/update-password.dto';
 
 import { UserService } from './user.service';
 import User from './user.entity';
 import { JwtAuthGuard } from './auth/guard/auth.guard';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { UserDecorator } from '@/shared/Decorator/user.decorator';
+import { UserInformationDto } from './dto/user-information.dto';
 
 @ApiTags('Users')
 @Controller('user')
@@ -69,10 +73,20 @@ export class UserController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor)
-  private deleteUser(
-    @Param('id') id: string,
-    @Req() req: Request,
-  ): Promise<User> {
+  deleteUser(@Param('id') id: string, @Req() req: Request): Promise<User> {
     return this.service.deleteUser(id, req);
+  }
+
+  @ApiOperation({ summary: 'Return user important information' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({
+    status: 200,
+    description: 'User information successfully retrieved and returned',
+    type: UserInformationDto,
+  })
+  @UseGuards(JwtAuthGuard)
+  @Get('information')
+  getUser(@UserDecorator() user: User) {
+    return UserInformationDto.fromEntity(user);
   }
 }

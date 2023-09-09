@@ -49,11 +49,8 @@ export class MangasService {
         }),
       ),
     );
-    const nbMangas = data['results'].length;
-    const mangas: MangaQuickViewDto[] = new Array(nbMangas);
-    for (let i = 0; i < nbMangas; i++) {
-      mangas[i] = MangaQuickViewDto.fromMu(data['results'][i]);
-    }
+
+    const mangas = MangaQuickViewDto.arrayFromMu(data['results']);
     return mangas;
   }
 
@@ -85,5 +82,25 @@ export class MangasService {
     });
 
     return mangaEntity;
+  }
+
+  async searchManga(searchPattern: string, limit: number, offset: number) {
+    const payload = {
+      search: searchPattern,
+      perpage: limit,
+      page: offset,
+      exclude_genre: NSFW_GENRES,
+    };
+    const { data } = await firstValueFrom(
+      this.httpService.post<MangaQuickViewDto[]>(MU_TRENDS_URL, payload).pipe(
+        catchError((error: AxiosError) => {
+          this.logger.error(error.code);
+          throw `Impossible to retrieve mangas with search pattern ${searchPattern} from external service`;
+        }),
+      ),
+    );
+
+    const mangas = MangaQuickViewDto.arrayFromMu(data['results']);
+    return mangas;
   }
 }
