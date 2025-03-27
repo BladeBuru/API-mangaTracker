@@ -15,19 +15,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - 
+      -
         name: Checkout
         uses: actions/checkout@v3
-      - 
+      -
         name: Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - 
+      -
         name: Build, Run & Publish Docker image
         run: |
           docker build -t ghcr.io/flt-yann/manga-tracker-api:${{ env.BRANCH_NAME }}-latest .
           docker run -d -p 80:80 ghcr.io/flt-yann/manga-tracker-api:${{ env.BRANCH_NAME }}-latest
           docker push ghcr.io/flt-yann/manga-tracker-api:${{ env.BRANCH_NAME }}-latest
+
+      - name: Rollout
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+
+            /home/yann/rollout.sh mgt-app
