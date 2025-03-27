@@ -31,14 +31,14 @@ jobs:
           docker build -t ghcr.io/flt-yann/manga-tracker-api:${{ env.BRANCH_NAME }}-latest .
           docker run -d -p 80:80 ghcr.io/flt-yann/manga-tracker-api:${{ env.BRANCH_NAME }}-latest
           docker push ghcr.io/flt-yann/manga-tracker-api:${{ env.BRANCH_NAME }}-latest
-
-      - name: Rollout
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          password: ${{ secrets.SSH_PASSWORD }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-
-            /home/yann/rollout.sh mgt-app
+      -
+         name: Rollout
+         uses: appleboy/ssh-action@master
+         with:
+            host: ${{ secrets.SSH_HOST }}
+            username: ${{ secrets.SSH_USERNAME }}
+            key: ${{ secrets.SSH_PRIVATE_KEY }}
+            passphrase: ${{ secrets.SSH_PASSPHRASE }}
+            port: ${{ secrets.SSH_PORT }}
+            script: |          
+              /home/yann/rollout.sh mgt-app
