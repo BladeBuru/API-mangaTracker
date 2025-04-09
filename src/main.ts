@@ -42,6 +42,7 @@ async function bootstrap() {
       `Here is the documentation and specification of the Manga Tracker API. 
       Here you'll find all the currently available endpoints and how to use them.`,
     )
+    .addBearerAuth()
     .setVersion('1.0')
     .build();
   const options: SwaggerDocumentOptions = {
