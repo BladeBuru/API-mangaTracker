@@ -40,13 +40,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
-            # Ici, ton script rollout.sh doit :
-            # 1) docker pull bladeburu/manga-tracker-api:${{ env.BRANCH_NAME }}-latest
-            # 2) docker stop mgt-app || true
-            # 3) docker rm mgt-app || true
-            # 4) docker run -d --name mgt-app \
-            #       -p 9000:3000 \
-            #       bladeburu/manga-tracker-api:${{ env.BRANCH_NAME }}-latest
-            /home/admin/rollout.sh mgt-app ${{ env.BRANCH_NAME }}-latest
+            /home/admin/rollout.sh manga-tracker-api ${{ env.BRANCH_NAME }}-latest
        
             
