@@ -7,7 +7,7 @@ on:
 env:
   
   BASE_BRANCH_NAME: ${{ github.base_ref || github.ref_name }}
-  BRANCH_NAME: ${{ replace(github.base_ref || github.ref_name, '/', '-') }}
+  BRANCH_NAME: ${BASE_BRANCH_NAME//\//-}
 
 permissions: write-all
 
