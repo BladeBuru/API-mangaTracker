@@ -22,7 +22,7 @@ export class FavoriteController {
   private readonly service: FavoriteService;
 
   @ApiOperation({
-    summary: 'Add a manga to users favorites mangass',
+    summary: 'Add a manga to users favorites mangas',
   })
   @ApiResponse({ status: 400, description: 'Bad Request' })
   @ApiResponse({
