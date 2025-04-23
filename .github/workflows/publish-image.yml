@@ -39,7 +39,8 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          script: |
-            /home/admin/rollout.sh manga-tracker-api ${{ env.BRANCH_NAME }}-latest
+          script: | 
+            set -x
+            bash /home/admin/rollout.sh manga-tracker-api ${{ env.BRANCH_NAME }}-latest
        
             
