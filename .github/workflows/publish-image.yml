@@ -45,7 +45,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: | 
             set -x
-            TAG="${BRANCH_NAME}-latest"
+            TAG="$BASE_BRANCH_NAME-latest"
             echo "▶ Deploying tag: $TAG"
             bash /home/admin/rollout.sh manga-tracker-api "$TAG"
        
