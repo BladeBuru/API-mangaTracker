@@ -4,26 +4,29 @@ on:
   push:
     branches: [ "master", "integration", "dev" ]
 
-env:
-  
-  BASE_BRANCH_NAME: ${{ github.base_ref || github.ref_name }}
-  BRANCH_NAME: ${BASE_BRANCH_NAME//\//-}
-
 permissions: write-all
 
 jobs:
   publish-manga-tracker-api-image:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
+
+      - name: Set branch environment variables
+        run: |
+          BASE_BRANCH_NAME="${GITHUB_BASE_REF:-${GITHUB_REF_NAME}}"
+          BRANCH_NAME="${BASE_BRANCH_NAME//\//-}"
+          echo "BASE_BRANCH_NAME=$BASE_BRANCH_NAME" >> $GITHUB_ENV
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+
       - name: Debug branch names
         run: |
-            echo "BASE_BRANCH_NAME = $BASE_BRANCH_NAME"
-            echo "BRANCH_NAME      = $BRANCH_NAME"
-     
+          echo "BASE_BRANCH_NAME = $BASE_BRANCH_NAME"
+          echo "BRANCH_NAME      = $BRANCH_NAME"
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -49,5 +52,3 @@ jobs:
             TAG="${{ env.BRANCH_NAME }}-latest"
             echo "▶ Deploying tag: $TAG"
             bash /home/admin/rollout.sh manga-tracker-api "$TAG"
-       
-            
