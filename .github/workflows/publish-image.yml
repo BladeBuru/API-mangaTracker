@@ -21,8 +21,16 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+
+      
       - name: Build & push Docker image
         run: |
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          BRANCH_SLUG="${BRANCH_NAME//\//-}"
+          TIMESTAMP="$(date +'%Y%m%d%H%M')"
+          TAG="${BRANCH_SLUG}-${TIMESTAMP}"
+
+          echo "DEPLOY_TAG=$TAG" >> $GITHUB_ENV
           IMAGE=bladeburu/manga-tracker-api:$TAG
           docker build --target production -t $IMAGE .
           docker push $IMAGE
@@ -37,9 +45,6 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: | 
             set -x
-            BRANCH_NAME="${GITHUB_REF#refs/heads/}"
-            BRANCH_SLUG="${BRANCH_NAME//\//-}"
-            TIMESTAMP="$(date +'%Y%m%d%H%M')"
-            TAG="${BRANCH_SLUG}-${TIMESTAMP}"
-            echo "▶ Deploying image tag: $TAG"
-            bash /home/admin/rollout.sh manga-tracker-api "$TAG"
+
+            echo "▶ Deploying image tag: $DEPLOY_TAG"
+            bash /home/admin/rollout.sh manga-tracker-api "$DEPLOY_TAG"
