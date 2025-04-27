@@ -13,20 +13,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set branch environment variables
-        run: |
-          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
-          BRANCH_SLUG="${BRANCH_NAME//\//-}"
-          TIMESTAMP="$(date +'%Y%m%d%H%M')"
-          TAG="${BRANCH_SLUG}-${TIMESTAMP}"
-          echo "GITHUB_REF   = $GITHUB_REF"
-          echo "BRANCH_NAME  = $BRANCH_NAME"
-          echo "BRANCH_SLUG  = $BRANCH_SLUG"
-          echo "TIMESTAMP    = $TIMESTAMP"
-          echo "→ TAG        = $TAG"
-     
+        uses: actions/checkout@v3     
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -50,6 +37,9 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: | 
             set -x
-            TAG="$DEPLOY_TAG"
+            BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+            BRANCH_SLUG="${BRANCH_NAME//\//-}"
+            TIMESTAMP="$(date +'%Y%m%d%H%M')"
+            TAG="${BRANCH_SLUG}-${TIMESTAMP}"
             echo "▶ Deploying image tag: $TAG"
             bash /home/admin/rollout.sh manga-tracker-api "$TAG"
