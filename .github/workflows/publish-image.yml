@@ -22,10 +22,7 @@ jobs:
           echo "BASE_BRANCH_NAME=$BASE_BRANCH_NAME" >> $GITHUB_ENV
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
 
-      - name: Debug branch names
-        run: |
-          echo "BASE_BRANCH_NAME = $BASE_BRANCH_NAME"
-          echo "BRANCH_NAME      = $BRANCH_NAME"
+     
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -35,9 +32,13 @@ jobs:
 
       - name: Build & push Docker image
         run: |
-          IMAGE=bladeburu/manga-tracker-api:${{ env.BRANCH_NAME }}-latest
+          TIMESTAMP=$(date +'%Y%m%d%H%M')
+          TAG=${{ env.BRANCH_NAME }}-$TIMESTAMP
+
+          IMAGE=bladeburu/manga-tracker-api:$TAG
           docker build --target production -t $IMAGE .
           docker push $IMAGE
+          echo "DEPLOY_TAG=$TAG" >> $GITHUB_ENV
 
       - name: Rollout on NAS
         uses: appleboy/ssh-action@master
@@ -48,7 +49,6 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: | 
             set -x
-            echo "Resolved branch name is: ${{ env.BRANCH_NAME }}"
-            TAG="${{ env.BRANCH_NAME }}-latest"
-            echo "▶ Deploying tag: $TAG"
+            TAG="$DEPLOY_TAG"
+            echo "▶ Deploying image tag: $TAG"
             bash /home/admin/rollout.sh manga-tracker-api "$TAG"
