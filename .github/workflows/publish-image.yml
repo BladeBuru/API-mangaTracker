@@ -17,10 +17,10 @@ jobs:
 
       - name: Set branch environment variables
         run: |
-          BASE_BRANCH_NAME="${GITHUB_BASE_REF:-${GITHUB_REF_NAME}}"
-          BRANCH_NAME="${BASE_BRANCH_NAME//\//-}"
-          echo "BASE_BRANCH_NAME=$BASE_BRANCH_NAME" >> $GITHUB_ENV
-          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          BRANCH_SLUG="${BRANCH_NAME//\//-}"
+          TIMESTAMP="$(date +'%Y%m%d%H%M')"
+          TAG="${BRANCH_SLUG}-${TIMESTAMP}"
 
      
 
@@ -32,9 +32,6 @@ jobs:
 
       - name: Build & push Docker image
         run: |
-          TIMESTAMP=$(date +'%Y%m%d%H%M')
-          TAG=${{ env.BRANCH_NAME }}-$TIMESTAMP
-
           IMAGE=bladeburu/manga-tracker-api:$TAG
           docker build --target production -t $IMAGE .
           docker push $IMAGE
