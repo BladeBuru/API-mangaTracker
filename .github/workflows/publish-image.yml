@@ -45,6 +45,6 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: | 
             set -x
-
-            echo "▶ Deploying image tag: $DEPLOY_TAG"
-            bash /home/admin/rollout.sh manga-tracker-api "$DEPLOY_TAG"
+            TAG="${{ env.BRANCH_NAME }}"
+            echo "▶ Deploying image tag: $TAG"
+            bash /home/admin/rollout.sh manga-tracker-api "$TAG"
