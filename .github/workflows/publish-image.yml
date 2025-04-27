@@ -21,7 +21,11 @@ jobs:
           BRANCH_SLUG="${BRANCH_NAME//\//-}"
           TIMESTAMP="$(date +'%Y%m%d%H%M')"
           TAG="${BRANCH_SLUG}-${TIMESTAMP}"
-
+          echo "GITHUB_REF   = $GITHUB_REF"
+          echo "BRANCH_NAME  = $BRANCH_NAME"
+          echo "BRANCH_SLUG  = $BRANCH_SLUG"
+          echo "TIMESTAMP    = $TIMESTAMP"
+          echo "→ TAG        = $TAG"
      
 
       - name: Log in to Docker Hub
