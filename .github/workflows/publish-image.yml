@@ -50,8 +50,9 @@ jobs:
             bash /home/admin/rollout.sh manga-tracker-api "$TAG"  
   
       - name: Cleanup old Docker Hub tags
-        uses: marvinpinto/delete-old-docker-tags@v1
+        uses: m3ntorship/action-dockerhub-cleanup@v1.4
         with:
+          registry: https://hub.docker.com
           username:   ${{ secrets.DOCKERHUB_USERNAME }}
           password:   ${{ secrets.DOCKERHUB_TOKEN }}
           images:     bladeburu/manga-tracker-api
