@@ -53,7 +53,7 @@ jobs:
         uses: alesharik/delete-old-docker-tags@v0.0.2
         with:
           registry:    https://hub.docker.com
-          username:    ${{ secrets.DOCKERHUB_USERNAME }}
+          username:    ${{ secrets.DOCKERHUB_USER }}
           password:    ${{ secrets.DOCKERHUB_TOKEN }}
           repository:  bladeburu/manga-tracker-api
           keep-last:   2
