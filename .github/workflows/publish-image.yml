@@ -49,11 +49,4 @@ jobs:
             echo "▶ Deploying image tag: $TAG"
             bash /home/admin/rollout.sh manga-tracker-api "$TAG"  
   
-      - name: Cleanup old Docker Hub tags
-        uses: alesharik/delete-old-docker-tags@v0.0.2
-        with:
-          registry:    https://registry-1.docker.io
-          username:    ${{ secrets.DOCKERHUB_USER }}
-          password:    ${{ secrets.DOCKERHUB_TOKEN }}
-          repository:  bladeburu/manga-tracker-api
-          keep-last:   2
+   
