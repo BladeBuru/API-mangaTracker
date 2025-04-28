@@ -56,4 +56,4 @@ jobs:
           username:   ${{ secrets.DOCKERHUB_USERNAME }}
           password:   ${{ secrets.DOCKERHUB_TOKEN }}
           repository:     bladeburu/manga-tracker-api
-          keep-tags:  2
+          keep-last:  2
