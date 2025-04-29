@@ -40,7 +40,7 @@ export class UserController {
   @ApiResponse({
     status: 200,
     description: 'The found record',
-    type: User,
+    type: UserInformationDto,
   })
   @Put('name')
   @UseGuards(JwtAuthGuard)
@@ -79,7 +79,10 @@ export class UserController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor)
-  deleteUser(@Param('id') id: string, @Req() req: Request): Promise<User> {
+  private deleteUser(
+    @Param('id') id: string,
+    @Req() req: Request,
+  ): Promise<UserInformationDto> {
     return this.service.deleteUser(id, req);
   }
 
@@ -92,7 +95,7 @@ export class UserController {
   })
   @UseGuards(JwtAuthGuard)
   @Get('information')
-  getUser(@UserDecorator() user: User) {
+  private getUser(@UserDecorator() user: User) {
     return UserInformationDto.fromEntity(user);
   }
 }

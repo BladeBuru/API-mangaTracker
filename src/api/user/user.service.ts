@@ -3,41 +3,47 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Request } from 'express';
 import { UpdatePasswordDto } from './dto/update-password.dto';
-import userEntity from './user.entity';
 import User from './user.entity';
 import { UpdateNameDto } from './dto/update-name.dto';
+import { UserInformationDto } from '@/api/user/dto/user-information.dto';
 
 @Injectable()
 export class UserService {
   @InjectRepository(User)
   private readonly repository: Repository<User>;
 
-  public async updateName(body: UpdateNameDto, req: Request): Promise<User> {
+  public async updateName(
+    body: UpdateNameDto,
+    req: Request,
+  ): Promise<UserInformationDto> {
     const user: User = <User>req.user;
-
     user.username = body.name;
-
-    return this.repository.save(user);
+    await this.repository.save(user);
+    return UserInformationDto.fromEntity(user);
   }
 
   public async updatePassword(
     body: UpdatePasswordDto,
     req: Request,
-  ): Promise<User> {
+  ): Promise<UserInformationDto> {
     const user: User = <User>req.user;
     user.password = body.password;
-    return this.repository.save(user);
+    await this.repository.save(user);
+    return UserInformationDto.fromEntity(user);
   }
 
-  public async deleteUser(id: string, req: Request): Promise<User> {
+  public async deleteUser(
+    id: string,
+    req: Request,
+  ): Promise<UserInformationDto> {
     const user: User = <User>req.user;
-    return this.repository.remove(user);
+    await this.repository.remove(user);
+    return UserInformationDto.fromEntity(user);
   }
-  async returnUserIfExist(userId: number): Promise<userEntity> {
-    const userEntity = await this.repository.findOneBy({
+
+  async returnUserIfExist(userId: number): Promise<User> {
+    return await this.repository.findOneBy({
       id: userId,
     });
-
-    return userEntity;
   }
 }
