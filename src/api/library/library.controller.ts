@@ -24,6 +24,7 @@ import { UpdateChapterDto } from '@/api/library/dto/update-chapter-dto';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 
 @ApiTags('Library')
+@ApiBearerAuth()
 @Controller('library')
 export class LibraryController {
   constructor(private readonly libraryService: LibraryService) {}
@@ -41,7 +42,6 @@ export class LibraryController {
   @UseInterceptors(NotFoundInterceptor)
   @Post('save')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   async save(
     @Body() saveMangaDto: SaveMangaDto,
     @UserDecorator() user: any,
@@ -58,7 +58,6 @@ export class LibraryController {
   @ApiResponse({ status: 400, description: 'Bad Request' })
   @Get('all')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   async all(@UserDecorator() user: any): Promise<MangaQuickViewDto[]> {
     return this.libraryService.getMangas(user.id);
   }
@@ -73,7 +72,6 @@ export class LibraryController {
   @ApiResponse({ status: 404, description: 'Entry not found' })
   @Delete('delete')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   async delete(
     @Body() deleteMangaDto: SaveMangaDto,
     @UserDecorator() user: any,
@@ -88,7 +86,6 @@ export class LibraryController {
   @ApiResponse({ status: 404, description: 'Manga or User not found' })
   @Put('chapter')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   async updateChapter(
     @Body() updateChapterDto: UpdateChapterDto,
     @UserDecorator() user: any,

@@ -21,6 +21,7 @@ import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 
 @ApiTags('Favorites')
+@ApiBearerAuth()
 @Controller('favorites')
 export class FavoriteController {
   @Inject(FavoriteService)
@@ -37,7 +38,6 @@ export class FavoriteController {
   })
   @UseGuards(JwtAuthGuard)
   @Post('save')
-  @ApiBearerAuth()
   async favorites(
     @Body() body: FavoritesDto,
     @UserDecorator() user: any,
@@ -56,7 +56,6 @@ export class FavoriteController {
   })
   @UseGuards(JwtAuthGuard)
   @Get('all')
-  @ApiBearerAuth()
   async getFavorites(@UserDecorator() user: any): Promise<MangaQuickViewDto[]> {
     return await this.service.getFavoriteManga(user.id);
   }
@@ -72,7 +71,6 @@ export class FavoriteController {
   })
   @UseGuards(JwtAuthGuard)
   @Delete('delete')
-  @ApiBearerAuth()
   async deleteFavorites(
     @Body() body: FavoritesDto,
     @UserDecorator() user: any,

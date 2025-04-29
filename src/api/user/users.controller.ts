@@ -29,6 +29,7 @@ import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { UserInformationDto } from './dto/user-information.dto';
 
 @ApiTags('Users')
+@ApiBearerAuth()
 @Controller('user')
 export class UserController {
   @Inject(UserService)
@@ -44,11 +45,10 @@ export class UserController {
   @Put('name')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor)
-  @ApiBearerAuth()
   private updateName(
     @Body() body: UpdateNameDto,
     @Req() req: Request,
-  ): Promise<User> {
+  ): Promise<UserInformationDto> {
     return this.service.updateName(body, req);
   }
 
@@ -57,16 +57,15 @@ export class UserController {
   @ApiResponse({
     status: 200,
     description: 'The found record',
-    type: User,
+    type: UserInformationDto,
   })
   @Put('password')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor)
-  @ApiBearerAuth()
   private updatePassword(
     @Body() body: UpdatePasswordDto,
     @Req() req: Request,
-  ): Promise<User> {
+  ): Promise<UserInformationDto> {
     return this.service.updatePassword(body, req);
   }
 
@@ -75,13 +74,12 @@ export class UserController {
   @ApiResponse({
     status: 200,
     description: 'The found record',
-    type: User,
+    type: UserInformationDto,
   })
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor)
   deleteUser(@Param('id') id: string, @Req() req: Request): Promise<User> {
-  @ApiBearerAuth()
     return this.service.deleteUser(id, req);
   }
 
@@ -95,7 +93,6 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   @Get('information')
   getUser(@UserDecorator() user: User) {
-  @ApiBearerAuth()
     return UserInformationDto.fromEntity(user);
   }
 }
