@@ -10,7 +10,12 @@ import {
 } from '@nestjs/common';
 import { NotFoundInterceptor } from 'src/api/interceptors/not-found.interceptor';
 import { MangaDetailsDto } from 'src/api/mangas/dto/manga-details.dto';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
 import { SaveMangaDto } from './dto/save-manga.dto';
 import { LibraryService } from './library.service';
@@ -36,6 +41,7 @@ export class LibraryController {
   @UseInterceptors(NotFoundInterceptor)
   @Post('save')
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   async save(
     @Body() saveMangaDto: SaveMangaDto,
     @UserDecorator() user: any,
@@ -52,6 +58,7 @@ export class LibraryController {
   @ApiResponse({ status: 400, description: 'Bad Request' })
   @Get('all')
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   async all(@UserDecorator() user: any): Promise<MangaQuickViewDto[]> {
     return this.libraryService.getMangas(user.id);
   }
@@ -81,6 +88,7 @@ export class LibraryController {
   @ApiResponse({ status: 404, description: 'Manga or User not found' })
   @Put('chapter')
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   async updateChapter(
     @Body() updateChapterDto: UpdateChapterDto,
     @UserDecorator() user: any,

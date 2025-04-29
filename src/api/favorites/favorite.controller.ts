@@ -8,7 +8,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { FavoriteService } from '@/api/favorites/favorite.service';
 import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
 import { FavoritesDto } from '@/api/favorites/dto/favorite.dto';
@@ -27,11 +32,12 @@ export class FavoriteController {
   @ApiResponse({ status: 400, description: 'Bad Request' })
   @ApiResponse({
     status: 200,
-    description: 'Request has been validated. the favoris has been added',
+    description: 'The request has been validated. Favorites have been added',
     type: MangaQuickViewDto,
   })
   @UseGuards(JwtAuthGuard)
   @Post('save')
+  @ApiBearerAuth()
   async favorites(
     @Body() body: FavoritesDto,
     @UserDecorator() user: any,
@@ -50,6 +56,7 @@ export class FavoriteController {
   })
   @UseGuards(JwtAuthGuard)
   @Get('all')
+  @ApiBearerAuth()
   async getFavorites(@UserDecorator() user: any): Promise<MangaQuickViewDto[]> {
     return await this.service.getFavoriteManga(user.id);
   }
@@ -65,6 +72,7 @@ export class FavoriteController {
   })
   @UseGuards(JwtAuthGuard)
   @Delete('delete')
+  @ApiBearerAuth()
   async deleteFavorites(
     @Body() body: FavoritesDto,
     @UserDecorator() user: any,

@@ -19,7 +19,12 @@ import { UpdatePasswordDto } from './dto/update-password.dto';
 import { UserService } from './user.service';
 import User from './user.entity';
 import { JwtAuthGuard } from './auth/guard/auth.guard';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { UserInformationDto } from './dto/user-information.dto';
 
@@ -39,6 +44,7 @@ export class UserController {
   @Put('name')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor)
+  @ApiBearerAuth()
   private updateName(
     @Body() body: UpdateNameDto,
     @Req() req: Request,
@@ -56,6 +62,7 @@ export class UserController {
   @Put('password')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor)
+  @ApiBearerAuth()
   private updatePassword(
     @Body() body: UpdatePasswordDto,
     @Req() req: Request,
@@ -74,6 +81,7 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor)
   deleteUser(@Param('id') id: string, @Req() req: Request): Promise<User> {
+  @ApiBearerAuth()
     return this.service.deleteUser(id, req);
   }
 
@@ -87,6 +95,7 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   @Get('information')
   getUser(@UserDecorator() user: User) {
+  @ApiBearerAuth()
     return UserInformationDto.fromEntity(user);
   }
 }

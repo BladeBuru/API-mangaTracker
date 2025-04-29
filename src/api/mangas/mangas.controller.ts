@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  Logger,
   Param,
   Post,
   Query,
@@ -11,7 +10,12 @@ import {
 import { MangaQuickViewDto } from './dto/manga-quick-view.dto';
 import { MangasService } from './mangas.service';
 import { RetrieveMangaTrendsInternalDto } from './dto/retrieve-manga-trends-internal.dto';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { MangaDetailsDto } from './dto/manga-details.dto';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 import { SearchMangaDto } from './dto/search-manga.dto';
@@ -33,6 +37,7 @@ export class MangasController {
   })
   @UseGuards(JwtAuthGuard)
   @Get('popular')
+  @ApiBearerAuth()
   async top(
     @Query()
     filters: RetrieveMangaTrendsInternalDto,
@@ -56,6 +61,7 @@ export class MangasController {
   })
   @UseGuards(JwtAuthGuard)
   @Get('new')
+  @ApiBearerAuth()
   async new(
     @Query()
     filters: RetrieveMangaTrendsInternalDto,
@@ -80,6 +86,7 @@ export class MangasController {
   })
   @UseGuards(JwtAuthGuard)
   @Get('trending')
+  @ApiBearerAuth()
   async trending(
     @Query()
     filters: RetrieveMangaTrendsInternalDto,
@@ -102,6 +109,7 @@ export class MangasController {
   })
   @UseGuards(JwtAuthGuard)
   @Get(':id')
+  @ApiBearerAuth()
   async mangaDetails(@Param('id') id: number): Promise<MangaDetailsDto> {
     return await this.mangasService.getMangaDetails(id);
   }
@@ -115,6 +123,7 @@ export class MangasController {
   @ApiResponse({ status: 403, description: 'Forbidden Access' })
   @Post('search')
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   async searchManga(
     @Body() searchMangaDto: SearchMangaDto,
   ): Promise<MangaQuickViewDto[]> {
