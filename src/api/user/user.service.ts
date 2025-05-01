@@ -32,10 +32,7 @@ export class UserService {
     return UserInformationDto.fromEntity(user);
   }
 
-  public async deleteUser(
-    id: string,
-    req: Request,
-  ): Promise<UserInformationDto> {
+  public async deleteUser(req: Request): Promise<UserInformationDto> {
     const user: User = <User>req.user;
     await this.repository.remove(user);
     return UserInformationDto.fromEntity(user);

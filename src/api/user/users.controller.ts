@@ -8,7 +8,6 @@ import {
   Body,
   Inject,
   Delete,
-  Param,
   Get,
 } from '@nestjs/common';
 import { Request } from 'express';
@@ -76,14 +75,11 @@ export class UserController {
     description: 'The found record',
     type: UserInformationDto,
   })
-  @Delete(':id')
+  @Delete('delete')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor)
-  private deleteUser(
-    @Param('id') id: string,
-    @Req() req: Request,
-  ): Promise<UserInformationDto> {
-    return this.service.deleteUser(id, req);
+  private deleteUser(@Req() req: Request): Promise<UserInformationDto> {
+    return this.service.deleteUser(req);
   }
 
   @ApiOperation({ summary: 'Return user important information' })
