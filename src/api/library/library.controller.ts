@@ -10,7 +10,12 @@ import {
 } from '@nestjs/common';
 import { NotFoundInterceptor } from 'src/api/interceptors/not-found.interceptor';
 import { MangaDetailsDto } from 'src/api/mangas/dto/manga-details.dto';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
 import { SaveMangaDto } from './dto/save-manga.dto';
 import { LibraryService } from './library.service';
