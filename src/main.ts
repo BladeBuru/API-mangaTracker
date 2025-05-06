@@ -86,6 +86,6 @@ bootstrap().then(() => {
     logger.log(
       `DISABLE_ERROR_MESSAGES_FOR_API_CLIENT: ${process.env.DISABLE_ERROR_MESSAGES_FOR_API_CLIENT}`,
     );
-    logger.log(`TYPEORM_DEBUG_LOGGING: ${process.env.TYPEORM_DEBUG_LOGGING}`);
+    logger.log(`TYPEORM_DEBUG_LOGGING : ${process.env.TYPEORM_DEBUG_LOGGING}`);
   }
 });
