@@ -56,6 +56,36 @@ async function bootstrap() {
 
 bootstrap().then(() => {
   const logger = new Logger('Initialization');
-  logger.log('Server started at http://localhost:3000');
+  logger.log(
+    `Server started at http://localhost:3000 in ${process.env.NODE_ENV} mode`,
+  );
   logger.log('API documentation can be found at http://localhost:3000/api');
+  if (process.env.NODE_ENV === 'development') {
+    logger.log(`API PORT: ${process.env.PORT}`);
+    logger.log(`NODE_ENV: ${process.env.NODE_ENV}`);
+
+    logger.log(`DATABASE_HOST: ${process.env.DATABASE_HOST}`);
+    logger.log(`DATABASE_NAME: ${process.env.DATABASE_NAME}`);
+    logger.log(`DATABASE_USER: ${process.env.DATABASE_USER}`);
+    logger.log(`DATABASE_PASSWORD: ${process.env.DATABASE_PASSWORD}`);
+    logger.log(`DATABASE_PORT: ${process.env.DATABASE_PORT}`);
+    logger.log(`DATABASE_SCHEMA: ${process.env.DATABASE_SCHEMA}`);
+
+    logger.log(`JWT_REFRESH_SECRET: ${process.env.JWT_REFRESH_SECRET}`);
+    logger.log(`JWT_KEY: ${process.env.JWT_KEY}`);
+    logger.log(
+      `JWT_REFRESH_SECRET_EXPIRES_IN: ${process.env.JWT_REFRESH_SECRET_EXPIRES_IN}`,
+    );
+    logger.log(`JWT_KEY_EXPIRES_IN: ${process.env.JWT_KEY_EXPIRES_IN}`);
+
+    logger.log(`HTTP_TIMEOUT: ${process.env.HTTP_TIMEOUT}`);
+    logger.log(`HTTP_MAX_REDIRECT: ${process.env.HTTP_MAX_REDIRECT}`);
+    logger.log(
+      `ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT: ${process.env.ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT}`,
+    );
+    logger.log(
+      `DISABLE_ERROR_MESSAGES_FOR_API_CLIENT: ${process.env.DISABLE_ERROR_MESSAGES_FOR_API_CLIENT}`,
+    );
+    logger.log(`TYPEORM_DEBUG_LOGGING: ${process.env.TYPEORM_DEBUG_LOGGING}`);
+  }
 });
