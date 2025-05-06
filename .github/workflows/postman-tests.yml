@@ -26,10 +26,26 @@ jobs:
             ports:
               - 5432:5432
 
+
+
       steps:
         -
           name: Checkout
           uses: actions/checkout@v3
+        - name: Install PostgreSQL client (psql)
+          run: |
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+        - name: Create PostgreSQL schema
+          env:
+            PGHOST: ${{ secrets.TNR_DATABASE_HOST }}
+            PGPORT: ${{ secrets.TNR_DATABASE_PORT }}
+            PGUSER: ${{ secrets.TNR_DATABASE_USER }}
+            PGPASSWORD: ${{ secrets.TNR_DATABASE_PASSWORD }}
+            PGDATABASE: ${{ secrets.TNR_DATABASE_NAME }}
+            TNR_DATABASE_SCHEMA: ${{ secrets.TNR_DATABASE_SCHEMA }}
+          run: |
+            psql -c "CREATE SCHEMA IF NOT EXISTS \"$TNR_DATABASE_SCHEMA\";"
         -
           name: Install Packages
           run: npm ci
