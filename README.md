@@ -5,6 +5,7 @@
 ## NestJS Framework Information
 
 [circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
+
 [circleci-url]: https://circleci.com/gh/nestjs/nest
 
   <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
@@ -72,14 +73,16 @@ http://localhost:3000/api
 
 ## Local Development Database
 
-> The following procedure has been tested on a Linux environment. It might need a few adjustment for Windows or Mac users.  
+> The following procedure has been tested on a Linux environment. It might need a few adjustment for Windows or Mac
+> users.
 
-1. Go inside the `devtools` folder at the root of the project
+1. Go inside the `toolbox` folder at the root of the project
 
 2. Run `docker-compose up -d` to deploy the Docker Container hosting the Postgres Database
 
 3. You can now connect to the newly deployed database with `psql -h localhost -p 6543 -U postgres -d postgres`
 
-4. Inside your shell terminal, execute the database init script with `psql -h localhost -p 6543 -U postgres -d postgres -f init-local-db.sql`
+4. Inside your shell terminal, execute the database init script with
+   `psql -h localhost -p 6543 -U postgres -d postgres -f init-local-db.sql`
 
 5. Replace your environment variables with the ones from your local database

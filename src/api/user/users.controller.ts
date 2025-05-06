@@ -8,7 +8,6 @@ import {
   Body,
   Inject,
   Delete,
-  Param,
   Get,
 } from '@nestjs/common';
 import { Request } from 'express';
@@ -19,11 +18,17 @@ import { UpdatePasswordDto } from './dto/update-password.dto';
 import { UserService } from './user.service';
 import User from './user.entity';
 import { JwtAuthGuard } from './auth/guard/auth.guard';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { UserInformationDto } from './dto/user-information.dto';
 
 @ApiTags('Users')
+@ApiBearerAuth()
 @Controller('user')
 export class UserController {
   @Inject(UserService)
@@ -34,7 +39,7 @@ export class UserController {
   @ApiResponse({
     status: 200,
     description: 'The found record',
-    type: User,
+    type: UserInformationDto,
   })
   @Put('name')
   @UseGuards(JwtAuthGuard)
@@ -42,7 +47,7 @@ export class UserController {
   private updateName(
     @Body() body: UpdateNameDto,
     @Req() req: Request,
-  ): Promise<User> {
+  ): Promise<UserInformationDto> {
     return this.service.updateName(body, req);
   }
 
@@ -51,7 +56,7 @@ export class UserController {
   @ApiResponse({
     status: 200,
     description: 'The found record',
-    type: User,
+    type: UserInformationDto,
   })
   @Put('password')
   @UseGuards(JwtAuthGuard)
@@ -59,7 +64,7 @@ export class UserController {
   private updatePassword(
     @Body() body: UpdatePasswordDto,
     @Req() req: Request,
-  ): Promise<User> {
+  ): Promise<UserInformationDto> {
     return this.service.updatePassword(body, req);
   }
 
@@ -68,13 +73,13 @@ export class UserController {
   @ApiResponse({
     status: 200,
     description: 'The found record',
-    type: User,
+    type: UserInformationDto,
   })
-  @Delete(':id')
+  @Delete('delete')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor)
-  deleteUser(@Param('id') id: string, @Req() req: Request): Promise<User> {
-    return this.service.deleteUser(id, req);
+  private deleteUser(@Req() req: Request): Promise<UserInformationDto> {
+    return this.service.deleteUser(req);
   }
 
   @ApiOperation({ summary: 'Return user important information' })
@@ -86,7 +91,7 @@ export class UserController {
   })
   @UseGuards(JwtAuthGuard)
   @Get('information')
-  getUser(@UserDecorator() user: User) {
+  private getUser(@UserDecorator() user: User) {
     return UserInformationDto.fromEntity(user);
   }
 }

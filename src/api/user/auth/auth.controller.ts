@@ -13,6 +13,7 @@ import User from '../user.entity';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RefreshTokenGuard } from '@/api/user/auth/guard/refreshToken.guard';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
+import { UserInformationDto } from '@/api/user/dto/user-information.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -25,11 +26,11 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'The found record',
-    type: User,
+    type: UserInformationDto,
   })
   @Post('register')
   @UseInterceptors(ClassSerializerInterceptor)
-  private register(@Body() body: RegisterDto): Promise<User | never> {
+  private register(@Body() body: RegisterDto): Promise<UserInformationDto> {
     return this.service.register(body);
   }
 

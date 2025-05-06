@@ -24,6 +24,7 @@ import { UpdateChapterDto } from '@/api/library/dto/update-chapter-dto';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 
 @ApiTags('Library')
+@ApiBearerAuth()
 @Controller('library')
 export class LibraryController {
   constructor(private readonly libraryService: LibraryService) {}
@@ -71,7 +72,6 @@ export class LibraryController {
   @ApiResponse({ status: 404, description: 'Entry not found' })
   @Delete('delete')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   async delete(
     @Body() deleteMangaDto: SaveMangaDto,
     @UserDecorator() user: any,
