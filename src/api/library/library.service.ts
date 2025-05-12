@@ -43,8 +43,8 @@ export class LibraryService {
     }
 
     const userMangaEntityInDB = await this.userMangaRepository.findOneBy({
-      user: { id: user.id },
-      manga: { mu_id: mangaEntity.mu_id },
+      user: user,
+      manga: mangaEntity,
     });
 
     if (userMangaEntityInDB !== null)
