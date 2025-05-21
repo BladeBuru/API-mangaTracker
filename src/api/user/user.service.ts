@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as bcrypt from 'bcryptjs';
 import { Request } from 'express';
 import { UpdatePasswordDto } from './dto/update-password.dto';
 import User from './user.entity';
@@ -27,7 +28,7 @@ export class UserService {
     req: Request,
   ): Promise<UserInformationDto> {
     const user: User = <User>req.user;
-    user.password = body.password;
+    user.password = bcrypt.hashSync(body.password, bcrypt.genSaltSync(10));
     await this.repository.save(user);
     return UserInformationDto.fromEntity(user);
   }
