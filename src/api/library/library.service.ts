@@ -59,6 +59,7 @@ export class LibraryService {
     const userManga = new UserManga();
     userManga.user = user;
     userManga.manga = mangaEntity;
+    userManga.lastUpdated = new Date();
     await this.userMangaRepository.save(userManga);
     return mangaDto;
   }
@@ -86,14 +87,13 @@ export class LibraryService {
       });
     }
 
-    const nbMangas = user.user_mangas.length;
-    const userMangasQuickView: MangaQuickViewDto[] = new Array(nbMangas);
-    for (let i = 0; i < nbMangas; i++) {
-      userMangasQuickView[i] = MangaQuickViewDto.fromLibrary(
-        user.user_mangas[i],
-      );
-    }
-    return userMangasQuickView;
+    return user.user_mangas
+      .slice() // Copy of user.user_mangas
+      .sort(
+        (a, b) =>
+          new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime(),
+      ) // Sort by date of last update of the manga in descending order
+      .map((a) => MangaQuickViewDto.fromLibrary(a));
   }
 
   async deleteManga(userId: number, muId: number): Promise<boolean> {
@@ -148,6 +148,7 @@ export class LibraryService {
           readChapters < mangaEntity.total_chapters
             ? ReadingStatus.Reading
             : allAvailableChaptersReadStatus,
+        lastUpdated: new Date(),
       })
       .where('user_id = :id', { id: userId })
       .andWhere('manga_id = :muId', { muId: muId.toString() })

@@ -34,4 +34,7 @@ export class UserManga {
 
   @Column({ nullable: false, default: ReadingStatus.ReadLater })
   public readingStatus: string;
+
+  @Column({ type: 'timestamp', nullable: true, default: null })
+  public lastUpdated: Date | null;
 }
