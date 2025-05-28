@@ -35,6 +35,9 @@ export class Manga {
   @Column()
   year: number;
 
+  @Column({ nullable: true })
+  completed: boolean;
+
   @CreateDateColumn()
   created_at: Date;
 
@@ -53,6 +56,7 @@ export class Manga {
     manga['mu_id'] = mangaDetailsDto['mu_id'].toString();
     manga['total_chapters'] = mangaDetailsDto['total_chapters'];
     manga['rating'] = mangaDetailsDto['rating'];
+    manga['completed'] = mangaDetailsDto['completed'];
     return manga;
   }
 }

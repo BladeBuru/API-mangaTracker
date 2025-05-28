@@ -14,7 +14,13 @@ import { MangasService } from 'src/api/mangas/mangas.service';
 import { MangaDetailsDto } from 'src/api/mangas/dto/manga-details.dto';
 import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
 import { ChapterException } from './exceptions/chapter.exception';
+import { ReadingStatusException } from './exceptions/reading-status.exception';
 import { UpdateMangaService } from '../mangas/update-manga.service';
+import {
+  getReadingStatus,
+  isReadingStatus,
+  ReadingStatus,
+} from './reading-status.enum';
 
 @Injectable()
 export class LibraryService {
@@ -122,33 +128,90 @@ export class LibraryService {
     muId: number,
     readChapters: number,
   ): Promise<boolean> {
-    const userEntity = await this.userService.returnUserIfExist(userId);
-
-    if (userEntity === null)
-      throw new NotFoundException(`User with id ${userId} does not exist`);
-
-    const mangaEntity = await this.mangasService.returnMangaIfExist(
-      muId.toString(),
-    );
-
-    if (mangaEntity === null)
-      throw new NotFoundException(
-        `Manga with id ${muId} does not exist or is not present in user\'s library`,
-      );
+    const mangaEntity = await this.commonChecks(userId, muId);
 
     if (readChapters > mangaEntity.total_chapters)
       throw new ChapterException(
         `${readChapters} (new value) is above ${mangaEntity.total_chapters} (total number of chapters)`,
       );
 
+    const allAvailableChaptersReadStatus = mangaEntity.completed
+      ? ReadingStatus.Completed
+      : ReadingStatus.CaughtUp;
+
     await this.userMangaRepository
       .createQueryBuilder()
       .update(UserManga)
-      .set({ user_read_chapters: readChapters })
+      .set({
+        user_read_chapters: readChapters,
+        readingStatus:
+          readChapters < mangaEntity.total_chapters
+            ? ReadingStatus.Reading
+            : allAvailableChaptersReadStatus,
+      })
       .where('user_id = :id', { id: userId })
       .andWhere('manga_id = :muId', { muId: muId.toString() })
       .execute();
 
     return true;
+  }
+
+  async updateReadingStatus(
+    userId: number,
+    muId: number,
+    readingStatus: string,
+  ): Promise<boolean> {
+    await this.commonChecks(userId, muId);
+
+    if (!isReadingStatus(readingStatus))
+      throw new ReadingStatusException(
+        `${readingStatus} isn't a valid value for the reading status (possible values are: ${getReadingStatus().join(
+          ', ',
+        )})`,
+      );
+
+    await this.userMangaRepository
+      .createQueryBuilder()
+      .update(UserManga)
+      .set({ readingStatus: readingStatus })
+      .where('user_id = :id', { id: userId })
+      .andWhere('manga_id = :muId', { muId: muId.toString() })
+      .execute();
+
+    return true;
+  }
+
+  async commonChecks(userId: number, muId: number): Promise<Manga> {
+    const userEntity = await this.userService.returnUserIfExist(userId);
+
+    if (userEntity === null)
+      throw new NotFoundException(`User with id ${userId} does not exist`);
+
+    let mangaEntity = await this.mangasService.returnMangaIfExist(
+      muId.toString(),
+    );
+
+    if (mangaEntity === null) {
+      throw new NotFoundException(
+        `Manga with id ${muId} does not exist or is not present in user's library`,
+      );
+    } else if (mangaEntity.completed === null) {
+      await this.mangaRepository
+        .createQueryBuilder()
+        .update(Manga)
+        .set({
+          completed: Manga.fromMU(
+            await this.mangasService.getMangaDetails(muId),
+          ).completed,
+        })
+        .where('mu_id = :muId', { muId: muId.toString() })
+        .execute();
+
+      mangaEntity = await this.mangasService.returnMangaIfExist(
+        muId.toString(),
+      );
+    }
+
+    return mangaEntity;
   }
 }

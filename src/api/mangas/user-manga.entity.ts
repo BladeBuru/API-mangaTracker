@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Manga } from './manga.entity';
+import { ReadingStatus } from '@/api/library/reading-status.enum';
 
 @Entity('user_manga')
 export class UserManga {
@@ -30,4 +31,7 @@ export class UserManga {
 
   @Column({ default: 0 })
   user_read_chapters: number;
+
+  @Column({ nullable: false, default: ReadingStatus.ReadLater })
+  public readingStatus: string;
 }

@@ -22,6 +22,7 @@ import { LibraryService } from './library.service';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { UpdateChapterDto } from '@/api/library/dto/update-chapter-dto';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
+import { UpdateReadingStatusDto } from '@/api/library/dto/update-reading-status-dto';
 
 @ApiTags('Library')
 @ApiBearerAuth()
@@ -78,12 +79,17 @@ export class LibraryController {
   ): Promise<boolean> {
     return await this.libraryService.deleteManga(user.id, deleteMangaDto.muId);
   }
+
   @ApiOperation({
     summary: 'Update given user manga progress with specified value',
   })
   @ApiResponse({ status: 200, description: 'Chapter has been updated' })
   @ApiResponse({ status: 400, description: 'Bad Request' })
   @ApiResponse({ status: 404, description: 'Manga or User not found' })
+  @ApiResponse({
+    status: 406,
+    description: 'Provided chapter parameter is not a valid value',
+  })
   @Put('chapter')
   @UseGuards(JwtAuthGuard)
   async updateChapter(
@@ -97,5 +103,30 @@ export class LibraryController {
     );
 
     return updateChapterDto;
+  }
+
+  @ApiOperation({
+    summary: 'Update given user manga reading status with specified value',
+  })
+  @ApiResponse({ status: 200, description: 'Reading status has been updated' })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  @ApiResponse({ status: 404, description: 'Manga or User not found' })
+  @ApiResponse({
+    status: 406,
+    description: 'Provided status parameter is not a valid value',
+  })
+  @Put('status')
+  @UseGuards(JwtAuthGuard)
+  async updateReadingStatus(
+    @Body() updateReadingStatusDto: UpdateReadingStatusDto,
+    @UserDecorator() user: any,
+  ): Promise<UpdateReadingStatusDto> {
+    await this.libraryService.updateReadingStatus(
+      user.id,
+      updateReadingStatusDto.muId,
+      updateReadingStatusDto.readingStatus,
+    );
+
+    return updateReadingStatusDto;
   }
 }
