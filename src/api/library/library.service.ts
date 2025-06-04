@@ -174,7 +174,7 @@ export class LibraryService {
     await this.userMangaRepository
       .createQueryBuilder()
       .update(UserManga)
-      .set({ readingStatus: readingStatus })
+      .set({ readingStatus: readingStatus, lastUpdated: new Date() })
       .where('user_id = :id', { id: userId })
       .andWhere('manga_id = :muId', { muId: muId.toString() })
       .execute();
