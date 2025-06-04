@@ -36,32 +36,25 @@ export class LibraryService {
     private readonly userMangaRepository: Repository<UserManga>,
   ) {}
 
-  async saveManga(muId: number, user: User): Promise<MangaDetailsDto> {
-    const mangaDto = await this.mangasService.getMangaDetails(muId);
-    const manga = Manga.fromMU(mangaDto);
+  async saveManga(muId: number, userId: number): Promise<MangaDetailsDto> {
+    const userEntity = await this.checkUser(userId);
+    const mangaEntity = await this.checkManga(muId);
 
-    let mangaEntity = await this.mangasService.returnMangaIfExist(
-      muId.toString(),
-    );
+    const existingUserMangaEntity = await this.userMangaRepository
+      .createQueryBuilder()
+      .where('user_id = :id', { id: userId })
+      .andWhere('manga_id = :muId', { muId: muId.toString() })
+      .getOne();
 
-    if (mangaEntity === null) {
-      mangaEntity = await this.mangaRepository.save(manga);
-    }
-
-    const userMangaEntityInDB = await this.userMangaRepository.findOneBy({
-      user: user,
-      manga: mangaEntity,
-    });
-
-    if (userMangaEntityInDB !== null)
+    if (existingUserMangaEntity !== null)
       throw new BadRequestException('Manga already saved');
 
     const userManga = new UserManga();
-    userManga.user = user;
+    userManga.user = userEntity;
     userManga.manga = mangaEntity;
     userManga.lastUpdated = new Date();
     await this.userMangaRepository.save(userManga);
-    return mangaDto;
+    return await this.mangasService.getMangaDetails(muId);
   }
 
   async getMangas(userId: number): Promise<MangaQuickViewDto[]> {
@@ -128,7 +121,17 @@ export class LibraryService {
     muId: number,
     readChapters: number,
   ): Promise<boolean> {
-    const mangaEntity = await this.commonChecks(userId, muId);
+    const mangaToUpdate = (await this.checkUser(userId)).user_mangas.filter(
+      (userManga) => userManga.manga.mu_id === muId.toString(),
+    );
+
+    if (mangaToUpdate.length === 0) {
+      throw new NotFoundException(
+        `Nothing found in user's library for userId: ${userId} and muId: ${muId} `,
+      );
+    }
+
+    const mangaEntity = await this.checkManga(muId);
 
     if (readChapters > mangaEntity.total_chapters)
       throw new ChapterException(
@@ -162,7 +165,17 @@ export class LibraryService {
     muId: number,
     readingStatus: string,
   ): Promise<boolean> {
-    await this.commonChecks(userId, muId);
+    const mangaToUpdate = (await this.checkUser(userId)).user_mangas.filter(
+      (userManga) => userManga.manga.mu_id === muId.toString(),
+    );
+
+    if (mangaToUpdate.length === 0) {
+      throw new NotFoundException(
+        `Nothing found in user's library for userId: ${userId} and muId: ${muId} `,
+      );
+    }
+
+    await this.checkManga(muId);
 
     if (!isReadingStatus(readingStatus))
       throw new ReadingStatusException(
@@ -182,37 +195,45 @@ export class LibraryService {
     return true;
   }
 
-  async commonChecks(userId: number, muId: number): Promise<Manga> {
-    const userEntity = await this.userService.returnUserIfExist(userId);
+  async checkUser(userId: number): Promise<User> {
+    const userEntity = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['user_mangas', 'user_mangas.manga'],
+    });
 
     if (userEntity === null)
       throw new NotFoundException(`User with id ${userId} does not exist`);
 
-    let mangaEntity = await this.mangasService.returnMangaIfExist(
+    return userEntity;
+  }
+
+  async checkManga(muId: number): Promise<Manga> {
+    const mangaEntity = await this.mangasService.returnMangaIfExist(
       muId.toString(),
     );
 
     if (mangaEntity === null) {
-      throw new NotFoundException(
-        `Manga with id ${muId} does not exist or is not present in user's library`,
+      await this.mangaRepository.save(
+        Manga.fromMU(await this.mangasService.getMangaDetails(muId)),
       );
-    } else if (mangaEntity.completed === null) {
+    } else if (
+      mangaEntity.updated_at < new Date(new Date().getTime() - 21600000)
+    ) {
+      const mangaDetails = Manga.fromMU(
+        await this.mangasService.getMangaDetails(muId),
+      );
+
       await this.mangaRepository
         .createQueryBuilder()
         .update(Manga)
         .set({
-          completed: Manga.fromMU(
-            await this.mangasService.getMangaDetails(muId),
-          ).completed,
+          completed: mangaDetails.completed,
+          total_chapters: mangaDetails.total_chapters,
         })
         .where('mu_id = :muId', { muId: muId.toString() })
         .execute();
-
-      mangaEntity = await this.mangasService.returnMangaIfExist(
-        muId.toString(),
-      );
     }
 
-    return mangaEntity;
+    return await this.mangasService.returnMangaIfExist(muId.toString());
   }
 }
