@@ -217,7 +217,8 @@ export class LibraryService {
         Manga.fromMU(await this.mangasService.getMangaDetails(muId)),
       );
     } else if (
-      mangaEntity.updated_at < new Date(new Date().getTime() - 21600000)
+      mangaEntity.updated_at < new Date(new Date().getTime() - 21600000) ||
+      mangaEntity.completed === null
     ) {
       const mangaDetails = Manga.fromMU(
         await this.mangasService.getMangaDetails(muId),
