@@ -31,6 +31,10 @@ export class MangaQuickViewDto {
   @ApiPropertyOptional()
   totalChapters: number;
 
+  @IsOptional()
+  @ApiPropertyOptional()
+  public readingStatus: string;
+
   static fromMu(data: any) {
     const dto = new MangaQuickViewDto();
     dto.muId = data['record']['series_id'];
@@ -52,6 +56,7 @@ export class MangaQuickViewDto {
     dto.rating = userManga.user_rating;
     dto.readChapters = userManga.user_read_chapters;
     dto.totalChapters = userManga.manga.total_chapters;
+    dto.readingStatus = userManga.readingStatus;
     return dto;
   }
 
