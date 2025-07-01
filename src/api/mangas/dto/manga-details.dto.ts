@@ -59,7 +59,6 @@ export class MangaDetailsDto {
   @IsOptional()
   bonusChapters?: { season: string; chapters: number }[];
 
-
   @ApiProperty()
   @IsBoolean()
   completed: boolean;
@@ -77,9 +76,9 @@ export class MangaDetailsDto {
   categories: any[];
 
   private static parseLatestChapter(status: string, fallback: number): number {
-        if (!status) return fallback;
-  const match = status.match(/(\d+)\s*Chapters/);
-  return match ? +match[1] : fallback;
+    if (!status) return fallback;
+    const match = status.match(/(\d+)\s*Chapters/);
+    return match ? +match[1] : fallback;
   }
 
   private static sanitizeLine(line: string): string {
@@ -94,13 +93,16 @@ export class MangaDetailsDto {
     return m ? m[1].trim() : null;
   }
 
-
-  private static parseSeasonChapters(status: string): { season: string; chapters: number }[] {
+  private static parseSeasonChapters(
+    status: string,
+  ): { season: string; chapters: number }[] {
     const result: { season: string; chapters: number }[] = [];
     for (const rawLine of status.split(/\r?\n/)) {
       const line = this.sanitizeLine(rawLine);
       // capture "S1:", "S2 Part 1:", "S2 Part 2:", etc.
-      const match = line.match(/^(S\d+(?:\s+Part\s+\d+)?):.*?(\d+)(?=\+?\s*Chapters)/i);
+      const match = line.match(
+        /^(S\d+(?:\s+Part\s+\d+)?):.*?(\d+)(?=\+?\s*Chapters)/i,
+      );
       if (match) {
         result.push({
           season: match[1],
@@ -111,18 +113,20 @@ export class MangaDetailsDto {
     return result;
   }
 
-  private static parseBonusChapters(status: string): { season: string; chapters: number }[] {
+  private static parseBonusChapters(
+    status: string,
+  ): { season: string; chapters: number }[] {
     const result: { season: string; chapters: number }[] = [];
     const seen = new Set<string>();
-    const lines = status.split(/\r?\n/).map(l => this.sanitizeLine(l));
+    const lines = status.split(/\r?\n/).map((l) => this.sanitizeLine(l));
 
     // 1) Extras de la ligne globale (ex : "131 Chapters + 7 Bonus Chapters + …")
-    const headerLine = lines.find(l => /^\d+\s*Chapters/i.test(l));
+    const headerLine = lines.find((l) => /^\d+\s*Chapters/i.test(l));
     if (headerLine) {
       const extras = headerLine
         .replace(/^\d+\s*Chapters/, '')
         .split('+')
-        .map(p => p.trim())
+        .map((p) => p.trim())
         .filter(Boolean);
 
       for (const extra of extras) {
@@ -134,19 +138,26 @@ export class MangaDetailsDto {
         let m: RegExpMatchArray | null;
 
         if ((m = clean.match(/(\d+)\s*Bonus/i))) {
-          label = 'Bonus'; chapters = Number(m[1]);
+          label = 'Bonus';
+          chapters = Number(m[1]);
         } else if ((m = clean.match(/(\d+)\s*Epilogue/i))) {
-          label = 'Epilogue'; chapters = Number(m[1]);
+          label = 'Epilogue';
+          chapters = Number(m[1]);
         } else if ((m = clean.match(/(\d+)\s*Prologue/i))) {
-          label = 'Prologue'; chapters = Number(m[1]);
+          label = 'Prologue';
+          chapters = Number(m[1]);
         } else if ((m = clean.match(/(\d+)\s*Short Stories?/i))) {
-          label = 'Short Stories'; chapters = Number(m[1]);
+          label = 'Short Stories';
+          chapters = Number(m[1]);
         } else if ((m = clean.match(/(\d+)\s*Afterwords?/i))) {
-          label = 'Afterwords'; chapters = Number(m[1]);
+          label = 'Afterwords';
+          chapters = Number(m[1]);
         } else if (/New Series Announcement/i.test(clean)) {
-          label = 'New Series Announcement'; chapters = 1;
+          label = 'New Series Announcement';
+          chapters = 1;
         } else if ((m = clean.match(/(\d+)\s*Special/i))) {
-          label = 'Special'; chapters = Number(m[1]);
+          label = 'Special';
+          chapters = Number(m[1]);
         }
 
         if (label && !seen.has(label)) {
@@ -182,7 +193,7 @@ export class MangaDetailsDto {
       const extras = line
         .slice(line.indexOf(':') + 1)
         .split('+')
-        .map(p => p.trim());
+        .map((p) => p.trim());
 
       for (const extra of extras) {
         let label: string | null = null;
@@ -190,19 +201,26 @@ export class MangaDetailsDto {
         let m: RegExpMatchArray | null;
 
         if ((m = extra.match(/(\d+)\s*Bonus/i))) {
-          label = 'Bonus'; chapters = Number(m[1]);
+          label = 'Bonus';
+          chapters = Number(m[1]);
         } else if (/Epilogue/i.test(extra)) {
-          label = 'Epilogue'; chapters = 1;
+          label = 'Epilogue';
+          chapters = 1;
         } else if (/Prologue\b/i.test(extra)) {
-          label = 'Prologue'; chapters = 1;
+          label = 'Prologue';
+          chapters = 1;
         } else if (/Afterwords?/i.test(extra)) {
-          label = 'Afterwords'; chapters = 1;
+          label = 'Afterwords';
+          chapters = 1;
         } else if (/New Series Announcement/i.test(extra)) {
-          label = 'New Series Announcement'; chapters = 1;
+          label = 'New Series Announcement';
+          chapters = 1;
         } else if ((m = extra.match(/(\d+)\s*Short Stories?/i))) {
-          label = 'Short Stories'; chapters = Number(m[1]);
+          label = 'Short Stories';
+          chapters = Number(m[1]);
         } else if ((m = extra.match(/(\d+)\s*Special/i))) {
-          label = 'Special'; chapters = Number(m[1]);
+          label = 'Special';
+          chapters = Number(m[1]);
         }
 
         if (label && !seen.has(label)) {
@@ -214,8 +232,6 @@ export class MangaDetailsDto {
 
     return result;
   }
-
-
 
   static toModel(mangaDetailsDto: MangaDetailsDto): Manga {
     const data = classToPlain(mangaDetailsDto);
@@ -236,9 +252,16 @@ export class MangaDetailsDto {
     mangaDetailsDto['medium_cover_url'] = muObject['image']['url']['original'];
     mangaDetailsDto['year'] = muObject['year'];
     mangaDetailsDto['rating'] = muObject['bayesian_rating'];
-    mangaDetailsDto['total_chapters'] = MangaDetailsDto.parseLatestChapter(muObject.status,muObject.latest_chapter);
-    mangaDetailsDto.seasonChapters = seasonChapters.map(({ season, chapters }) => ({ season, chapters }));
-    mangaDetailsDto.bonusChapters = bonusChapters.map(({ season, chapters }) => ({ season, chapters }));
+    mangaDetailsDto['total_chapters'] = MangaDetailsDto.parseLatestChapter(
+      muObject.status,
+      muObject.latest_chapter,
+    );
+    mangaDetailsDto.seasonChapters = seasonChapters.map(
+      ({ season, chapters }) => ({ season, chapters }),
+    );
+    mangaDetailsDto.bonusChapters = bonusChapters.map(
+      ({ season, chapters }) => ({ season, chapters }),
+    );
     mangaDetailsDto['completed'] = muObject['completed'];
     mangaDetailsDto['mu_id'] = muObject['series_id'];
     mangaDetailsDto['authors'] = muObject['authors'];
