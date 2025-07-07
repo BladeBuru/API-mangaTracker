@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional } from 'class-validator';
+import { IsNumber, IsOptional, IsString } from 'class-validator';
 import { UserManga } from '../user-manga.entity';
 
 export class MangaQuickViewDto {
@@ -35,6 +35,13 @@ export class MangaQuickViewDto {
   @ApiPropertyOptional()
   public readingStatus: string;
 
+  @IsOptional()
+  @IsString()
+  @ApiPropertyOptional({
+    description: 'Lien personnalisé de l’utilisateur pour ce manga',
+  })
+  customLink?: string;
+
   static fromMu(data: any) {
     const dto = new MangaQuickViewDto();
     dto.muId = data['record']['series_id'];
@@ -53,10 +60,11 @@ export class MangaQuickViewDto {
     dto.year = userManga.manga.year;
     dto.mediumCoverUrl = userManga.manga.small_cover_url;
     dto.largeCoverUrl = userManga.manga.medium_cover_url;
-    dto.rating = userManga.user_rating;
+    dto.rating = userManga.manga.rating;
     dto.readChapters = userManga.user_read_chapters;
     dto.totalChapters = userManga.manga.total_chapters;
     dto.readingStatus = userManga.readingStatus;
+    dto.customLink = userManga.custom_link ?? undefined;
     return dto;
   }
 
