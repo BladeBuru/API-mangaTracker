@@ -111,7 +111,7 @@ export class MangasController {
     return await this.mangasService.getMangaDetails(id);
   }
 
-  @ApiOperation({ summary: 'Search for mangas matching the given pattern' })
+  @ApiOperation({ summary: 'Search for mangas matching the given pattern ' })
   @ApiResponse({
     status: 200,
     description: 'Return an array of mangas matching the given pattern',
