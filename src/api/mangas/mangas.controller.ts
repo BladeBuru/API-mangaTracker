@@ -135,9 +135,9 @@ export class MangasController {
     }
     return {
       ...mangaDetails,
-      customLink,
-      inLibrary,
-      readChaptersCount,
+      custom_link: customLink,
+      in_library: inLibrary,
+      read_chapters_count: readChaptersCount,
     };
   }
 
