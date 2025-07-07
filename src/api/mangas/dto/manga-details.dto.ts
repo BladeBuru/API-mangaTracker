@@ -111,7 +111,7 @@ export class MangaDetailsDto {
 
   private static parsePublicationStatus(status: string): string | null {
     if (!status) return null;
-    const firstLine = status.split(/\r?\n/)[0];
+    const firstLine = status ? status.split(/\r?\n/)[0] : '';
     const m = firstLine.match(/\(\s*([^)]+?)\s*\)/);
     return m ? m[1].trim() : null;
   }
@@ -120,6 +120,7 @@ export class MangaDetailsDto {
     status: string,
   ): { season: string; chapters: number }[] {
     const result: { season: string; chapters: number }[] = [];
+    if (!status) return result;
     for (const rawLine of status.split(/\r?\n/)) {
       const line = this.sanitizeLine(rawLine);
       // capture "S1:", "S2 Part 1:", "S2 Part 2:", etc.
@@ -140,6 +141,7 @@ export class MangaDetailsDto {
     status: string,
   ): { season: string; chapters: number }[] {
     const result: { season: string; chapters: number }[] = [];
+    if (!status) return result;
     const seen = new Set<string>();
     const lines = status.split(/\r?\n/).map((l) => this.sanitizeLine(l));
 
