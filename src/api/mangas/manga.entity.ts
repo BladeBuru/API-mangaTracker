@@ -60,6 +60,7 @@ export class Manga {
     manga['total_chapters'] = mangaDetailsDto['total_chapters'];
     manga['rating'] = mangaDetailsDto['rating'];
     manga['completed'] = mangaDetailsDto['completed'];
+    manga['associated'] = mangaDetailsDto['associated'] ?? [];
     return manga;
   }
 }
