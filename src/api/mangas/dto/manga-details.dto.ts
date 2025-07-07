@@ -57,6 +57,21 @@ export class MangaDetailsDto {
   @ApiPropertyOptional()
   categories: any[];
 
+  @ApiPropertyOptional({ description: 'Lien personnalisé de l’utilisateur pour ce manga' })
+  @IsOptional()
+  @IsString()
+  customLink?: string;
+
+  @ApiPropertyOptional({ description: 'Indique si le manga est dans la bibliothèque de l’utilisateur' })
+  @IsOptional()
+  @IsBoolean()
+  inLibrary?: boolean;
+
+  @ApiPropertyOptional({ description: 'Nombre de chapitres lus par l’utilisateur' })
+  @IsOptional()
+  @IsNumber()
+  readChaptersCount?: number;
+
   static toModel(mangaDetailsDto: MangaDetailsDto): Manga {
     const data = classToPlain(mangaDetailsDto);
     return plainToClass(Manga, data);
