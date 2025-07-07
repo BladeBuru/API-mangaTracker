@@ -19,12 +19,17 @@ import {
 import { MangaDetailsDto } from './dto/manga-details.dto';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 import { SearchMangaDto } from './dto/search-manga.dto';
+import { UserDecorator } from '@/shared/Decorator/user.decorator';
+import { LibraryService } from '@/api/library/library.service';
 
 @ApiTags('Mangas')
 @ApiBearerAuth()
 @Controller('mangas')
 export class MangasController {
-  constructor(private readonly mangasService: MangasService) {}
+  constructor(
+    private readonly mangasService: MangasService,
+    private readonly libraryService: LibraryService,
+  ) {}
 
   @ApiOperation({
     summary: 'Retrieve the popular mangas according to their rating',
@@ -107,8 +112,28 @@ export class MangasController {
   })
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  async mangaDetails(@Param('id') id: number): Promise<MangaDetailsDto> {
-    return await this.mangasService.getMangaDetails(id);
+  async mangaDetails(
+    @Param('id') id: number,
+    @UserDecorator() user: any,
+  ): Promise<MangaDetailsDto> {
+    const mangaDetails = await this.mangasService.getMangaDetails(id);
+    let customLink: string | undefined = undefined;
+    let inLibrary = false;
+    let readChaptersCount: number | undefined = undefined;
+    if (user && user.id) {
+      const userManga = await this.libraryService.getUserManga(user.id, id);
+      if (userManga) {
+        customLink = userManga.custom_link ?? undefined;
+        inLibrary = true;
+        readChaptersCount = userManga.user_read_chapters;
+      }
+    }
+    return {
+      ...mangaDetails,
+      customLink,
+      inLibrary,
+      readChaptersCount,
+    };
   }
 
   @ApiOperation({ summary: 'Search for mangas matching the given pattern' })
