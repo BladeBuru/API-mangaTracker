@@ -35,6 +35,18 @@ export class MangaQuickViewDto {
   @ApiPropertyOptional()
   public readingStatus: string;
 
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: 'Liste des noms associés (autres titres) pour ce manga',
+  })
+  associated?: { title: string }[];
+
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: 'Lien personnalisé de l’utilisateur pour ce manga',
+  })
+  customLink?: string;
+
   static fromMu(data: any) {
     const dto = new MangaQuickViewDto();
     dto.muId = data['record']['series_id'];
@@ -43,6 +55,7 @@ export class MangaQuickViewDto {
     dto.mediumCoverUrl = data['record']['image']['url']['thumb'];
     dto.largeCoverUrl = data['record']['image']['url']['original'];
     dto.rating = data['record']['bayesian_rating'];
+    dto.associated = data['record']['associated'] ?? [];
     return dto;
   }
 
@@ -53,10 +66,12 @@ export class MangaQuickViewDto {
     dto.year = userManga.manga.year;
     dto.mediumCoverUrl = userManga.manga.small_cover_url;
     dto.largeCoverUrl = userManga.manga.medium_cover_url;
-    dto.rating = userManga.user_rating;
+    dto.rating = userManga.manga.rating;
     dto.readChapters = userManga.user_read_chapters;
     dto.totalChapters = userManga.manga.total_chapters;
     dto.readingStatus = userManga.readingStatus;
+    dto.associated = userManga.manga.associated ?? [];
+    dto.customLink = userManga.custom_link ?? undefined;
     return dto;
   }
 

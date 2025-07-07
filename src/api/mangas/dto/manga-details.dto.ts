@@ -75,6 +75,29 @@ export class MangaDetailsDto {
   @ApiPropertyOptional()
   categories: any[];
 
+  @ApiPropertyOptional({
+    description: 'List of associated names (other titles) for this manga',
+  })
+  @IsOptional()
+  associated?: { title: string }[];
+
+  @ApiPropertyOptional({ description: 'Custom user link for this manga' })
+  @IsOptional()
+  @IsString()
+  customLink?: string;
+
+  @ApiPropertyOptional({
+    description: "Indicates if the manga is in the user's library",
+  })
+  @IsOptional()
+  @IsBoolean()
+  inLibrary?: boolean;
+
+  @ApiPropertyOptional({ description: 'Number of chapters read by the user' })
+  @IsOptional()
+  @IsNumber()
+  readChaptersCount?: number;
+
   private static parseLatestChapter(status: string, fallback: number): number {
     if (!status) return fallback;
     const match = status.match(/(\d+)\s*Chapters/);
@@ -88,7 +111,7 @@ export class MangaDetailsDto {
 
   private static parsePublicationStatus(status: string): string | null {
     if (!status) return null;
-    const firstLine = status.split(/\r?\n/)[0];
+    const firstLine = status ? status.split(/\r?\n/)[0] : '';
     const m = firstLine.match(/\(\s*([^)]+?)\s*\)/);
     return m ? m[1].trim() : null;
   }
@@ -97,6 +120,7 @@ export class MangaDetailsDto {
     status: string,
   ): { season: string; chapters: number }[] {
     const result: { season: string; chapters: number }[] = [];
+    if (!status) return result;
     for (const rawLine of status.split(/\r?\n/)) {
       const line = this.sanitizeLine(rawLine);
       // capture "S1:", "S2 Part 1:", "S2 Part 2:", etc.
@@ -117,6 +141,7 @@ export class MangaDetailsDto {
     status: string,
   ): { season: string; chapters: number }[] {
     const result: { season: string; chapters: number }[] = [];
+    if (!status) return result;
     const seen = new Set<string>();
     const lines = status.split(/\r?\n/).map((l) => this.sanitizeLine(l));
 
@@ -244,15 +269,15 @@ export class MangaDetailsDto {
     const readingStatus = this.parsePublicationStatus(muObject.status);
 
     const mangaDetailsDto = new MangaDetailsDto();
-    mangaDetailsDto['title'] = muObject['title'];
-    mangaDetailsDto['description'] = muObject['description'];
-    mangaDetailsDto['status'] = muObject['status'];
+    mangaDetailsDto.title = muObject['title'];
+    mangaDetailsDto.description = muObject['description'];
+    mangaDetailsDto.status = muObject['status'];
     mangaDetailsDto.publicationStatus = readingStatus;
-    mangaDetailsDto['small_cover_url'] = muObject['image']['url']['thumb'];
-    mangaDetailsDto['medium_cover_url'] = muObject['image']['url']['original'];
-    mangaDetailsDto['year'] = muObject['year'];
-    mangaDetailsDto['rating'] = muObject['bayesian_rating'];
-    mangaDetailsDto['total_chapters'] = MangaDetailsDto.parseLatestChapter(
+    mangaDetailsDto.smallCoverUrl = muObject['image']['url']['thumb'];
+    mangaDetailsDto.mediumCoverUrl = muObject['image']['url']['original'];
+    mangaDetailsDto.year = muObject['year'];
+    mangaDetailsDto.rating = muObject['bayesian_rating'];
+    mangaDetailsDto.totalChapters = MangaDetailsDto.parseLatestChapter(
       muObject.status,
       muObject.latest_chapter,
     );
@@ -262,13 +287,13 @@ export class MangaDetailsDto {
     mangaDetailsDto.bonusChapters = bonusChapters.map(
       ({ season, chapters }) => ({ season, chapters }),
     );
-    mangaDetailsDto['completed'] = muObject['completed'];
-    mangaDetailsDto['mu_id'] = muObject['series_id'];
-    mangaDetailsDto['authors'] = muObject['authors'];
-    mangaDetailsDto['genres'] = muObject['genres'];
-    mangaDetailsDto['anime'] = muObject['anime'];
-    mangaDetailsDto['categories'] = muObject['categories'];
-
+    mangaDetailsDto.completed = muObject['completed'];
+    mangaDetailsDto.muId = muObject['series_id'];
+    mangaDetailsDto.authors = muObject['authors'];
+    mangaDetailsDto.genres = muObject['genres'];
+    mangaDetailsDto.anime = muObject['anime'];
+    mangaDetailsDto.categories = muObject['categories'];
+    mangaDetailsDto.associated = muObject['associated'] ?? [];
     return mangaDetailsDto;
   }
 }

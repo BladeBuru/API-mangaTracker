@@ -50,8 +50,7 @@ export class MangasService {
       ),
     );
 
-    const mangas = MangaQuickViewDto.arrayFromMu(data['results']);
-    return mangas;
+    return MangaQuickViewDto.arrayFromMu(data['results']);
   }
 
   async getMangaDetails(muId: number): Promise<MangaDetailsDto> {
@@ -73,15 +72,27 @@ export class MangasService {
         }),
       ),
     );
-    return MangaDetailsDto.fromMU(data);
+    const details = MangaDetailsDto.fromMU(data);
+    await this.mangaRepository.update(
+      { mu_id: muId.toString() },
+      {
+        title: details.title,
+        year: details.year,
+        small_cover_url: details.smallCoverUrl,
+        medium_cover_url: details.mediumCoverUrl,
+        rating: details.rating,
+        total_chapters: details.totalChapters,
+        completed: details.completed,
+        associated: details.associated,
+      },
+    );
+    return details;
   }
 
   async returnMangaIfExist(muId: string): Promise<Manga> {
-    const mangaEntity = await this.mangaRepository.findOneBy({
+    return await this.mangaRepository.findOneBy({
       mu_id: muId,
     });
-
-    return mangaEntity;
   }
 
   async searchManga(searchPattern: string, limit: number, offset: number) {
@@ -100,7 +111,6 @@ export class MangasService {
       ),
     );
 
-    const mangas = MangaQuickViewDto.arrayFromMu(data['results']);
-    return mangas;
+    return MangaQuickViewDto.arrayFromMu(data['results']);
   }
 }

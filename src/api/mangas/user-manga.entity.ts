@@ -37,4 +37,7 @@ export class UserManga {
 
   @Column({ type: 'timestamp', nullable: true, default: null })
   public lastUpdated: Date | null;
+
+  @Column({ type: 'varchar', nullable: true, default: null })
+  custom_link: string | null;
 }

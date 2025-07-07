@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LibraryController } from './library.controller';
 import { MangasService } from 'src/api/mangas/mangas.service';
@@ -13,11 +13,12 @@ import { UpdateMangaService } from '../mangas/update-manga.service';
 
 @Module({
   imports: [
-    MangasModule,
+    forwardRef(() => MangasModule),
     HttpModule,
     TypeOrmModule.forFeature([Manga, User, UserManga]),
   ],
   controllers: [LibraryController],
   providers: [MangasService, UserService, LibraryService, UpdateMangaService],
+  exports: [LibraryService],
 })
 export class LibraryModule {}

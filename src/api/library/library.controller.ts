@@ -23,6 +23,7 @@ import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { UpdateChapterDto } from '@/api/library/dto/update-chapter-dto';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 import { UpdateReadingStatusDto } from '@/api/library/dto/update-reading-status-dto';
+import { UpdateCustomLinkDto } from './dto/update-custom-link.dto';
 
 @ApiTags('Library')
 @ApiBearerAuth()
@@ -128,5 +129,41 @@ export class LibraryController {
     );
 
     return updateReadingStatusDto;
+  }
+
+  @ApiOperation({
+    summary: 'Add or update a custom link for a manga in user library',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Custom link has been added/updated',
+  })
+  @Put('custom-link')
+  @UseGuards(JwtAuthGuard)
+  async updateCustomLink(
+    @Body() updateCustomLinkDto: UpdateCustomLinkDto,
+    @UserDecorator() user: any,
+  ): Promise<boolean> {
+    return await this.libraryService.updateCustomLink(
+      user.id,
+      updateCustomLinkDto.muId,
+      updateCustomLinkDto.customLink,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Delete the custom link for a manga in user library',
+  })
+  @ApiResponse({ status: 200, description: 'Custom link has been deleted' })
+  @Delete('custom-link')
+  @UseGuards(JwtAuthGuard)
+  async deleteCustomLink(
+    @Body() updateCustomLinkDto: UpdateCustomLinkDto,
+    @UserDecorator() user: any,
+  ): Promise<boolean> {
+    return await this.libraryService.deleteCustomLink(
+      user.id,
+      updateCustomLinkDto.muId,
+    );
   }
 }

@@ -237,4 +237,45 @@ export class LibraryService {
 
     return await this.mangasService.returnMangaIfExist(muId.toString());
   }
+
+  async getUserManga(userId: number, muId: number): Promise<UserManga | null> {
+    return this.userMangaRepository.findOne({
+      where: { user: { id: userId }, manga: { mu_id: muId.toString() } },
+      relations: ['user', 'manga'],
+    });
+  }
+
+  async updateCustomLink(
+    userId: number,
+    muId: number,
+    customLink: string,
+  ): Promise<boolean> {
+    const userManga = await this.userMangaRepository.findOne({
+      where: { user: { id: userId }, manga: { mu_id: muId.toString() } },
+      relations: ['user', 'manga'],
+    });
+    if (!userManga) {
+      throw new NotFoundException(
+        `No manga found in user library for userId: ${userId} and muId: ${muId}`,
+      );
+    }
+    userManga.custom_link = customLink;
+    await this.userMangaRepository.save(userManga);
+    return true;
+  }
+
+  async deleteCustomLink(userId: number, muId: number): Promise<boolean> {
+    const userManga = await this.userMangaRepository.findOne({
+      where: { user: { id: userId }, manga: { mu_id: muId.toString() } },
+      relations: ['user', 'manga'],
+    });
+    if (!userManga) {
+      throw new NotFoundException(
+        `No manga found in user library for userId: ${userId} and muId: ${muId}`,
+      );
+    }
+    userManga.custom_link = null;
+    await this.userMangaRepository.save(userManga);
+    return true;
+  }
 }
