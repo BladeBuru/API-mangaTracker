@@ -10,6 +10,7 @@ import { UserService } from 'src/api/user/user.service';
 import { LibraryModule } from '../library/library.module';
 import { LibraryService } from '../library/library.service';
 import { UpdateMangaService } from './update-manga.service';
+import { MangaSyncService } from './sync-manga.service';
 
 @Module({
   imports: [
@@ -23,7 +24,8 @@ import { UpdateMangaService } from './update-manga.service';
     UserService,
     LibraryService,
     UpdateMangaService,
+    MangaSyncService,
   ],
-  exports: [HelperService, UpdateMangaService],
+  exports: [HelperService, UpdateMangaService, MangaSyncService],
 })
 export class MangasModule {}

@@ -38,6 +38,9 @@ export class Manga {
   @Column({ nullable: true })
   completed: boolean;
 
+  @Column({ type: 'json', nullable: true })
+  associated?: { title: string }[];
+
   @CreateDateColumn()
   created_at: Date;
 
