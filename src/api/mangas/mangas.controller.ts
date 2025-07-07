@@ -6,6 +6,7 @@ import {
   Post,
   Query,
   UseGuards,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { MangaQuickViewDto } from './dto/manga-quick-view.dto';
 import { MangasService } from './mangas.service';
@@ -21,6 +22,8 @@ import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 import { SearchMangaDto } from './dto/search-manga.dto';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { LibraryService } from '@/api/library/library.service';
+import { ConfigService } from '@nestjs/config';
+import { MangaSyncService } from './sync-manga.service';
 
 @ApiTags('Mangas')
 @ApiBearerAuth()
@@ -29,6 +32,8 @@ export class MangasController {
   constructor(
     private readonly mangasService: MangasService,
     private readonly libraryService: LibraryService,
+    private readonly configService: ConfigService,
+    private readonly mangaSyncService: MangaSyncService,
   ) {}
 
   @ApiOperation({
@@ -153,5 +158,15 @@ export class MangasController {
       searchMangaDto.limit,
       searchMangaDto.offset,
     );
+  }
+
+  @Post('admin/sync-all')
+  async syncAllMangas(@Query('secret') secret: string) {
+    const adminSecret = this.configService.get<string>('DATABASE_PASSWORD');
+    if (secret !== adminSecret) {
+      throw new UnauthorizedException('Invalid secret');
+    }
+    await this.mangaSyncService.syncAllMangasWithApi();
+    return { message: 'Synchronisation lancée' };
   }
 }
