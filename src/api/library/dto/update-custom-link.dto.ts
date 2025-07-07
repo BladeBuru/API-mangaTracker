@@ -10,4 +10,4 @@ export class UpdateCustomLinkDto {
   @IsString()
   @IsOptional()
   customLink?: string;
-} 
+}
