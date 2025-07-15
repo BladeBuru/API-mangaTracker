@@ -4,7 +4,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { UserService } from 'src/api/user/user.service';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import User from 'src/api/user/user.entity';
@@ -15,7 +14,6 @@ import { MangaDetailsDto } from 'src/api/mangas/dto/manga-details.dto';
 import { MangaQuickViewDto } from 'src/api/mangas/dto/manga-quick-view.dto';
 import { ChapterException } from './exceptions/chapter.exception';
 import { ReadingStatusException } from './exceptions/reading-status.exception';
-import { UpdateMangaService } from '../mangas/update-manga.service';
 import {
   getReadingStatus,
   isReadingStatus,
@@ -24,10 +22,11 @@ import {
 
 @Injectable()
 export class LibraryService {
+  // 21600000 = 6 hours (1000 milliseconds * 60 seconds * 60 minutes * 6 hours)
+  INFO_REFRESH_INTERVAL = 21600000;
+
   constructor(
-    private readonly userService: UserService,
     private readonly mangasService: MangasService,
-    private readonly updateMangaService: UpdateMangaService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(Manga)
@@ -58,29 +57,18 @@ export class LibraryService {
   }
 
   async getMangas(userId: number): Promise<MangaQuickViewDto[]> {
-    let user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: ['user_mangas', 'user_mangas.manga'],
+    const userEntity = await this.checkUser(userId);
+
+    const mangasIds: number[] = [];
+    userEntity.user_mangas.forEach((userManga) => {
+      mangasIds.push(parseInt(userManga.manga.mu_id));
     });
 
-    const mangaIds = await this.updateMangaService.getMangasIds(
-      user.user_mangas,
-    );
-    const updatedMangas: Manga[] =
-      await this.updateMangaService.checkIfMangaArrayInfoIsOutdated(mangaIds);
-
-    /* 
-    New request for getting updated content if previous mangas were
-    outdated 
-    */
-    if (updatedMangas.length !== 0) {
-      user = await this.userRepository.findOne({
-        where: { id: userId },
-        relations: ['user_mangas', 'user_mangas.manga'],
-      });
+    for (const mangaId of mangasIds) {
+      await this.checkManga(mangaId);
     }
 
-    return user.user_mangas
+    return (await this.checkUser(userId)).user_mangas
       .slice() // Copy of user.user_mangas
       .sort(
         (a, b) =>
@@ -217,26 +205,19 @@ export class LibraryService {
       await this.mangaRepository.save(
         Manga.fromMU(await this.mangasService.getMangaDetails(muId)),
       );
-    } else if (
-      mangaEntity.updated_at < new Date(new Date().getTime() - 21600000) ||
-      mangaEntity.completed === null
-    ) {
-      const mangaDetails = Manga.fromMU(
-        await this.mangasService.getMangaDetails(muId),
-      );
-
-      await this.mangaRepository
-        .createQueryBuilder()
-        .update(Manga)
-        .set({
-          completed: mangaDetails.completed,
-          total_chapters: mangaDetails.total_chapters,
-        })
-        .where('mu_id = :muId', { muId: muId.toString() })
-        .execute();
+    } else if (await this.mangaUpToDate(mangaEntity)) {
+      await this.mangasService.getMangaDetails(muId);
     }
 
     return await this.mangasService.returnMangaIfExist(muId.toString());
+  }
+
+  async mangaUpToDate(mangaEntity: Manga): Promise<boolean> {
+    return (
+      mangaEntity.updated_at <
+        new Date(new Date().getTime() - this.INFO_REFRESH_INTERVAL) ||
+      mangaEntity.completed === null
+    );
   }
 
   async getUserManga(userId: number, muId: number): Promise<UserManga | null> {

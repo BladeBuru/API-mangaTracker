@@ -9,7 +9,6 @@ import User from 'src/api/user/user.entity';
 import { UserManga } from 'src/api/mangas/user-manga.entity';
 import { MangasModule } from 'src/api/mangas/mangas.module';
 import { HttpModule } from '@nestjs/axios';
-import { UpdateMangaService } from '../mangas/update-manga.service';
 
 @Module({
   imports: [
@@ -18,7 +17,7 @@ import { UpdateMangaService } from '../mangas/update-manga.service';
     TypeOrmModule.forFeature([Manga, User, UserManga]),
   ],
   controllers: [LibraryController],
-  providers: [MangasService, UserService, LibraryService, UpdateMangaService],
+  providers: [MangasService, UserService, LibraryService],
   exports: [LibraryService],
 })
 export class LibraryModule {}

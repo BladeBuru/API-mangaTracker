@@ -53,7 +53,10 @@ export class MangasService {
     return MangaQuickViewDto.arrayFromMu(data['results']);
   }
 
-  async getMangaDetails(muId: number): Promise<MangaDetailsDto> {
+  async getMangaDetails(
+    muId: number,
+    currentTotalChapters = 0,
+  ): Promise<MangaDetailsDto> {
     const url = MU_DETAIL_URL.concat(muId.toString());
 
     const { data } = await firstValueFrom(
@@ -81,7 +84,8 @@ export class MangasService {
         small_cover_url: details.smallCoverUrl,
         medium_cover_url: details.mediumCoverUrl,
         rating: details.rating,
-        total_chapters: details.totalChapters,
+        // Strategy: we keep the highest value for totalChapters
+        total_chapters: Math.max(details.totalChapters, currentTotalChapters),
         completed: details.completed,
         associated: details.associated,
       },

@@ -16,26 +16,9 @@ export class MangaSyncService {
     const allMangas = await this.mangaRepository.find();
     for (const manga of allMangas) {
       try {
-        const details = await this.mangasService.getMangaDetails(
+        await this.mangasService.getMangaDetails(
           Number(manga.mu_id),
-        );
-        // Stratégie : on garde la valeur la plus élevée pour totalChapters
-        const newTotalChapters = Math.max(
-          details.totalChapters,
           manga.total_chapters,
-        );
-        await this.mangaRepository.update(
-          { id: manga.id },
-          {
-            title: details.title,
-            year: details.year,
-            small_cover_url: details.smallCoverUrl,
-            medium_cover_url: details.mediumCoverUrl,
-            rating: details.rating,
-            total_chapters: newTotalChapters,
-            completed: details.completed,
-            associated: details.associated,
-          },
         );
       } catch (err) {
         // Log the error but continue syncing
