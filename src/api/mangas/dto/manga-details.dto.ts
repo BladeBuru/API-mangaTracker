@@ -67,6 +67,16 @@ export class MangaDetailsDto {
   @IsOptional()
   associated?: { title: string }[];
 
+  @ApiPropertyOptional({
+    description: 'List of genres for this manga',
+  })
+  @IsOptional()
+  genres?: { genre: string }[];
+
+  @ApiProperty()
+  @IsString()
+  type: string;
+
   @ApiPropertyOptional({ description: 'Custom user link for this manga' })
   @IsOptional()
   @IsString()
@@ -278,8 +288,9 @@ export class MangaDetailsDto {
     mangaDetailsDto['completed'] = muObject['completed'];
     mangaDetailsDto['muId'] = muObject['series_id'];
     mangaDetailsDto['authors'] = muObject['authors'];
-    mangaDetailsDto['genres'] = muObject['genres'];
+    mangaDetailsDto['genres'] = muObject['genres'] ?? [];
     mangaDetailsDto['associated'] = muObject['associated'] ?? [];
+    mangaDetailsDto['type'] = muObject['type'];
     return mangaDetailsDto;
   }
 }

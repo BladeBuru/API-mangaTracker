@@ -41,6 +41,12 @@ export class Manga {
   @Column({ type: 'json', nullable: true })
   associated?: { title: string }[];
 
+  @Column({ type: 'json', nullable: true })
+  genres?: { genre: string }[];
+
+  @Column({ default: 'Manga' })
+  type: string;
+
   @CreateDateColumn()
   created_at: Date;
 
@@ -72,6 +78,8 @@ export class Manga {
     manga['rating'] = mangaDetailsDto['rating'];
     manga['completed'] = mangaDetailsDto['completed'];
     manga['associated'] = mangaDetailsDto['associated'] ?? [];
+    manga['genres'] = mangaDetailsDto['genres'] ?? [];
+    manga['type'] = mangaDetailsDto['type'];
     return manga;
   }
 }

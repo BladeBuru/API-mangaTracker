@@ -47,6 +47,15 @@ export class MangaQuickViewDto {
   })
   customLink?: string;
 
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: 'List of genres for this manga',
+  })
+  genres?: { genre: string }[];
+
+  @ApiProperty()
+  type: string;
+
   static fromMu(data: any) {
     const dto = new MangaQuickViewDto();
     dto.muId = data['record']['series_id'];
@@ -56,6 +65,8 @@ export class MangaQuickViewDto {
     dto.largeCoverUrl = data['record']['image']['url']['original'];
     dto.rating = data['record']['bayesian_rating'];
     dto.associated = data['record']['associated'] ?? [];
+    dto.genres = data['record']['genres'] ?? [];
+    dto.type = data['record']['type'];
     return dto;
   }
 
@@ -71,6 +82,8 @@ export class MangaQuickViewDto {
     dto.totalChapters = userManga.manga.total_chapters;
     dto.readingStatus = userManga.reading_status;
     dto.associated = userManga.manga.associated ?? [];
+    dto.genres = userManga.manga.genres ?? [];
+    dto.type = userManga.manga.type;
     dto.customLink = userManga.custom_link ?? undefined;
     return dto;
   }

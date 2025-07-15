@@ -88,6 +88,8 @@ export class MangasService {
         total_chapters: Math.max(details.totalChapters, currentTotalChapters),
         completed: details.completed,
         associated: details.associated,
+        genres: details.genres,
+        type: details.type,
       },
     );
     return details;
