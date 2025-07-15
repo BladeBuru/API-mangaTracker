@@ -87,15 +87,14 @@ export class MangaDetailsDto {
   custom_link?: string;
 
   @ApiPropertyOptional({
-    description:
-      "Indique si le manga est dans la bibliothèque de l'utilisateur",
+    description: "Indicates if the manga is in the user's library",
   })
   @IsOptional()
   @IsBoolean()
   in_library?: boolean;
 
   @ApiPropertyOptional({
-    description: "Nombre de chapitres lus par l'utilisateur",
+    description: 'Number of chapters read by the user',
   })
   @IsOptional()
   @IsNumber()
@@ -108,7 +107,7 @@ export class MangaDetailsDto {
   }
 
   private static sanitizeLine(line: string): string {
-    // retire les marqueurs Markdown bold et trim
+    // remove bold and trim Markdown markers
     return line.replace(/\*/g, '').trim();
   }
 
@@ -148,7 +147,7 @@ export class MangaDetailsDto {
     const seen = new Set<string>();
     const lines = status.split(/\r?\n/).map((l) => this.sanitizeLine(l));
 
-    // 1) Extras de la ligne globale (ex : "131 Chapters + 7 Bonus Chapters + …")
+    // 1) Extract the global line (eg: "131 Chapters + 7 Bonus Chapters + ...")
     const headerLine = lines.find((l) => /^\d+\s*Chapters/i.test(l));
     if (headerLine) {
       const extras = headerLine
@@ -195,7 +194,7 @@ export class MangaDetailsDto {
       }
     }
 
-    // 2) Parcours des lignes de saisons et bonus annexes
+    // 2) Seasons and bonuses
     for (const line of lines.slice(1)) {
       // Side Story
       const sideMatch = line.match(/^Side Story\s*:\s*(\d+)(?=\s*Chapters)/i);
@@ -213,7 +212,7 @@ export class MangaDetailsDto {
         continue;
       }
 
-      // Lignes de saisons ("S1:", "S2 Part 1:", etc.)
+      // Season lines ("S1:", "S2 Part 1:", etc.)
       if (!/^(?:S\d+(?:\s+Part\s+\d+)?)\s*:/i.test(line)) {
         continue;
       }

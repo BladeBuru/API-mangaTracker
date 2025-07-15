@@ -37,13 +37,13 @@ export class MangaQuickViewDto {
 
   @IsOptional()
   @ApiPropertyOptional({
-    description: 'Liste des noms associés (autres titres) pour ce manga',
+    description: 'List of associated names (other titles) for this manga',
   })
   associated?: { title: string }[];
 
   @IsOptional()
   @ApiPropertyOptional({
-    description: 'Lien personnalisé de l’utilisateur pour ce manga',
+    description: 'Custom user link for this manga',
   })
   customLink?: string;
 

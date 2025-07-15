@@ -52,12 +52,12 @@ export class Manga {
 
   static fromMU(mangaDetailsDto: MangaDetailsDto): Manga {
     if (!mangaDetailsDto) {
-      throw new Error('fromMU: mangaDetailsDto est undefined/null');
+      throw new Error('fromMU: mangaDetailsDto is undefined/null');
     }
     const muId =
       (mangaDetailsDto as any).muId ?? (mangaDetailsDto as any).mu_id;
     if (muId === undefined || muId === null) {
-      throw new Error('fromMU: muId est manquant');
+      throw new Error('fromMU: muId is missing');
     }
     const manga = new Manga();
     manga['title'] = mangaDetailsDto['title'] ?? mangaDetailsDto['title'];

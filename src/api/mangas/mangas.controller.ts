@@ -167,6 +167,6 @@ export class MangasController {
       throw new UnauthorizedException('Invalid secret');
     }
     await this.mangaSyncService.syncAllMangasWithApi();
-    return { message: 'Synchronisation lancée' };
+    return { message: 'Synchronization started' };
   }
 }

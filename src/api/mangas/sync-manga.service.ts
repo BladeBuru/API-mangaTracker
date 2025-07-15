@@ -38,13 +38,10 @@ export class MangaSyncService {
           },
         );
       } catch (err) {
-        // Log l'erreur mais continue la synchro
-        console.error(
-          `Erreur lors de la synchro du manga mu_id=${manga.mu_id} :`,
-          err,
-        );
+        // Log the error but continue syncing
+        console.error(`Error syncing manga mu_id=${manga.mu_id} :`, err);
       }
     }
-    console.log('Synchronisation des mangas terminée !');
+    console.log('Manga synchronization complete!');
   }
 }
