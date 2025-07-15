@@ -49,13 +49,13 @@ export class AuthService {
       throw new HttpException('No user found', HttpStatus.NOT_FOUND);
     }
 
-    await this.repository.update(user.id, { lastLoginAt: new Date() });
+    await this.repository.update(user.id, { last_login_at: new Date() });
 
     return this.helper.generateToken(user);
   }
 
   public async refresh(user: User): Promise<TokenDto> {
-    await this.repository.update(user.id, { lastLoginAt: new Date() });
+    await this.repository.update(user.id, { last_login_at: new Date() });
 
     return this.helper.generateToken(user);
   }

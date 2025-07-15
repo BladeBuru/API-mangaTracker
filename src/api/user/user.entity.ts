@@ -19,7 +19,7 @@ class User {
   user_mangas: UserManga[];
 
   @Column({ type: 'timestamp', nullable: true, default: null })
-  public lastLoginAt: Date | null;
+  public last_login_at: Date | null;
 }
 
 export default User;

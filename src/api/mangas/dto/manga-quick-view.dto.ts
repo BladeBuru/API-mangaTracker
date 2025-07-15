@@ -69,7 +69,7 @@ export class MangaQuickViewDto {
     dto.rating = userManga.manga.rating;
     dto.readChapters = userManga.user_read_chapters;
     dto.totalChapters = userManga.manga.total_chapters;
-    dto.readingStatus = userManga.readingStatus;
+    dto.readingStatus = userManga.reading_status;
     dto.associated = userManga.manga.associated ?? [];
     dto.customLink = userManga.custom_link ?? undefined;
     return dto;

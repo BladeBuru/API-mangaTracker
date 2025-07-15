@@ -52,7 +52,7 @@ export class LibraryService {
     const userManga = new UserManga();
     userManga.user = userEntity;
     userManga.manga = mangaEntity;
-    userManga.lastUpdated = new Date();
+    userManga.last_updated = new Date();
     await this.userMangaRepository.save(userManga);
     return await this.mangasService.getMangaDetails(muId);
   }
@@ -84,7 +84,8 @@ export class LibraryService {
       .slice() // Copy of user.user_mangas
       .sort(
         (a, b) =>
-          new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime(),
+          new Date(b.last_updated).getTime() -
+          new Date(a.last_updated).getTime(),
       ) // Sort by date of last update of the manga in descending order
       .map((a) => MangaQuickViewDto.fromLibrary(a));
   }
@@ -147,11 +148,11 @@ export class LibraryService {
       .update(UserManga)
       .set({
         user_read_chapters: readChapters,
-        readingStatus:
+        reading_status:
           readChapters < mangaEntity.total_chapters
             ? ReadingStatus.Reading
             : allAvailableChaptersReadStatus,
-        lastUpdated: new Date(),
+        last_updated: new Date(),
       })
       .where('user_id = :id', { id: userId })
       .andWhere('manga_id = :muId', { muId: muId.toString() })
@@ -187,7 +188,7 @@ export class LibraryService {
     await this.userMangaRepository
       .createQueryBuilder()
       .update(UserManga)
-      .set({ readingStatus: readingStatus, lastUpdated: new Date() })
+      .set({ reading_status: readingStatus, last_updated: new Date() })
       .where('user_id = :id', { id: userId })
       .andWhere('manga_id = :muId', { muId: muId.toString() })
       .execute();

@@ -33,10 +33,10 @@ export class UserManga {
   user_read_chapters: number;
 
   @Column({ nullable: false, default: ReadingStatus.ReadLater })
-  public readingStatus: string;
+  public reading_status: string;
 
   @Column({ type: 'timestamp', nullable: true, default: null })
-  public lastUpdated: Date | null;
+  public last_updated: Date | null;
 
   @Column({ type: 'varchar', nullable: true, default: null })
   custom_link: string | null;

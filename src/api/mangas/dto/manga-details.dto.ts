@@ -42,11 +42,6 @@ export class MangaDetailsDto {
   @IsNumber()
   rating: number;
 
-  @ApiPropertyOptional()
-  @IsNumber()
-  @IsOptional()
-  readChapters: number;
-
   @ApiProperty()
   @IsNumber()
   totalChapters: number;
@@ -66,15 +61,6 @@ export class MangaDetailsDto {
   @ApiPropertyOptional()
   authors: any[];
 
-  @ApiPropertyOptional()
-  genres: any[];
-
-  @ApiPropertyOptional()
-  anime: any[];
-
-  @ApiPropertyOptional()
-  categories: any[];
-
   @ApiPropertyOptional({
     description: 'List of associated names (other titles) for this manga',
   })
@@ -84,21 +70,21 @@ export class MangaDetailsDto {
   @ApiPropertyOptional({ description: 'Custom user link for this manga' })
   @IsOptional()
   @IsString()
-  custom_link?: string;
+  customLink?: string;
 
   @ApiPropertyOptional({
     description: "Indicates if the manga is in the user's library",
   })
   @IsOptional()
   @IsBoolean()
-  in_library?: boolean;
+  inLibrary?: boolean;
 
   @ApiPropertyOptional({
     description: 'Number of chapters read by the user',
   })
   @IsOptional()
   @IsNumber()
-  read_chapters_count?: number;
+  readChaptersCount?: number;
 
   private static parseLatestChapter(status: string, fallback: number): number {
     if (!status) return fallback;
@@ -274,33 +260,23 @@ export class MangaDetailsDto {
     mangaDetailsDto['title'] = muObject['title'];
     mangaDetailsDto['description'] = muObject['description'];
     mangaDetailsDto['status'] = muObject['status'];
-    mangaDetailsDto.publicationStatus = readingStatus;
-    mangaDetailsDto['small_cover_url'] = muObject['image']['url']['thumb'];
-    mangaDetailsDto['medium_cover_url'] = muObject['image']['url']['original'];
+    mangaDetailsDto['publicationStatus'] = readingStatus;
+    mangaDetailsDto['smallCoverUrl'] = muObject['image']['url']['thumb'];
+    mangaDetailsDto['mediumCoverUrl'] = muObject['image']['url']['original'];
     mangaDetailsDto['year'] = muObject['year'];
     mangaDetailsDto['rating'] = muObject['bayesian_rating'];
-    mangaDetailsDto['total_chapters'] = MangaDetailsDto.parseLatestChapter(
+    mangaDetailsDto['totalChapters'] = MangaDetailsDto.parseLatestChapter(
       muObject.status,
       muObject.latest_chapter,
     );
-    mangaDetailsDto.seasonChapters = seasonChapters.map(
+    mangaDetailsDto['seasonChapters'] = seasonChapters.map(
       ({ season, chapters }) => ({ season, chapters }),
     );
-    mangaDetailsDto.bonusChapters = bonusChapters.map(
-      ({ season, chapters }) => ({ season, chapters }),
-    );
-    mangaDetailsDto['total_chapters'] = MangaDetailsDto.parseLatestChapter(
-      muObject.status,
-      muObject.latest_chapter,
-    );
-    mangaDetailsDto.seasonChapters = seasonChapters.map(
-      ({ season, chapters }) => ({ season, chapters }),
-    );
-    mangaDetailsDto.bonusChapters = bonusChapters.map(
+    mangaDetailsDto['bonusChapters'] = bonusChapters.map(
       ({ season, chapters }) => ({ season, chapters }),
     );
     mangaDetailsDto['completed'] = muObject['completed'];
-    mangaDetailsDto['mu_id'] = muObject['series_id'];
+    mangaDetailsDto['muId'] = muObject['series_id'];
     mangaDetailsDto['authors'] = muObject['authors'];
     mangaDetailsDto['genres'] = muObject['genres'];
     mangaDetailsDto['associated'] = muObject['associated'] ?? [];
