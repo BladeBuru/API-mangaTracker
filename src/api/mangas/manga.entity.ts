@@ -66,15 +66,12 @@ export class Manga {
       throw new Error('fromMU: muId is missing');
     }
     const manga = new Manga();
-    manga['title'] = mangaDetailsDto['title'] ?? mangaDetailsDto['title'];
-    manga['year'] = mangaDetailsDto['year'] ?? mangaDetailsDto['year'];
-    manga['small_cover_url'] =
-      mangaDetailsDto['small_cover_url'] ?? mangaDetailsDto['smallCoverUrl'];
-    manga['medium_cover_url'] =
-      mangaDetailsDto['medium_cover_url'] ?? mangaDetailsDto['mediumCoverUrl'];
+    manga['title'] = mangaDetailsDto['title'];
+    manga['year'] = mangaDetailsDto['year'];
+    manga['small_cover_url'] = mangaDetailsDto['smallCoverUrl'];
+    manga['medium_cover_url'] = mangaDetailsDto['mediumCoverUrl'];
     manga['mu_id'] = muId.toString();
-    manga['total_chapters'] =
-      mangaDetailsDto['total_chapters'] ?? mangaDetailsDto['totalChapters'];
+    manga['total_chapters'] = mangaDetailsDto['totalChapters'];
     manga['rating'] = mangaDetailsDto['rating'];
     manga['completed'] = mangaDetailsDto['completed'];
     manga['associated'] = mangaDetailsDto['associated'] ?? [];
