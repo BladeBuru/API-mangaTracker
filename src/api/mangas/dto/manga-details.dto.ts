@@ -73,6 +73,12 @@ export class MangaDetailsDto {
   @IsOptional()
   genres?: { genre: string }[];
 
+  @ApiPropertyOptional({
+    description: 'List of recommendations for this manga',
+  })
+  @IsOptional()
+  recommendations?: string[];
+
   @ApiProperty()
   @IsString()
   type: string;
@@ -289,6 +295,10 @@ export class MangaDetailsDto {
     mangaDetailsDto['muId'] = muObject['series_id'];
     mangaDetailsDto['authors'] = muObject['authors'];
     mangaDetailsDto['genres'] = muObject['genres'] ?? [];
+    mangaDetailsDto['recommendations'] =
+      muObject['recommendations']
+        .concat(muObject['category_recommendations'])
+        .map((recommendation) => recommendation['series_id']) ?? [];
     mangaDetailsDto['associated'] = muObject['associated'] ?? [];
     mangaDetailsDto['type'] = muObject['type'];
     return mangaDetailsDto;

@@ -89,6 +89,7 @@ export class MangasService {
         completed: details.completed,
         associated: details.associated,
         genres: details.genres,
+        recommendations: details.recommendations,
         type: details.type,
       },
     );

@@ -53,6 +53,12 @@ export class MangaQuickViewDto {
   })
   genres?: { genre: string }[];
 
+  @ApiPropertyOptional({
+    description: 'List of recommendations for this manga',
+  })
+  @IsOptional()
+  recommendations?: string[];
+
   @ApiProperty()
   type: string;
 
@@ -66,6 +72,7 @@ export class MangaQuickViewDto {
     dto.rating = data['record']['bayesian_rating'];
     dto.associated = data['record']['associated'] ?? [];
     dto.genres = data['record']['genres'] ?? [];
+    dto.recommendations = data['record']['recommendations'] ?? [];
     dto.type = data['record']['type'];
     return dto;
   }
@@ -83,6 +90,7 @@ export class MangaQuickViewDto {
     dto.readingStatus = userManga.reading_status;
     dto.associated = userManga.manga.associated ?? [];
     dto.genres = userManga.manga.genres ?? [];
+    dto.recommendations = userManga.manga.recommendations ?? [];
     dto.type = userManga.manga.type;
     dto.customLink = userManga.custom_link ?? undefined;
     return dto;
