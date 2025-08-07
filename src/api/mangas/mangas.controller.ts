@@ -193,6 +193,7 @@ export class MangasController {
         const dto = new MangaRecommendationView();
         dto.muId = details.muId;
         dto.title = details.title;
+        dto.year = details.year;
         dto.smallCoverUrl = details.smallCoverUrl;
         dto.mediumCoverUrl = details.mediumCoverUrl;
         dto.rating = details.rating;

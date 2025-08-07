@@ -39,10 +39,10 @@ export class Manga {
   completed: boolean;
 
   @Column({ type: 'json', nullable: true })
-  associated?: { title: string }[];
+  associated?: string[];
 
   @Column({ type: 'json', nullable: true })
-  genres?: { genre: string }[];
+  genres?: string[];
 
   @Column({ type: 'json', nullable: true })
   recommendations?: string[];

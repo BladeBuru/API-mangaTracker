@@ -9,6 +9,9 @@ export class MangaRecommendationView {
   title: string;
 
   @ApiProperty()
+  year: number;
+
+  @ApiProperty()
   smallCoverUrl: string;
 
   @ApiProperty()

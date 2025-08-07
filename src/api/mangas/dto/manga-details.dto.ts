@@ -65,13 +65,13 @@ export class MangaDetailsDto {
     description: 'List of associated names (other titles) for this manga',
   })
   @IsOptional()
-  associated?: { title: string }[];
+  associated?: string[];
 
   @ApiPropertyOptional({
     description: 'List of genres for this manga',
   })
   @IsOptional()
-  genres?: { genre: string }[];
+  genres?: string[];
 
   @ApiPropertyOptional({
     description: 'List of recommendations for this manga',
@@ -294,12 +294,15 @@ export class MangaDetailsDto {
     mangaDetailsDto['completed'] = muObject['completed'];
     mangaDetailsDto['muId'] = muObject['series_id'];
     mangaDetailsDto['authors'] = muObject['authors'];
-    mangaDetailsDto['genres'] = muObject['genres'] ?? [];
-    mangaDetailsDto['recommendations'] =
-      muObject['recommendations']
-        .concat(muObject['category_recommendations'])
-        .map((recommendation) => recommendation['series_id']) ?? [];
-    mangaDetailsDto['associated'] = muObject['associated'] ?? [];
+    mangaDetailsDto['genres'] = (muObject['genres'] ?? []).map(
+      (hash) => hash['genre'],
+    );
+    mangaDetailsDto['recommendations'] = (muObject['recommendations'] ?? [])
+      .concat(muObject['category_recommendations'] ?? [])
+      .map((hash) => hash['series_id']);
+    mangaDetailsDto['associated'] = (muObject['associated'] ?? []).map(
+      (hash) => hash['title'],
+    );
     mangaDetailsDto['type'] = muObject['type'];
     return mangaDetailsDto;
   }

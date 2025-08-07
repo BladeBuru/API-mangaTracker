@@ -39,7 +39,7 @@ export class MangaQuickViewDto {
   @ApiPropertyOptional({
     description: 'List of associated names (other titles) for this manga',
   })
-  associated?: { title: string }[];
+  associated?: string[];
 
   @IsOptional()
   @ApiPropertyOptional({
@@ -51,7 +51,7 @@ export class MangaQuickViewDto {
   @ApiPropertyOptional({
     description: 'List of genres for this manga',
   })
-  genres?: { genre: string }[];
+  genres?: string[];
 
   @ApiPropertyOptional({
     description: 'List of recommendations for this manga',
@@ -70,9 +70,13 @@ export class MangaQuickViewDto {
     dto.smallCoverUrl = data['record']['image']['url']['thumb'];
     dto.mediumCoverUrl = data['record']['image']['url']['original'];
     dto.rating = data['record']['bayesian_rating'];
-    dto.associated = data['record']['associated'] ?? [];
-    dto.genres = data['record']['genres'] ?? [];
-    dto.recommendations = data['record']['recommendations'] ?? [];
+    dto.associated = (data['record']['associated'] ?? []).map(
+      (hash) => hash['title'],
+    );
+    dto.genres = (data['record']['genres'] ?? []).map((hash) => hash['genre']);
+    dto.recommendations = (data['record']['recommendations'] ?? [])
+      .concat(data['record']['category_recommendations'] ?? [])
+      .map((hash) => hash['series_id']);
     dto.type = data['record']['type'];
     return dto;
   }
