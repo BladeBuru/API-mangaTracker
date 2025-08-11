@@ -1,0 +1,2330 @@
+[
+  {
+    "type": "Manga",
+    "yearFrom": 1960,
+    "yearTo": 1964,
+    "prefix": "a",
+    "mode": "letter",
+    "nextPage": 96
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1965,
+    "yearTo": 1968,
+    "prefix": "a",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1969,
+    "yearTo": 1987,
+    "prefix": "a",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1988,
+    "yearTo": 2025,
+    "prefix": "a",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "b",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "c",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "d",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "e",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "f",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "g",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "h",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "i",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "j",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "k",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "l",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "m",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "n",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "o",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "p",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "q",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "r",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "s",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "t",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "u",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "v",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "w",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "x",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "y",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "z",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "0",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "1",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "2",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "3",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "4",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "5",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "6",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "7",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "8",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manga",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "9",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "a",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "b",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "c",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "d",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "e",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "f",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "g",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "h",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "i",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "j",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "k",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "l",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "m",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "n",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "o",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "p",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "q",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "r",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "s",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "t",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "u",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "v",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "w",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "x",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "y",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "z",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "0",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "1",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "2",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "3",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "4",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "5",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "6",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "7",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "8",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhua",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "9",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "a",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "b",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "c",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "d",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "e",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "f",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "g",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "h",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "i",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "j",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "k",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "l",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "m",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "n",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "o",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "p",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "q",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "r",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "s",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "t",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "u",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "v",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "w",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "x",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "y",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "z",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "0",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "1",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "2",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "3",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "4",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "5",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "6",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "7",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "8",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Manhwa",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "9",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "a",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "b",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "c",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "d",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "e",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "f",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "g",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "h",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "i",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "j",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "k",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "l",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "m",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "n",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "o",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "p",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "q",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "r",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "s",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "t",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "u",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "v",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "w",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "x",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "y",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "z",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "0",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "1",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "2",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "3",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "4",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "5",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "6",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "7",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "8",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Nordic",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "9",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "a",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "b",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "c",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "d",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "e",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "f",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "g",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "h",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "i",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "j",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "k",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "l",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "m",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "n",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "o",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "p",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "q",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "r",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "s",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "t",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "u",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "v",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "w",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "x",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "y",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "z",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "0",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "1",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "2",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "3",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "4",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "5",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "6",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "7",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "8",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "OEL",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "9",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "a",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "b",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "c",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "d",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "e",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "f",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "g",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "h",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "i",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "j",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "k",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "l",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "m",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "n",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "o",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "p",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "q",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "r",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "s",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "t",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "u",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "v",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "w",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "x",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "y",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "z",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "0",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "1",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "2",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "3",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "4",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "5",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "6",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "7",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "8",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Spanish",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "9",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "a",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "b",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "c",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "d",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "e",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "f",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "g",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "h",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "i",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "j",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "k",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "l",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "m",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "n",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "o",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "p",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "q",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "r",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "s",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "t",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "u",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "v",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "w",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "x",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "y",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "z",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "0",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "1",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "2",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "3",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "4",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "5",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "6",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "7",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "8",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Thai",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "9",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "a",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "b",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "c",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "d",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "e",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "f",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "g",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "h",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "i",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "j",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "k",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "l",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "m",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "n",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "o",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "p",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "q",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "r",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "s",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "t",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "u",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "v",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "w",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "x",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "y",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "z",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "0",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "1",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "2",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "3",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "4",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "5",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "6",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "7",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "8",
+    "mode": "letter",
+    "nextPage": 1
+  },
+  {
+    "type": "Vietnamese",
+    "yearFrom": 1950,
+    "yearTo": 2025,
+    "prefix": "9",
+    "mode": "letter",
+    "nextPage": 1
+  }
+]
