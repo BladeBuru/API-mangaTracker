@@ -1,5 +1,15 @@
 #!/usr/bin/env ts-node
 
+/**
+ * Scraper MU :
+ * - Passe 1 : par année décroissante, sans filtre de type/genre
+ * - Si un bucket annuel est trop gros / peu rentable → on subdivise en (genre, année) pour cette année
+ * - Checkpoint (scrape.todo.json) pour reprise exacte
+ * - Garde-fou 10k (page 100), retries/backoff, burst pause
+ * - Déduplication des muIds et écriture incrémentale
+ * - Logs des paramètres envoyés à chaque requête
+ */
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '@/app.module';
 import { MangasService } from '@/api/mangas/mangas.service';
@@ -7,83 +17,107 @@ import { promises as fs } from 'fs';
 
 type AdvParams = Parameters<MangasService['searchMangaAdvanced']>[0];
 
+type TaskKind = 'year' | 'genreYear';
+
 type Task = {
-  type?: string; // MU type (ex: "Manga")
-  yearFrom: number; // borne inclusive
-  yearTo: number; // borne inclusive
-  prefix: string; // ex: "a", "a0", ...
-  mode: 'letter' | 'search';
-  nextPage: number; // page à appeler en prochain
+  kind: TaskKind;
+  year: number; // année unique (MU n’accepte pas de plage)
+  genre?: string; // défini pour kind='genreYear'
+  orderby?: string;
+  nextPage: number;
 };
 
-const ALPHABET = [...'abcdefghijklmnopqrstuvwxyz0123456789'];
 const DEFAULT_NSFW_EXCLUDE = [
   'Adult',
   'Hentai',
+  'Mature',
   'Smut',
+  'Ecchi',
   'Lolicon',
   'Shotacon',
   'Doujinshi',
 ];
 
+const GENRES_ALLOWED = [
+  'Action',
+  'Adventure',
+  'Comedy',
+  'Drama',
+  'Fantasy',
+  'Historical',
+  'Horror',
+  'Martial Arts',
+  'Mystery',
+  'Psychological',
+  'Romance',
+  'School Life',
+  'Sci-fi',
+  'Slice of Life',
+  'Sports',
+  'Supernatural',
+  'Tragedy',
+  'Mecha',
+  'Harem',
+  'Gender Bender',
+];
+
 const BASE_DELAY = 1200;
 const JITTER = 400;
 const MAX_RETRIES = 3;
-const BURST_PAUSE_EVERY = 20; // pause toutes les 20 pages
+const BURST_PAUSE_EVERY = 5;
 const BURST_PAUSE_MS = 3000;
+const MAX_EMPTY_PAGES = 5;
+const MIN_NEW_RATIO = 0.05; // 5% de nouveaux mini
+const ORDERBY_ALLOWED = new Set([
+  'score',
+  'title',
+  'rating',
+  'year',
+  'date_added',
+  'week_pos',
+  'month1_pos',
+  'month3_pos',
+  'month6_pos',
+  'year_pos',
+]);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const jitter = () => BASE_DELAY + (Math.random() * 2 - 1) * JITTER;
 
-// ---------- CLI ----------
+// ---------------- CLI ----------------
 // [2]=outPath (./muIds.json)
 // [3]=perPage (100)
 // [4]=maxPagesBucket (100)  ~ fenêtre ≈ 10k
 // [5]=minYear (1950)
 // [6]=maxYear (2025)
-// [7]=yearSpan (0 = pas de split initial → une seule grande tranche)
-// [8]=types CSV (ex: "Manga,Manhwa,Manhua,Novel")
-// [9]=genres inclus CSV ("" pour aucun)
-// [10]=genres exclus CSV ("" pour aucun → sinon remplace le défaut)
-// [11]=todoPath (./scrape.todo.json)
+// [7]=(unused)
+// [8]=genres inclus CSV (optionnel, sinon GENRES_ALLOWED)
+// [9]=genres exclus CSV (optionnel, sinon NSFW défaut)
+// [10]=todoPath (./scrape.todo.json)
+// [11]=orderby (default "title")
 const outPath = process.argv[2] || './muIds.json';
 const PER_PAGE = Math.max(1, Number(process.argv[3] ?? 100));
 const MAX_PAGES_BUCKET = Math.max(1, Number(process.argv[4] ?? 100));
-const MIN_YEAR = Number(process.argv[5] ?? 1950);
+const MIN_YEAR = Number(process.argv[5] ?? 1900);
 const MAX_YEAR = Number(process.argv[6] ?? 2025);
-const YEAR_SPAN = Number(process.argv[7] ?? 0);
-const TYPES = process.argv[8]
-  ?.split(',')
-  .map((s) => s.trim())
-  .filter(Boolean)?.length
-  ? process.argv[8].split(',').map((s) => s.trim())
-  : ['Manga', 'Manhwa', 'Manhua', 'Novel'];
+// const _UNUSED = process.argv[7];
 const INCLUDED_GENRES =
+  process.argv[8]
+    ?.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean) ?? GENRES_ALLOWED;
+const EXCLUDED_GENRES =
   process.argv[9]
     ?.split(',')
     .map((s) => s.trim())
-    .filter(Boolean) ?? [];
-const EXCLUDED_GENRES =
-  process.argv[10]
-    ?.split(',')
-    .map((s) => s.trim())
     .filter(Boolean) ?? DEFAULT_NSFW_EXCLUDE;
-const TODO_PATH = process.argv[11] || './scrape.todo.json';
+const TODO_PATH = process.argv[10] || './scrape.todo.json';
+const ORDERBY = (() => {
+  const v = (process.argv[11] || 'title').trim();
+  return ORDERBY_ALLOWED.has(v) ? v : 'title';
+})();
 
-// -------------------------
-
-function buildYearRanges(): Array<{ from: number; to: number }> {
-  if (!YEAR_SPAN || YEAR_SPAN <= 0) return [{ from: MIN_YEAR, to: MAX_YEAR }];
-  const out: Array<{ from: number; to: number }> = [];
-  let y = MIN_YEAR;
-  while (y <= MAX_YEAR) {
-    const to = Math.min(y + YEAR_SPAN - 1, MAX_YEAR);
-    out.push({ from: y, to });
-    y = to + 1;
-  }
-  return out;
-}
-
+// -------------- checkpoint --------------
 async function loadTodo(): Promise<Task[]> {
   try {
     const raw = await fs.readFile(TODO_PATH, 'utf8');
@@ -98,11 +132,12 @@ async function saveTodo(todo: Task[]) {
   await fs.writeFile(TODO_PATH, JSON.stringify(todo, null, 2), 'utf8');
 }
 
+// -------------- main --------------
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(AppModule);
   const service = app.get(MangasService);
 
-  // Charger muIds existants (reprendre sans doublons)
+  // muIds déjà connus
   const seen = new Set<number>();
   const muIds: number[] = [];
   try {
@@ -123,35 +158,27 @@ async function bootstrap() {
   const saveFile = async () =>
     fs.writeFile(outPath, JSON.stringify(muIds, null, 2), 'utf8');
 
-  // Prépare / charge la TODO
+  // TODO initiale : années décroissantes, sans type/genre
   const todo: Task[] = await loadTodo();
   if (todo.length === 0) {
-    const yearRanges = buildYearRanges();
-    for (const t of TYPES) {
-      for (const yr of yearRanges) {
-        for (const c of ALPHABET) {
-          todo.push({
-            type: t,
-            yearFrom: yr.from,
-            yearTo: yr.to,
-            prefix: c,
-            mode: 'letter',
-            nextPage: 1,
-          });
-        }
-      }
+    for (let y = MAX_YEAR; y >= MIN_YEAR; y--) {
+      todo.push({ kind: 'year', year: y, orderby: ORDERBY, nextPage: 1 });
     }
     await saveTodo(todo);
-    console.log(`🔰 TODO initialisée (${todo.length} tâches).`);
+    console.log(`🔰 TODO initialisée (${todo.length} tâches annuelles).`);
   } else {
     console.log(
       `🔁 Reprise : ${todo.length} tâche(s) chargée(s) depuis ${TODO_PATH}`,
     );
   }
 
+  // HTTP + retry/backoff
   async function fetchPageWithRetry(params: AdvParams, page: number) {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
+        console.log(
+          `📤 Params envoyés (page ${page}): ${JSON.stringify(params)}`,
+        );
         const items = await service.searchMangaAdvanced(
           { ...params, page, perpage: PER_PAGE },
           { limit: PER_PAGE, page, mergeNsfwExclusion: false },
@@ -178,83 +205,64 @@ async function bootstrap() {
     return [];
   }
 
+  // payload selon tâche
   function buildParamsFromTask(t: Task): AdvParams {
-    const useLetter = t.mode === 'letter';
-    const isSingleYear = t.yearFrom === t.yearTo;
-    const p: AdvParams = {
-      orderby: 'title',
-      stype: 'title',
-      ...(t.type ? { type: [t.type] } : {}),
-      ...(isSingleYear ? { year: String(t.yearFrom) } : {}), // MU: une année unique seulement
-      ...(INCLUDED_GENRES.length ? { genre: INCLUDED_GENRES } : {}),
+    const common: AdvParams = {
+      orderby: t.orderby || ORDERBY,
+      year: String(t.year),
       ...(EXCLUDED_GENRES.length ? { exclude_genre: EXCLUDED_GENRES } : {}),
-      ...(useLetter ? { letter: t.prefix } : { search: t.prefix }),
     };
-    if (!useLetter) delete (p as any).letter;
-    return p;
-  }
-
-  function splitYears(t: Task): Task[] {
-    const span = t.yearTo - t.yearFrom;
-    if (span <= 0) return [t];
-    const mid = Math.floor((t.yearFrom + t.yearTo) / 2);
-    const left: Task = { ...t, yearFrom: t.yearFrom, yearTo: mid, nextPage: 1 };
-    const right: Task = {
-      ...t,
-      yearFrom: mid + 1,
-      yearTo: t.yearTo,
-      nextPage: 1,
-    };
-    return [left, right];
-  }
-
-  /** Subdivise la tâche courante (années si possible, sinon préfixe) et remplace dans todo. */
-  async function subdivideTask(idx: number, t: Task) {
-    const span = t.yearTo - t.yearFrom;
-    if (span >= 1) {
-      // priorité: couper la plage d'années en deux
-      const children = splitYears(t);
-      todo.splice(idx, 1, ...children);
-      await saveTodo(todo);
-      return;
+    if (t.kind === 'genreYear' && t.genre) {
+      return { ...common, stype: 'title', genre: [t.genre] };
     }
-    // déjà à l'année → subdiviser par préfixe
-    const willStayLetter = t.mode === 'letter' && t.prefix.length + 1 <= 3;
-    const nextMode: Task['mode'] = willStayLetter ? 'letter' : 'search';
+    return { ...common, stype: 'title' };
+  }
+
+  // subdivision : d'une tâche annuelle vers toutes les (genre, année) pour cette année (ordre genres donné)
+  async function subdivideYearToGenres(idx: number, t: Task, todoRef: Task[]) {
     const children: Task[] = [];
-    for (const c of ALPHABET) {
+    for (const g of INCLUDED_GENRES) {
       children.push({
-        type: t.type,
-        yearFrom: t.yearFrom,
-        yearTo: t.yearTo,
-        prefix: t.prefix + c,
-        mode: nextMode,
+        kind: 'genreYear',
+        year: t.year,
+        genre: g,
+        orderby: t.orderby || ORDERBY,
         nextPage: 1,
       });
     }
-    todo.splice(idx, 1, ...children);
-    await saveTodo(todo);
+    todoRef.splice(idx, 1, ...children);
+    await saveTodo(todoRef);
   }
 
-  async function ingestTask(idx: number) {
-    const t = todo[idx];
+  // traitement d'une tâche
+  async function ingestTask(idx: number, todoRef: Task[]) {
+    const t = todoRef[idx];
     const params = buildParamsFromTask(t);
 
     let page = t.nextPage;
+    let emptyStreak = 0;
+    let windowSeen = 0;
+    let windowNew = 0;
 
     while (true) {
-      // garde-fou avant appel: ne jamais dépasser la page 100
+      // garde-fou MU : jamais > page 100
       if (page > MAX_PAGES_BUCKET) {
-        console.warn(`⚠️ Fenêtre 10k atteinte (page ${page}) → subdivision`);
-        await subdivideTask(idx, t);
+        console.warn(
+          `⚠️ Fenêtre 10k atteinte (page ${page}) → subdivision genre/année si applicable`,
+        );
+        if (t.kind === 'year') await subdivideYearToGenres(idx, t, todoRef);
+        else {
+          todoRef.splice(idx, 1);
+          await saveTodo(todoRef);
+        }
         return;
       }
 
       const items = await fetchPageWithRetry(params, page);
       if (!items.length) {
-        // Terminé pour ce bucket → retirer la tâche
-        todo.splice(idx, 1);
-        await saveTodo(todo);
+        // fin naturelle
+        todoRef.splice(idx, 1);
+        await saveTodo(todoRef);
         return;
       }
 
@@ -269,34 +277,69 @@ async function bootstrap() {
       }
       if (newCount > 0) {
         console.log(
-          `   ➕ ${newCount} nouveaux ID (page ${page}) — ${t.type ?? '—'} ${
-            t.yearFrom
-          }-${t.yearTo} ${t.mode}:${t.prefix}`,
+          `   ➕ ${newCount} nouveaux ID (page ${page}) — ${t.kind}` +
+            `${t.kind === 'genreYear' ? `:${t.genre}` : ''} year=${t.year}`,
         );
         await saveFile();
       }
 
-      // checkpoint de page
-      t.nextPage = page + 1;
-      await saveTodo(todo);
+      // métriques utilité
+      windowSeen += items.length;
+      windowNew += newCount;
+      emptyStreak = newCount === 0 ? emptyStreak + 1 : 0;
 
-      // burst pause périodique
+      // si peu utile → subdiviser (année → genres) ou stop si déjà genreYear
+      if (emptyStreak >= MAX_EMPTY_PAGES) {
+        console.log(
+          `⛔ bucket peu utile : ${MAX_EMPTY_PAGES} pages sans nouveaux`,
+        );
+        if (t.kind === 'year') await subdivideYearToGenres(idx, t, todoRef);
+        else {
+          todoRef.splice(idx, 1);
+          await saveTodo(todoRef);
+        }
+        return;
+      }
+      if (page % 3 === 0) {
+        const ratio = windowSeen ? windowNew / windowSeen : 0;
+        if (ratio < MIN_NEW_RATIO) {
+          console.log(`⛔ faible ratio nouveaux=${(ratio * 100).toFixed(1)}%`);
+          if (t.kind === 'year') await subdivideYearToGenres(idx, t, todoRef);
+          else {
+            todoRef.splice(idx, 1);
+            await saveTodo(todoRef);
+          }
+          return;
+        }
+        windowSeen = 0;
+        windowNew = 0;
+      }
+
+      // checkpoint
+      t.nextPage = page + 1;
+      await saveTodo(todoRef);
+
+      // burst pause
       if (page % BURST_PAUSE_EVERY === 0) {
         console.log(`⏸ burst pause ${BURST_PAUSE_MS}ms (page ${page})`);
         await sleep(BURST_PAUSE_MS);
       }
 
-      // Fenêtre atteinte juste après une page pleine → subdiviser
+      // exact 10k sur page 100 pleine
       if (page >= MAX_PAGES_BUCKET && items.length >= PER_PAGE) {
-        console.warn(`⚠️ Seuil max atteint pour ce bucket → subdivision`);
-        await subdivideTask(idx, t);
+        console.warn(`⚠️ Seuil max atteint pour ce bucket`);
+        if (t.kind === 'year') await subdivideYearToGenres(idx, t, todoRef);
+        else {
+          todoRef.splice(idx, 1);
+          await saveTodo(todoRef);
+        }
         return;
       }
 
-      // Fin naturelle du bucket
+      // fin naturelle
       if (items.length < PER_PAGE) {
-        todo.splice(idx, 1);
-        await saveTodo(todo);
+        todoRef.splice(idx, 1);
+        await saveTodo(todoRef);
         return;
       }
 
@@ -307,8 +350,7 @@ async function bootstrap() {
 
   try {
     while (todo.length > 0) {
-      // traite toujours la première (FIFO simple)
-      await ingestTask(0);
+      await ingestTask(0, todo);
     }
     console.log(
       `\n🎉 Terminé : ${seen.size} muId(s) uniques écrits dans ${outPath}`,

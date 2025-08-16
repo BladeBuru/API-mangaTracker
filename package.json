@@ -19,8 +19,15 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "get-new-manga:1d": "ts-node -r tsconfig-paths/register src/scripts/periodicNewManga.ts 1d",
+    "get-new-manga:1w": "ts-node -r tsconfig-paths/register src/scripts/periodicNewManga.ts 1w",
+    "get-new-manga:1m": "ts-node -r tsconfig-paths/register src/scripts/periodicNewManga.ts 1m",
+    "update-manga:1d": "ts-node -r tsconfig-paths/register src/scripts/periodicUpdateManga.ts 1d",
+    "update-manga:1w": "ts-node -r tsconfig-paths/register src/scripts/periodicUpdateManga.ts 1w",
+    "update-manga:1m": "ts-node -r tsconfig-paths/register src/scripts/periodicUpdateManga.ts 1m",
     "import-manga-details": "ts-node -r tsconfig-paths/register ./src/scripts/importMangaDetails.ts ./muIds.json",
     "scrape-top": "ts-node -r tsconfig-paths/register src/scripts/scrapeTopRatedMuIds.ts",
+    "scrape-category": "ts-node -r tsconfig-paths/register ./src/scripts/scrapeCategory.ts",
     "scrape-everything": "ts-node -r tsconfig-paths/register src/scripts/scrapeEverything.ts"
   },
   "dependencies": {

@@ -18,6 +18,9 @@ export class Manga {
   title: string;
 
   @Column()
+  type: string;
+
+  @Column()
   small_cover_url: string;
 
   @Column()
@@ -57,7 +60,7 @@ export class Manga {
   anime?: any[];
 
   @Column({ type: 'simple-json', nullable: true })
-  categories?: any[];
+  categories?: { category: string; votes: number }[];
 
   @Column()
   year: number;
@@ -65,8 +68,15 @@ export class Manga {
   @Column({ nullable: true })
   completed: boolean;
 
-  @Column({ type: 'json', nullable: true })
+  @Column({ type: 'simple-json', nullable: true })
   associated?: { title: string }[];
+
+  @Column({
+    name: 'category_recommendations',
+    type: 'simple-json',
+    nullable: true,
+  })
+  category_recommendations?: { seriesId: number; weight: number }[];
 
   @CreateDateColumn()
   created_at: Date;
@@ -88,6 +98,7 @@ export class Manga {
     }
     const m = new Manga();
     m.title = dto.title;
+    m.type = dto.type;
     m.associated = dto.associated;
     m.description = dto.description;
     m.status = dto.status;
@@ -105,6 +116,7 @@ export class Manga {
     m.genres = dto.genres;
     m.anime = dto.anime;
     m.categories = dto.categories;
+    m.category_recommendations = dto.category_recommendations;
     return m;
   }
 }
