@@ -7,6 +7,7 @@ import {
   Query,
   UseGuards,
   UnauthorizedException,
+  NotFoundException,
 } from '@nestjs/common';
 import { MangaQuickViewDto } from './dto/manga-quick-view.dto';
 import { MangasService } from './mangas.service';
@@ -24,6 +25,7 @@ import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { LibraryService } from '@/api/library/library.service';
 import { ConfigService } from '@nestjs/config';
 import { MangaSyncService } from './sync-manga.service';
+import { MangaRecommendationView } from './dto/manga-recommendation-view';
 
 @ApiTags('Mangas')
 @ApiBearerAuth()
@@ -125,7 +127,7 @@ export class MangasController {
     let customLink: string | undefined = undefined;
     let inLibrary = false;
     let readChaptersCount: number | undefined = undefined;
-    if (user && user.id) {
+    if (user?.id) {
       const userManga = await this.libraryService.getUserManga(user.id, id);
       if (userManga) {
         customLink = userManga.custom_link ?? undefined;
@@ -135,10 +137,72 @@ export class MangasController {
     }
     return {
       ...mangaDetails,
-      custom_link: customLink,
-      in_library: inLibrary,
-      read_chapters_count: readChaptersCount,
+      customLink: customLink,
+      inLibrary: inLibrary,
+      readChaptersCount: readChaptersCount,
     };
+  }
+
+  @ApiOperation({
+    summary: 'Get recommendations of the manga with given id',
+  })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Request has been validated. Get the manga recommendations with given id',
+    type: MangaRecommendationView,
+  })
+  @UseGuards(JwtAuthGuard)
+  @Get('recommendations/:id')
+  async mangaRecommendations(
+    @Param('id') id: number,
+    @UserDecorator() user: any,
+  ): Promise<MangaRecommendationView[]> {
+    const manga =
+      (await this.mangasService.returnMangaIfExist(id.toString())) ??
+      (await this.mangasService.getMangaDetails(id));
+
+    if (!manga) {
+      throw new NotFoundException(`Manga with id ${id} cannot be found`);
+    }
+
+    const recommendations = manga.recommendations ?? [];
+
+    return await Promise.all(
+      recommendations.map(async (recommendation) => {
+        let readingStatus: string | undefined = undefined;
+        let inLibrary = false;
+
+        if (user?.id) {
+          const userManga = await this.libraryService.getUserManga(
+            user.id,
+            parseInt(recommendation),
+          );
+
+          if (userManga) {
+            readingStatus = userManga.reading_status ?? undefined;
+            inLibrary = true;
+          }
+        }
+
+        const details = await this.mangasService.getMangaDetails(
+          parseInt(recommendation),
+        );
+
+        const dto = new MangaRecommendationView();
+        dto.muId = details.muId;
+        dto.title = details.title;
+        dto.year = details.year;
+        dto.smallCoverUrl = details.smallCoverUrl;
+        dto.mediumCoverUrl = details.mediumCoverUrl;
+        dto.rating = details.rating;
+        dto.readingStatus = readingStatus;
+        dto.inLibrary = inLibrary;
+
+        return dto;
+      }),
+    );
   }
 
   @ApiOperation({ summary: 'Search for mangas matching the given pattern' })
@@ -167,6 +231,6 @@ export class MangasController {
       throw new UnauthorizedException('Invalid secret');
     }
     await this.mangaSyncService.syncAllMangasWithApi();
-    return { message: 'Synchronisation lancée' };
+    return { message: 'Synchronization started' };
   }
 }

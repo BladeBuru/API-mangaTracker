@@ -39,7 +39,16 @@ export class Manga {
   completed: boolean;
 
   @Column({ type: 'json', nullable: true })
-  associated?: { title: string }[];
+  associated?: string[];
+
+  @Column({ type: 'json', nullable: true })
+  genres?: string[];
+
+  @Column({ type: 'json', nullable: true })
+  recommendations?: string[];
+
+  @Column({ default: 'Manga' })
+  type: string;
 
   @CreateDateColumn()
   created_at: Date;
@@ -52,26 +61,26 @@ export class Manga {
 
   static fromMU(mangaDetailsDto: MangaDetailsDto): Manga {
     if (!mangaDetailsDto) {
-      throw new Error('fromMU: mangaDetailsDto est undefined/null');
+      throw new Error('fromMU: mangaDetailsDto is undefined/null');
     }
     const muId =
       (mangaDetailsDto as any).muId ?? (mangaDetailsDto as any).mu_id;
     if (muId === undefined || muId === null) {
-      throw new Error('fromMU: muId est manquant');
+      throw new Error('fromMU: muId is missing');
     }
     const manga = new Manga();
-    manga['title'] = mangaDetailsDto['title'] ?? mangaDetailsDto['title'];
-    manga['year'] = mangaDetailsDto['year'] ?? mangaDetailsDto['year'];
-    manga['small_cover_url'] =
-      mangaDetailsDto['small_cover_url'] ?? mangaDetailsDto['smallCoverUrl'];
-    manga['medium_cover_url'] =
-      mangaDetailsDto['medium_cover_url'] ?? mangaDetailsDto['mediumCoverUrl'];
+    manga['title'] = mangaDetailsDto['title'];
+    manga['year'] = mangaDetailsDto['year'];
+    manga['small_cover_url'] = mangaDetailsDto['smallCoverUrl'];
+    manga['medium_cover_url'] = mangaDetailsDto['mediumCoverUrl'];
     manga['mu_id'] = muId.toString();
-    manga['total_chapters'] =
-      mangaDetailsDto['total_chapters'] ?? mangaDetailsDto['totalChapters'];
+    manga['total_chapters'] = mangaDetailsDto['totalChapters'];
     manga['rating'] = mangaDetailsDto['rating'];
     manga['completed'] = mangaDetailsDto['completed'];
     manga['associated'] = mangaDetailsDto['associated'] ?? [];
+    manga['genres'] = mangaDetailsDto['genres'] ?? [];
+    manga['recommendations'] = mangaDetailsDto['recommendations'] ?? [];
+    manga['type'] = mangaDetailsDto['type'];
     return manga;
   }
 }

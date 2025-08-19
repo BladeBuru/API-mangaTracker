@@ -13,10 +13,10 @@ export class MangaQuickViewDto {
   year: number;
 
   @ApiProperty()
-  mediumCoverUrl: string;
+  smallCoverUrl: string;
 
   @ApiProperty()
-  largeCoverUrl: string;
+  mediumCoverUrl: string;
 
   @ApiProperty()
   rating: number;
@@ -37,25 +37,47 @@ export class MangaQuickViewDto {
 
   @IsOptional()
   @ApiPropertyOptional({
-    description: 'Liste des noms associés (autres titres) pour ce manga',
+    description: 'List of associated names (other titles) for this manga',
   })
-  associated?: { title: string }[];
+  associated?: string[];
 
   @IsOptional()
   @ApiPropertyOptional({
-    description: 'Lien personnalisé de l’utilisateur pour ce manga',
+    description: 'Custom user link for this manga',
   })
   customLink?: string;
+
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: 'List of genres for this manga',
+  })
+  genres?: string[];
+
+  @ApiPropertyOptional({
+    description: 'List of recommendations for this manga',
+  })
+  @IsOptional()
+  recommendations?: string[];
+
+  @ApiProperty()
+  type: string;
 
   static fromMu(data: any) {
     const dto = new MangaQuickViewDto();
     dto.muId = data['record']['series_id'];
     dto.title = data['record']['title'];
     dto.year = data['record']['year'];
-    dto.mediumCoverUrl = data['record']['image']['url']['thumb'];
-    dto.largeCoverUrl = data['record']['image']['url']['original'];
+    dto.smallCoverUrl = data['record']['image']['url']['thumb'];
+    dto.mediumCoverUrl = data['record']['image']['url']['original'];
     dto.rating = data['record']['bayesian_rating'];
-    dto.associated = data['record']['associated'] ?? [];
+    dto.associated = (data['record']['associated'] ?? []).map(
+      (hash) => hash['title'],
+    );
+    dto.genres = (data['record']['genres'] ?? []).map((hash) => hash['genre']);
+    dto.recommendations = (data['record']['recommendations'] ?? [])
+      .concat(data['record']['category_recommendations'] ?? [])
+      .map((hash) => hash['series_id']);
+    dto.type = data['record']['type'];
     return dto;
   }
 
@@ -64,13 +86,16 @@ export class MangaQuickViewDto {
     dto.muId = parseInt(userManga.manga.mu_id);
     dto.title = userManga.manga.title;
     dto.year = userManga.manga.year;
-    dto.mediumCoverUrl = userManga.manga.small_cover_url;
-    dto.largeCoverUrl = userManga.manga.medium_cover_url;
+    dto.smallCoverUrl = userManga.manga.small_cover_url;
+    dto.mediumCoverUrl = userManga.manga.medium_cover_url;
     dto.rating = userManga.manga.rating;
     dto.readChapters = userManga.user_read_chapters;
     dto.totalChapters = userManga.manga.total_chapters;
-    dto.readingStatus = userManga.readingStatus;
+    dto.readingStatus = userManga.reading_status;
     dto.associated = userManga.manga.associated ?? [];
+    dto.genres = userManga.manga.genres ?? [];
+    dto.recommendations = userManga.manga.recommendations ?? [];
+    dto.type = userManga.manga.type;
     dto.customLink = userManga.custom_link ?? undefined;
     return dto;
   }
