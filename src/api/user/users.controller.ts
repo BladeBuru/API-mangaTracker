@@ -94,4 +94,17 @@ export class UserController {
   private getUser(@UserDecorator() user: User) {
     return UserInformationDto.fromEntity(user);
   }
+
+  @ApiOperation({ summary: 'Get user items (array of IDs)' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({
+    status: 200,
+    description: 'Items successfully retrieved',
+    schema: { type: 'array', items: { type: 'integer', format: 'int64' } },
+  })
+  @UseGuards(JwtAuthGuard)
+  @Get('items')
+  private async getUserItems(@UserDecorator() user: User): Promise<number[]> {
+    return this.service.getUserItems(user.id);
+  }
 }

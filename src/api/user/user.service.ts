@@ -44,4 +44,12 @@ export class UserService {
       id: userId,
     });
   }
+
+  async getUserItems(userId: number): Promise<number[]> {
+    const user = await this.returnUserIfExist(userId);
+    if (!user) {
+      throw new Error(`User ${userId} not found`);
+    }
+    return Array.isArray(user.items) ? user.items.map((i) => Number(i)) : [];
+  }
 }
