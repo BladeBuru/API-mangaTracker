@@ -20,6 +20,9 @@ class User {
 
   @Column({ type: 'timestamp', nullable: true, default: null })
   public last_login_at: Date | null;
+
+  @Column('bigint', { array: true, nullable: true })
+  items: number[];
 }
 
 export default User;
