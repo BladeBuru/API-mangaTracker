@@ -16,10 +16,6 @@ export class MangaDetailsDto {
   @IsString()
   description: string;
 
-  @ApiProperty()
-  @IsString()
-  type: string;
-
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
@@ -46,11 +42,6 @@ export class MangaDetailsDto {
   @IsNumber()
   rating: number;
 
-  @ApiPropertyOptional()
-  @IsNumber()
-  @IsOptional()
-  readChapters: number;
-
   @ApiProperty()
   @IsNumber()
   totalChapters: number;
@@ -70,71 +61,70 @@ export class MangaDetailsDto {
   @ApiPropertyOptional()
   authors: any[];
 
-  @ApiPropertyOptional()
-  genres: any[];
-
-  @ApiPropertyOptional()
-  anime: any[];
-
-  @ApiPropertyOptional()
-  categories?: { category: string; votes: number }[];
-
   @ApiPropertyOptional({
     description: 'List of associated names (other titles) for this manga',
   })
   @IsOptional()
-  associated?: { title: string }[];
+  associated?: string[];
+
+  @ApiPropertyOptional({
+    description: 'List of genres for this manga',
+  })
+  @IsOptional()
+  genres?: string[];
+
+  @ApiPropertyOptional({
+    description: 'List of recommendations for this manga',
+  })
+  @IsOptional()
+  recommendations?: string[];
+
+  @ApiProperty()
+  @IsString()
+  type: string;
 
   @ApiPropertyOptional({ description: 'Custom user link for this manga' })
   @IsOptional()
   @IsString()
-  custom_link?: string;
+  customLink?: string;
 
   @ApiPropertyOptional({
-    description:
-      "Indique si le manga est dans la bibliothèque de l'utilisateur",
+    description: "Indicates if the manga is in the user's library",
   })
   @IsOptional()
   @IsBoolean()
-  in_library?: boolean;
+  inLibrary?: boolean;
 
   @ApiPropertyOptional({
-    description: "Nombre de chapitres lus par l'utilisateur",
+    description: 'Number of chapters read by the user',
   })
   @IsOptional()
   @IsNumber()
-  read_chapters_count?: number;
-
-  @ApiPropertyOptional()
-  category_recommendations?: { seriesId: number; weight: number }[];
+  readChaptersCount?: number;
 
   private static parseLatestChapter(status: string, fallback: number): number {
     if (!status) return fallback;
-    const m = status.match(/(\d+)\+?\s*ch(?:ap(?:ter)?s?)?/i);
-    return m ? Number(m[1]) : fallback;
+    const match = status.match(/(\d+)\s*Chapters/);
+    return match ? +match[1] : fallback;
+  }
+
+  private static sanitizeLine(line: string): string {
+    // remove bold and trim Markdown markers
+    return line.replace(/\*/g, '').trim();
   }
 
   private static parsePublicationStatus(status: string): string | null {
     if (!status) return null;
-    const m = status.match(/\b(ongoing|complete|completed|hiatus)\b/i);
-    if (!m) return null;
-    const found = m[1].toLowerCase();
-    return found === 'complete' ? 'completed' : found;
-  }
-
-  private static sanitizeLine(line: string): string {
-    return (line ?? '')
-      .replace(/<[^>]+>/g, '') // HTML
-      .replace(/\*/g, '') // **bold**
-      .replace(/[•·]/g, '') // puces
-      .replace(/\u00A0/g, ' ') // NBSP
-      .trim();
+    const firstLine = status ? status.split(/\r?\n/)[0] : '';
+    const m = firstLine.match(/\(\s*([^)]+?)\s*\)/);
+    return m ? m[1].trim() : null;
   }
 
   private static parseSeasonChapters(
     status: string,
   ): { season: string; chapters: number }[] {
     const result: { season: string; chapters: number }[] = [];
+    if (!status) return result;
     for (const rawLine of status.split(/\r?\n/)) {
       const line = this.sanitizeLine(rawLine);
       // capture "S1:", "S2 Part 1:", "S2 Part 2:", etc.
@@ -155,10 +145,11 @@ export class MangaDetailsDto {
     status: string,
   ): { season: string; chapters: number }[] {
     const result: { season: string; chapters: number }[] = [];
+    if (!status) return result;
     const seen = new Set<string>();
     const lines = status.split(/\r?\n/).map((l) => this.sanitizeLine(l));
 
-    // 1) Extras de la ligne globale (ex : "131 Chapters + 7 Bonus Chapters + …")
+    // 1) Extract the global line (eg: "131 Chapters + 7 Bonus Chapters + ...")
     const headerLine = lines.find((l) => /^\d+\s*Chapters/i.test(l));
     if (headerLine) {
       const extras = headerLine
@@ -190,9 +181,6 @@ export class MangaDetailsDto {
         } else if ((m = clean.match(/(\d+)\s*Afterwords?/i))) {
           label = 'Afterwords';
           chapters = Number(m[1]);
-        } else if ((m = clean.match(/(\d+)\s*Hiatus\s*Specials?/i))) {
-          label = 'Hiatus Specials';
-          chapters = Number(m[1]);
         } else if (/New Series Announcement/i.test(clean)) {
           label = 'New Series Announcement';
           chapters = 1;
@@ -208,7 +196,7 @@ export class MangaDetailsDto {
       }
     }
 
-    // 2) Parcours des lignes de saisons et bonus annexes
+    // 2) Seasons and bonuses
     for (const line of lines.slice(1)) {
       // Side Story
       const sideMatch = line.match(/^Side Story\s*:\s*(\d+)(?=\s*Chapters)/i);
@@ -226,7 +214,7 @@ export class MangaDetailsDto {
         continue;
       }
 
-      // Lignes de saisons ("S1:", "S2 Part 1:", etc.)
+      // Season lines ("S1:", "S2 Part 1:", etc.)
       if (!/^(?:S\d+(?:\s+Part\s+\d+)?)\s*:/i.test(line)) {
         continue;
       }
@@ -279,50 +267,43 @@ export class MangaDetailsDto {
     return plainToClass(Manga, data);
   }
 
-  static fromMU(mu: any): MangaDetailsDto {
-    const s = String(mu.status ?? '');
-    const seasonChapters = this.parseSeasonChapters(s);
-    const bonusChapters = this.parseBonusChapters(s);
-    const publication = this.parsePublicationStatus(s);
+  static fromMU(muObject: any): MangaDetailsDto {
+    const seasonChapters = this.parseSeasonChapters(muObject.status);
+    const bonusChapters = this.parseBonusChapters(muObject.status);
+    const readingStatus = this.parsePublicationStatus(muObject.status);
 
-    const dto = new MangaDetailsDto();
-    const rawCats = Array.isArray(mu.categories) ? mu.categories : [];
-    dto.categories = rawCats
-      .map((c: any) => ({
-        category: String(c?.category ?? '').trim(),
-        votes: Number(c?.votes ?? 0),
-      }))
-      .filter((c: { category: string | any[] }) => c.category.length > 0);
-    const rawRecs = Array.isArray(mu.category_recommendations)
-      ? mu.category_recommendations
-      : [];
-    dto.category_recommendations = rawRecs
-      .map((r: any) => ({
-        seriesId: Number(r?.series_id ?? 0),
-        weight: Number(r?.weight ?? 0),
-      }))
-      .filter((r: { seriesId: number }) => r.seriesId > 0);
-    dto.muId = mu.series_id;
-    dto.title = mu.title;
-    dto.type = mu.type;
-    dto.description = mu.description ?? '';
-    dto.status = mu.status ?? null;
-    dto.publicationStatus = publication ?? undefined;
-    dto.year = mu.year ?? 0;
-    dto.smallCoverUrl = mu.image?.url?.thumb ?? '';
-    dto.mediumCoverUrl = mu.image?.url?.original ?? '';
-    dto.rating = Number(mu.bayesian_rating ?? 0);
-    dto.totalChapters = this.parseLatestChapter(
-      mu.status ?? '',
-      mu.latest_chapter ?? 0,
+    const mangaDetailsDto = new MangaDetailsDto();
+    mangaDetailsDto['title'] = muObject['title'];
+    mangaDetailsDto['description'] = muObject['description'];
+    mangaDetailsDto['status'] = muObject['status'];
+    mangaDetailsDto['publicationStatus'] = readingStatus;
+    mangaDetailsDto['smallCoverUrl'] = muObject['image']['url']['thumb'];
+    mangaDetailsDto['mediumCoverUrl'] = muObject['image']['url']['original'];
+    mangaDetailsDto['year'] = muObject['year'];
+    mangaDetailsDto['rating'] = muObject['bayesian_rating'];
+    mangaDetailsDto['totalChapters'] = MangaDetailsDto.parseLatestChapter(
+      muObject.status,
+      muObject.latest_chapter,
     );
-    dto.seasonChapters = seasonChapters;
-    dto.bonusChapters = bonusChapters;
-    dto.completed = Boolean(mu.completed);
-    dto.authors = mu.authors ?? [];
-    dto.genres = mu.genres ?? [];
-    dto.associated = mu.associated ?? [];
-    dto.anime = mu.anime ?? [];
-    return dto;
+    mangaDetailsDto['seasonChapters'] = seasonChapters.map(
+      ({ season, chapters }) => ({ season, chapters }),
+    );
+    mangaDetailsDto['bonusChapters'] = bonusChapters.map(
+      ({ season, chapters }) => ({ season, chapters }),
+    );
+    mangaDetailsDto['completed'] = muObject['completed'];
+    mangaDetailsDto['muId'] = muObject['series_id'];
+    mangaDetailsDto['authors'] = muObject['authors'];
+    mangaDetailsDto['genres'] = (muObject['genres'] ?? []).map(
+      (hash) => hash['genre'],
+    );
+    mangaDetailsDto['recommendations'] = (muObject['recommendations'] ?? [])
+      .concat(muObject['category_recommendations'] ?? [])
+      .map((hash) => hash['series_id']);
+    mangaDetailsDto['associated'] = (muObject['associated'] ?? []).map(
+      (hash) => hash['title'],
+    );
+    mangaDetailsDto['type'] = muObject['type'];
+    return mangaDetailsDto;
   }
 }

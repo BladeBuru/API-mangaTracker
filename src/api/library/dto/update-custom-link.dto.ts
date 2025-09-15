@@ -2,11 +2,11 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class UpdateCustomLinkDto {
-  @ApiProperty({ description: 'ID du manga (muId)' })
+  @ApiProperty({ description: 'MU ID of the manga' })
   @IsNumber()
   muId: number;
 
-  @ApiProperty({ description: 'Lien personnalisé', required: false })
+  @ApiProperty({ description: 'Custom user link', required: false })
   @IsString()
   @IsOptional()
   customLink?: string;
