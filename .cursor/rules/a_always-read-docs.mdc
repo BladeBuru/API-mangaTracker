@@ -1,0 +1,47 @@
+---
+description: Obligation de lire le memory-bank avant tout code
+alwaysApply: true
+---
+
+# Règle Obligatoire : Lecture Memory Bank
+
+## AVANT TOUT CODE
+
+**OBLIGATOIRE** de lire dans cet ordre :
+
+1. **`.cursor/memory-bank/architecture.md`** — Architecture complète
+   - Stack NestJS + TypeORM + PostgreSQL
+   - Structure des modules (mangas, library, user, auth)
+   - Patterns Controller/Service/Entity
+
+2. **`.cursor/memory-bank/progress.md`** — État d'avancement
+   - Ce qui est fait, en cours, prévu
+
+3. **`.cursor/memory-bank/known-issues.md`** — Problèmes connus et workarounds actifs
+
+4. **`.cursor/memory-bank/decisions.md`** — Décisions architecturales et leurs raisons
+   - Lire avant de proposer une approche différente
+
+## APRÈS FEATURES MAJEURES
+
+**OBLIGATOIRE** de mettre à jour :
+
+1. **`.cursor/memory-bank/progress.md`** — Documenter ce qui a été fait
+2. **`.cursor/memory-bank/architecture.md`** — Si changement structurel
+3. **`.cursor/memory-bank/known-issues.md`** — Si bug découvert ou résolu
+4. **`.cursor/memory-bank/decisions.md`** — Si une décision architecturale importante est prise
+
+## Documentation et commandes
+
+Consulter selon le besoin :
+- `.cursor/documentation/architecture.md` — Stack, configuration, structure complète
+- `.cursor/documentation/modules-structure.md` — Patterns détaillés par module
+- `.cursor/documentation/api-contracts.md` — Endpoints, DTOs, codes HTTP
+- `.cursor/documentation/authentication.md` — Flux JWT, stratégies Passport, guards
+- `.cursor/commands/feature-implementation.md` — Workflow pour implémenter une feature
+- `.cursor/commands/refactor-large-file.md` — Guide de découpage de fichiers trop longs
+- `.cursor/commands/bug-fix.md` — Workflow + rapport de bug fix
+
+## SI ARCHITECTURE INCERTAINE
+
+**NE PAS DEVINER** — Lire la documentation ou demander clarification avant de coder.
