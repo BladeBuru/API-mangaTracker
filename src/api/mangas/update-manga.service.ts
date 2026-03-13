@@ -18,25 +18,22 @@ export class UpdateMangaService {
   private readonly logger = new Logger(UpdateMangaService.name);
 
   async checkIfMangaArrayInfoIsOutdated(muIds: number[]): Promise<Manga[]> {
-    const updatedMangas: Manga[] = [];
-    for (const muId of muIds) {
-      const updatedManga: Manga = await this.checkIfMangaInfoIsOutdated(
-        Number(muId),
-      );
-
-      if (updatedManga !== null) updatedMangas.push(updatedManga);
-    }
-    return updatedMangas;
+    const results = await Promise.all(
+      muIds.map((muId) => this.checkIfMangaInfoIsOutdated(Number(muId))),
+    );
+    return results.filter((manga): manga is Manga => manga !== null && manga !== undefined);
   }
 
-  async checkIfMangaInfoIsOutdated(muId: number): Promise<Manga> {
+  async checkIfMangaInfoIsOutdated(muId: number): Promise<Manga | null> {
     const mangaEntity: Manga = await this.mangasService.returnMangaIfExist(
       muId.toString(),
     );
 
-    if (!this.isMangaInfoOutdated(mangaEntity)) return;
+    if (!this.isMangaInfoOutdated(mangaEntity)) return null;
 
-    await this.updateMangaInfo(mangaEntity);
+    this.updateMangaInfo(mangaEntity).catch((err) =>
+      this.logger.warn(`Background update failed for manga ${muId}: ${err}`),
+    );
 
     return mangaEntity;
   }

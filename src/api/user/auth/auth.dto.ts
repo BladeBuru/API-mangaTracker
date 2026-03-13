@@ -28,6 +28,11 @@ export class LoginDto {
   @ApiProperty()
   @IsString()
   public readonly password: string;
+
+  @ApiProperty({ required: false, description: "Identifiant de l'appareil (user-agent, nom de l'app)" })
+  @IsString()
+  @IsOptional()
+  public readonly deviceInfo?: string;
 }
 
 export class TokenDto {

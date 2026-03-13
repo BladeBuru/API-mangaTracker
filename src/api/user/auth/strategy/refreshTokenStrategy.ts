@@ -21,7 +21,9 @@ export class RefreshTokenStrategy extends PassportStrategy(
     });
   }
 
-  private validate(payload: string): Promise<User | never> {
-    return this.helper.validateUser(payload);
+  /** Retourne { user, sessionId } pour que le controller puisse faire la rotation de session */
+  async validate(payload: any): Promise<{ user: User; sessionId: string }> {
+    const user = await this.helper.validateUser(payload);
+    return { user, sessionId: payload.sessionId };
   }
 }

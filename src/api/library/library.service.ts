@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { UserService } from 'src/api/user/user.service';
@@ -24,6 +25,8 @@ import {
 
 @Injectable()
 export class LibraryService {
+  private readonly logger = new Logger(LibraryService.name);
+
   constructor(
     private readonly userService: UserService,
     private readonly mangasService: MangasService,
@@ -58,7 +61,7 @@ export class LibraryService {
   }
 
   async getMangas(userId: number): Promise<MangaQuickViewDto[]> {
-    let user = await this.userRepository.findOne({
+    const user = await this.userRepository.findOne({
       where: { id: userId },
       relations: ['user_mangas', 'user_mangas.manga'],
     });
@@ -66,26 +69,19 @@ export class LibraryService {
     const mangaIds = await this.updateMangaService.getMangasIds(
       user.user_mangas,
     );
-    const updatedMangas: Manga[] =
-      await this.updateMangaService.checkIfMangaArrayInfoIsOutdated(mangaIds);
 
-    /* 
-    New request for getting updated content if previous mangas were
-    outdated 
-    */
-    if (updatedMangas.length !== 0) {
-      user = await this.userRepository.findOne({
-        where: { id: userId },
-        relations: ['user_mangas', 'user_mangas.manga'],
-      });
-    }
+    // Les mises à jour sont lancées en arrière-plan par checkIfMangaArrayInfoIsOutdated
+    // On ne re-requête plus la BDD après : les données fraîches seront visibles à la prochaine ouverture
+    this.updateMangaService.checkIfMangaArrayInfoIsOutdated(mangaIds).catch(
+      (err) => this.logger.warn(`Background manga array update failed: ${err}`),
+    );
 
     return user.user_mangas
-      .slice() // Copy of user.user_mangas
+      .slice()
       .sort(
         (a, b) =>
           new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime(),
-      ) // Sort by date of last update of the manga in descending order
+      )
       .map((a) => MangaQuickViewDto.fromLibrary(a));
   }
 
