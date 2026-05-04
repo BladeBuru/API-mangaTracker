@@ -251,36 +251,49 @@ jobs:
                 print(f"ERREUR app.start: {r.stderr[:300]}", file=sys.stderr)
                 sys.exit(1)
 
-            # Polling état — attend max 3 min que tous les containers soient running
-            print("⏳ Attente démarrage NestJS + migrations (max 3 min)...")
-            deadline = time.time() + 180
-            last_state = {}
+            # Polling état — attend max 5 min que l'app soit en état RUNNING (app-level TrueNAS).
+            # Stratégie double :
+            #   1. App-level state == 'RUNNING' → succès (TrueNAS a validé l'ensemble)
+            #   2. Si un container est 'error' → échec immédiat
+            # Note: container-level state peut rester 'starting' pendant le healthcheck start_period (60s)
+            # même quand NestJS répond correctement. On se fie à l'état app-level pour décider.
+            GOOD_CONTAINER_STATES = {'running', 'healthy'}
+            print("⏳ Attente démarrage NestJS + migrations (max 5 min)...")
+            deadline = time.time() + 300
+            last_app_state = None
+            last_container_state = {}
             while time.time() < deadline:
                 time.sleep(10)
                 r = subprocess.run(['midclt', 'call', 'app.query'], capture_output=True, text=True)
                 apps = json.loads(r.stdout)
-                app_found = False
-                all_running = True
                 for a in apps:
-                    if a['name'] == 'manga-tracker-api':
-                        app_found = True
-                        state = a.get('state')
-                        containers = a.get('active_workloads', {}).get('container_details', [])
-                        new_state = {c.get('service_name'): c.get('state') for c in containers}
-                        if new_state != last_state or state == 'RUNNING':
-                            print(f"   App: {state} | containers: {new_state}")
-                            last_state = new_state
-                        for c in containers:
-                            cstate = c.get('state')
-                            if cstate == 'error':
-                                print(f"ERREUR: container {c.get('service_name')} en erreur", file=sys.stderr)
-                                sys.exit(1)
-                            if cstate != 'running':
-                                all_running = False
-                if app_found and all_running and containers:
-                    break
+                    if a['name'] != 'manga-tracker-api':
+                        continue
+                    app_state = a.get('state', '')
+                    containers = a.get('active_workloads', {}).get('container_details', [])
+                    cmap = {c.get('service_name'): c.get('state') for c in containers}
+                    elapsed = int(300 - (deadline - time.time()))
+                    if app_state != last_app_state or cmap != last_container_state:
+                        print(f"   [{elapsed}s] App: {app_state} | containers: {cmap}")
+                        last_app_state = app_state
+                        last_container_state = cmap
+                    # Echec immédiat si container en erreur
+                    for c in containers:
+                        if c.get('state') == 'error':
+                            print(f"ERREUR: container {c.get('service_name')} en erreur", file=sys.stderr)
+                            sys.exit(1)
+                    # Succès si app-level RUNNING (TrueNAS a validé l'app)
+                    if app_state == 'RUNNING':
+                        break
+                    # Succès alternatif : tous les containers en running/healthy
+                    if containers and all(c.get('state') in GOOD_CONTAINER_STATES for c in containers):
+                        print(f"   [{elapsed}s] Tous les containers en état OK")
+                        break
+                else:
+                    continue
+                break
             else:
-                print(f"TIMEOUT: app non démarrée après 3 min. Dernier état: {last_state}", file=sys.stderr)
+                print(f"TIMEOUT: app non démarrée après 5 min. Dernier app state: {last_app_state} | containers: {last_container_state}", file=sys.stderr)
                 sys.exit(1)
 
             print(f"✅ Déploiement réussi — tag: {TAG}")
