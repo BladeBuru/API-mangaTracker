@@ -217,7 +217,7 @@ jobs:
                   ANDROID_SHA256_FINGERPRINT: "{ANDROID_SHA256}"
                 network_mode: host
                 healthcheck:
-                  test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+                  test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
                   interval: 30s
                   timeout: 10s
                   retries: 3
@@ -294,6 +294,14 @@ jobs:
                 break
             else:
                 print(f"TIMEOUT: app non démarrée après 5 min. Dernier app state: {last_app_state} | containers: {last_container_state}", file=sys.stderr)
+                # Capture des logs du container pour diagnostic
+                print("📋 Logs du container (dernières 60 lignes) :", file=sys.stderr)
+                r_logs = subprocess.run(
+                    ['docker', 'logs', '--tail', '60', 'manga-tracker-api-manga-tracker-api-1'],
+                    capture_output=True, text=True
+                )
+                if r_logs.stdout: print(r_logs.stdout[:3000], file=sys.stderr)
+                if r_logs.stderr: print(r_logs.stderr[:3000], file=sys.stderr)
                 sys.exit(1)
 
             print(f"✅ Déploiement réussi — tag: {TAG}")

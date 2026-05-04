@@ -46,10 +46,13 @@ export class CreateAuthTokenAndEmailVerified1746230700000
         name: 'auth_token',
         columns: [
           {
+            // gen_random_uuid() is available in PostgreSQL 13+ without any
+            // extension. uuid_generate_v4() requires uuid-ossp which is not
+            // enabled by default on TrueNAS / stock PostgreSQL deployments.
             name: 'id',
             type: 'uuid',
             isPrimary: true,
-            default: 'uuid_generate_v4()',
+            default: 'gen_random_uuid()',
           },
           { name: 'user_id', type: 'int', isNullable: false },
           {
