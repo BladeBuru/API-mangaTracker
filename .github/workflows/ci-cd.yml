@@ -252,24 +252,37 @@ jobs:
                 print(f"ERREUR app.start: {r.stderr[:300]}", file=sys.stderr)
                 sys.exit(1)
 
-            # Attente démarrage NestJS + migrations TypeORM (~30s)
-            print("⏳ Attente démarrage NestJS + migrations...")
-            time.sleep(35)
-
-            # Vérification état des containers
-            r = subprocess.run(['midclt', 'call', 'app.query'], capture_output=True, text=True)
-            apps = json.loads(r.stdout)
-            for a in apps:
-                if a['name'] == 'manga-tracker-api':
-                    state = a.get('state')
-                    print(f"   État app: {state}")
-                    for c in a.get('active_workloads', {}).get('container_details', []):
-                        cstate = c.get('state')
-                        cname  = c.get('service_name')
-                        print(f"   Container {cname}: {cstate}")
-                        if cstate != 'running':
-                            print(f"ERREUR: container {cname} non démarré ({cstate})", file=sys.stderr)
-                            sys.exit(1)
+            # Polling état — attend max 3 min que tous les containers soient running
+            print("⏳ Attente démarrage NestJS + migrations (max 3 min)...")
+            deadline = time.time() + 180
+            last_state = {}
+            while time.time() < deadline:
+                time.sleep(10)
+                r = subprocess.run(['midclt', 'call', 'app.query'], capture_output=True, text=True)
+                apps = json.loads(r.stdout)
+                app_found = False
+                all_running = True
+                for a in apps:
+                    if a['name'] == 'manga-tracker-api':
+                        app_found = True
+                        state = a.get('state')
+                        containers = a.get('active_workloads', {}).get('container_details', [])
+                        new_state = {c.get('service_name'): c.get('state') for c in containers}
+                        if new_state != last_state or state == 'RUNNING':
+                            print(f"   App: {state} | containers: {new_state}")
+                            last_state = new_state
+                        for c in containers:
+                            cstate = c.get('state')
+                            if cstate == 'error':
+                                print(f"ERREUR: container {c.get('service_name')} en erreur", file=sys.stderr)
+                                sys.exit(1)
+                            if cstate != 'running':
+                                all_running = False
+                if app_found and all_running and containers:
+                    break
+            else:
+                print(f"TIMEOUT: app non démarrée après 3 min. Dernier état: {last_state}", file=sys.stderr)
+                sys.exit(1)
 
             print(f"✅ Déploiement réussi — tag: {TAG}")
             PYEOF
