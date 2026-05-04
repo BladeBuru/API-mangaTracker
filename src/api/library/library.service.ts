@@ -274,4 +274,24 @@ export class LibraryService {
     await this.userMangaRepository.save(userManga);
     return true;
   }
+
+  async updateRating(
+    userId: number,
+    muId: number,
+    rating: number,
+  ): Promise<boolean> {
+    const userManga = await this.userMangaRepository.findOne({
+      where: { user: { id: userId }, manga: { mu_id: muId.toString() } },
+      relations: ['user', 'manga'],
+    });
+    if (!userManga) {
+      throw new NotFoundException(
+        `No manga found in user library for userId: ${userId} and muId: ${muId}`,
+      );
+    }
+    userManga.user_rating = rating;
+    userManga.lastUpdated = new Date();
+    await this.userMangaRepository.save(userManga);
+    return true;
+  }
 }

@@ -35,6 +35,17 @@ export class LoginDto {
   public readonly deviceInfo?: string;
 }
 
+export class GoogleMobileLoginDto {
+  @ApiProperty({ description: "ID Token Google obtenu via le package google_sign_in (Flutter mobile)" })
+  @IsString()
+  public readonly idToken: string;
+
+  @ApiProperty({ required: false, description: "Identifiant de l'appareil" })
+  @IsString()
+  @IsOptional()
+  public readonly deviceInfo?: string;
+}
+
 export class TokenDto {
   @ApiProperty()
   @IsString()

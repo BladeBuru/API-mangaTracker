@@ -24,6 +24,7 @@ import { UpdateChapterDto } from '@/api/library/dto/update-chapter-dto';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 import { UpdateReadingStatusDto } from '@/api/library/dto/update-reading-status-dto';
 import { UpdateCustomLinkDto } from './dto/update-custom-link.dto';
+import { UpdateRatingDto } from './dto/update-rating.dto';
 
 @ApiTags('Library')
 @ApiBearerAuth()
@@ -164,6 +165,24 @@ export class LibraryController {
     return await this.libraryService.deleteCustomLink(
       user.id,
       updateCustomLinkDto.muId,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Mettre à jour la note personnelle (1-10) pour un manga',
+  })
+  @ApiResponse({ status: 200, description: 'Note mise à jour' })
+  @ApiResponse({ status: 404, description: 'Manga non trouvé dans la bibliothèque' })
+  @Put('rating')
+  @UseGuards(JwtAuthGuard)
+  async updateRating(
+    @Body() updateRatingDto: UpdateRatingDto,
+    @UserDecorator() user: any,
+  ): Promise<boolean> {
+    return await this.libraryService.updateRating(
+      user.id,
+      updateRatingDto.muId,
+      updateRatingDto.rating,
     );
   }
 }

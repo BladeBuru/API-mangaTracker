@@ -41,6 +41,14 @@ export class Manga {
   @Column({ type: 'json', nullable: true })
   associated?: { title: string }[];
 
+  /**
+   * Genres extraits de MangaUpdates (`Action`, `Romance`, `Comedy`...).
+   * Stocké JSON pour requêtage simple par contains. Filtrage des NSFW
+   * fait au niveau de la requête ou de l'aggregation, pas du stockage.
+   */
+  @Column({ type: 'json', nullable: true })
+  genres?: string[];
+
   @CreateDateColumn()
   created_at: Date;
 
@@ -72,6 +80,16 @@ export class Manga {
     manga['rating'] = mangaDetailsDto['rating'];
     manga['completed'] = mangaDetailsDto['completed'];
     manga['associated'] = mangaDetailsDto['associated'] ?? [];
+    // genres : MU les renvoie sous forme `[{genre: "Action"}, {genre: "Romance"}]`
+    // ou parfois directement `["Action", ...]`. On normalise.
+    const rawGenres = (mangaDetailsDto as any).genres ?? [];
+    manga['genres'] = Array.isArray(rawGenres)
+      ? rawGenres
+          .map((g: any) =>
+            typeof g === 'string' ? g : (g?.genre ?? g?.name ?? ''),
+          )
+          .filter((g: string) => g.length > 0)
+      : null;
     return manga;
   }
 }

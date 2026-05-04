@@ -1,0 +1,64 @@
+services:
+  manga-tracker-api:
+    image: bladeburu/manga-tracker-api:${TAG:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      # ── Runtime ────────────────────────────────────────────────
+      PORT: "3000"
+      NODE_ENV: production
+
+      # ── Base de données (TypeORM) ───────────────────────────────
+      DATABASE_HOST: "${DATABASE_HOST}"
+      DATABASE_NAME: "${DATABASE_NAME}"
+      DATABASE_USER: "${DATABASE_USER}"
+      DATABASE_PASSWORD: "${DATABASE_PASSWORD}"
+      DATABASE_PORT: "${DATABASE_PORT:-5432}"
+      DATABASE_SCHEMA: "${DATABASE_SCHEMA:-dev}"
+
+      # ── JWT ────────────────────────────────────────────────────
+      JWT_KEY: "${JWT_KEY}"
+      JWT_REFRESH_SECRET: "${JWT_REFRESH_SECRET}"
+      JWT_KEY_EXPIRES_IN: "${JWT_KEY_EXPIRES_IN:-1h}"
+      JWT_REFRESH_SECRET_EXPIRES_IN: "${JWT_REFRESH_SECRET_EXPIRES_IN:-7d}"
+
+      # ── HTTP ───────────────────────────────────────────────────
+      HTTP_TIMEOUT: "15000"
+      HTTP_MAX_REDIRECT: "1"
+
+      # ── Debug (off en prod) ────────────────────────────────────
+      ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT: "false"
+      DISABLE_ERROR_MESSAGES_FOR_API_CLIENT: "false"
+      TYPEORM_DEBUG_LOGGING: "false"
+
+      # ── SMTP (magic-link / mot de passe oublié) ────────────────
+      SMTP_HOST: "smtp-relay.brevo.com"
+      SMTP_PORT: "587"
+      SMTP_USER: "${SMTP_USER}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD}"
+      SMTP_FROM: "noreply@bladeburu.com"
+      SMTP_FROM_NAME: "Manga Tracker"
+
+      # ── URLs publiques ─────────────────────────────────────────
+      PUBLIC_WEB_URL: "https://api.bladeburu.com"
+      GOOGLE_CALLBACK_URL: "https://api.bladeburu.com/auth/google/callback"
+      CORS_ORIGINS: "${CORS_ORIGINS:-https://api.bladeburu.com}"
+
+      # ── Google OAuth ───────────────────────────────────────────
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
+
+      # ── Android App Links (assetlinks.json) ────────────────────
+      ANDROID_PACKAGE_NAME: "com.example.manga_tracker"
+      ANDROID_SHA256_FINGERPRINT: "${ANDROID_SHA256_FINGERPRINT}"
+
+    ports:
+      - "3000:3000"
+
+    # Healthcheck Docker natif (vérifie que l'API répond avant de la marquer healthy)
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

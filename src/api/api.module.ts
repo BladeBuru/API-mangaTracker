@@ -3,8 +3,17 @@ import { UserModule } from './user/user.module';
 import { GlobalHttpModule } from '@/api/config/http.module';
 import { LibraryModule } from '@/api/library/library.module';
 import { MangasModule } from '@/api/mangas/mangas.module';
+import { RecommendationModule } from './recommendations/recommendation.module';
+import { WellKnownModule } from './well-known/well-known.module';
 
 @Module({
-  imports: [UserModule, GlobalHttpModule, LibraryModule, MangasModule],
+  imports: [
+    UserModule,
+    GlobalHttpModule,
+    LibraryModule,
+    MangasModule,
+    RecommendationModule,
+    WellKnownModule,
+  ],
 })
 export class ApiModule {}

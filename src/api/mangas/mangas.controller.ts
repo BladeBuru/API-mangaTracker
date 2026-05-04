@@ -1,8 +1,10 @@
 import {
   Body,
   Controller,
+  DefaultValuePipe,
   Get,
   Param,
+  ParseIntPipe,
   Post,
   Query,
   UseGuards,
@@ -107,6 +109,24 @@ export class MangasController {
   }
 
   @ApiOperation({
+    summary:
+      'Retourne les mangas recommandés par la communauté pour un manga donné',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Liste des recommandations communautaires (MangaQuickViewDto)',
+    type: MangaQuickViewDto,
+    isArray: true,
+  })
+  @UseGuards(JwtAuthGuard)
+  @Get('recommendations/:muId')
+  async mangaRecommendations(
+    @Param('muId', ParseIntPipe) muId: number,
+  ): Promise<MangaQuickViewDto[]> {
+    return this.mangasService.getRecommendationsAsQuickView(muId);
+  }
+
+  @ApiOperation({
     summary: 'Get details of the manga with given id',
   })
   @ApiResponse({ status: 400, description: 'Bad Request' })
@@ -118,26 +138,42 @@ export class MangasController {
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   async mangaDetails(
-    @Param('id') id: number,
+    @Param('id', ParseIntPipe) id: number,
     @UserDecorator() user: any,
   ): Promise<MangaDetailsDto> {
     const mangaDetails = await this.mangasService.getMangaDetails(id);
     let customLink: string | undefined = undefined;
     let inLibrary = false;
     let readChaptersCount: number | undefined = undefined;
+    let userRating: number | undefined = undefined;
     if (user && user.id) {
       const userManga = await this.libraryService.getUserManga(user.id, id);
       if (userManga) {
         customLink = userManga.custom_link ?? undefined;
         inLibrary = true;
         readChaptersCount = userManga.user_read_chapters;
+        userRating = userManga.user_rating ?? 0;
       }
     }
+
+    // Enrichir avec la note communautaire agrégée (Bayesian)
+    const muIds = [id.toString()];
+    const muRatings = new Map([[id.toString(), Number(mangaDetails.rating) || 0]]);
+    const community = await this.mangasService.getCommunityRatings(
+      muIds,
+      muRatings,
+    );
+    const c = community.get(id.toString());
+
     return {
       ...mangaDetails,
       custom_link: customLink,
       in_library: inLibrary,
       read_chapters_count: readChaptersCount,
+      user_rating: userRating,
+      community_rating: c?.communityRating ?? undefined,
+      community_rating_count: c?.communityRatingCount ?? 0,
+      aggregated_rating: c?.aggregatedRating ?? undefined,
     };
   }
 

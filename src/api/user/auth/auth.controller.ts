@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  Ip,
   Logger,
   Post,
   ClassSerializerInterceptor,
@@ -13,7 +14,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { RegisterDto, LoginDto, TokenDto } from './auth.dto';
+import { RegisterDto, LoginDto, TokenDto, GoogleMobileLoginDto } from './auth.dto';
 import { AuthService } from './auth.service';
 import User from '../user.entity';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -21,6 +22,7 @@ import { RefreshTokenGuard } from '@/api/user/auth/guard/refreshToken.guard';
 import { AuthGuard } from '@nestjs/passport';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { UserInformationDto } from '@/api/user/dto/user-information.dto';
+import { EmailService } from './email/email.service';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -30,13 +32,29 @@ export class AuthController {
   @Inject(AuthService)
   private readonly service: AuthService;
 
-  @ApiOperation({ summary: 'Register user' })
+  @Inject(EmailService)
+  private readonly emailService: EmailService;
+
+  @ApiOperation({ summary: 'Register user (envoie automatiquement un mail de vérification)' })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 200, description: 'The found record', type: UserInformationDto })
   @Post('register')
   @UseInterceptors(ClassSerializerInterceptor)
-  private register(@Body() body: RegisterDto): Promise<UserInformationDto> {
-    return this.service.register(body);
+  private async register(
+    @Body() body: RegisterDto,
+    @Ip() ip: string,
+  ): Promise<UserInformationDto> {
+    const user = await this.service.register(body);
+    // Fire-and-forget : ne pas bloquer la réponse register si SMTP plante.
+    // L'utilisateur peut toujours redemander un mail via /auth/email/send-verification.
+    this.emailService
+      .sendVerificationEmail(user.id, ip)
+      .catch((err) =>
+        this.logger.warn(
+          `Failed to send verification email after register for userId=${user.id}: ${err?.message ?? err}`,
+        ),
+      );
+    return UserInformationDto.fromEntity(user);
   }
 
   @ApiOperation({ summary: 'Login user (crée une session par appareil)' })
@@ -78,6 +96,13 @@ export class AuthController {
     @UserDecorator() user: User,
   ): Promise<void> {
     return this.service.logoutAll(user.id);
+  }
+
+  @ApiOperation({ summary: 'Connexion Google via app mobile (idToken google_sign_in)' })
+  @ApiResponse({ status: 201, description: 'Tokens JWT', type: TokenDto })
+  @Post('google/mobile')
+  googleMobileLogin(@Body() body: GoogleMobileLoginDto): Promise<TokenDto> {
+    return this.service.googleMobileLogin(body);
   }
 
   @ApiOperation({ summary: 'Connexion via Google — redirige vers Google' })

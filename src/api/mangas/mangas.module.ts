@@ -4,6 +4,7 @@ import { MangasService } from './mangas.service';
 import { HelperService } from './helper.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Manga } from './manga.entity';
+import { MangaRecommendation } from './manga-recommendation.entity';
 import { UserManga } from './user-manga.entity';
 import User from 'src/api/user/user.entity';
 import { UserService } from 'src/api/user/user.service';
@@ -14,7 +15,7 @@ import { MangaSyncService } from './sync-manga.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Manga, User, UserManga]),
+    TypeOrmModule.forFeature([Manga, MangaRecommendation, User, UserManga]),
     forwardRef(() => LibraryModule),
   ],
   controllers: [MangasController],
@@ -26,6 +27,6 @@ import { MangaSyncService } from './sync-manga.service';
     UpdateMangaService,
     MangaSyncService,
   ],
-  exports: [HelperService, UpdateMangaService, MangaSyncService],
+  exports: [HelperService, UpdateMangaService, MangaSyncService, MangasService],
 })
 export class MangasModule {}

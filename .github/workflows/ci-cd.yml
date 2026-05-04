@@ -1,0 +1,304 @@
+name: CI/CD — Manga Tracker API
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  IMAGE: bladeburu/manga-tracker-api
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 1. Tests + qualité (sur PR et push master)
+  # ─────────────────────────────────────────────────────────────────────────────
+  test:
+    name: Tests & Qualité
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: MangaTracker
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests unitaires
+        env:
+          NODE_ENV: test
+          DATABASE_HOST: localhost
+          DATABASE_NAME: MangaTracker
+          DATABASE_USER: test
+          DATABASE_PASSWORD: testpassword
+          DATABASE_PORT: "5432"
+          DATABASE_SCHEMA: public
+          JWT_KEY: ci-test-jwt-key-not-real
+          JWT_REFRESH_SECRET: ci-test-refresh-secret-not-real
+          JWT_KEY_EXPIRES_IN: 1h
+          JWT_REFRESH_SECRET_EXPIRES_IN: 7d
+        run: npm test -- --passWithNoTests
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 2. Build & Push image Docker (uniquement sur push master)
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-and-push:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Définir le tag
+        id: meta
+        run: |
+          SHA_SHORT="${GITHUB_SHA::8}"
+          echo "tag=sha-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: production
+          push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 3. Deploy sur NAS TrueNAS via SSH + midclt
+  # ─────────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy NAS
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+
+    environment:
+      name: production
+      url: https://api.bladeburu.com
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH (midclt)
+        uses: appleboy/ssh-action@v1
+        env:
+          TAG: ${{ needs.build-and-push.outputs.tag }}
+          DATABASE_HOST: "192.168.1.119"
+          DATABASE_NAME: "MangaTracker"
+          DATABASE_USER: "admin"
+          DATABASE_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
+          DATABASE_SCHEMA: "dev"
+          JWT_KEY: ${{ secrets.PROD_JWT_KEY }}
+          JWT_REFRESH_SECRET: ${{ secrets.PROD_JWT_REFRESH_SECRET }}
+          SMTP_USER: "aa11e8001@smtp-brevo.com"
+          SMTP_PASSWORD: ${{ secrets.PROD_SMTP_PASSWORD }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
+          ANDROID_SHA256_FINGERPRINT: ${{ secrets.PROD_ANDROID_SHA256_FINGERPRINT }}
+          CORS_ORIGINS: "https://api.bladeburu.com,https://app.bladeburu.com"
+        with:
+          host: ${{ secrets.NAS_HOST }}
+          port: ${{ secrets.NAS_PORT }}
+          username: ${{ secrets.NAS_USER }}
+          key: ${{ secrets.NAS_SSH_KEY }}
+          envs: TAG,DATABASE_HOST,DATABASE_NAME,DATABASE_USER,DATABASE_PASSWORD,DATABASE_SCHEMA,JWT_KEY,JWT_REFRESH_SECRET,SMTP_USER,SMTP_PASSWORD,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,ANDROID_SHA256_FINGERPRINT,CORS_ORIGINS
+          script: |
+            set -euo pipefail
+
+            echo "▶ Déploiement manga-tracker-api — image tag: $TAG"
+
+            # Validation fail-fast : secrets critiques obligatoires
+            : "${DATABASE_PASSWORD:?PROD_DB_PASSWORD manquant}"
+            : "${JWT_KEY:?PROD_JWT_KEY manquant}"
+            : "${JWT_REFRESH_SECRET:?PROD_JWT_REFRESH_SECRET manquant}"
+
+            python3 - << 'PYEOF'
+            import subprocess, json, time, sys, os
+
+            TAG                    = os.environ['TAG']
+            DATABASE_HOST          = os.environ['DATABASE_HOST']
+            DATABASE_NAME          = os.environ['DATABASE_NAME']
+            DATABASE_USER          = os.environ['DATABASE_USER']
+            DATABASE_PASSWORD      = os.environ['DATABASE_PASSWORD']
+            DATABASE_SCHEMA        = os.environ['DATABASE_SCHEMA']
+            JWT_KEY                = os.environ['JWT_KEY']
+            JWT_REFRESH_SECRET     = os.environ['JWT_REFRESH_SECRET']
+            SMTP_USER              = os.environ.get('SMTP_USER', '')
+            SMTP_PASSWORD          = os.environ.get('SMTP_PASSWORD', '')
+            GOOGLE_CLIENT_ID       = os.environ.get('GOOGLE_CLIENT_ID', '')
+            GOOGLE_CLIENT_SECRET   = os.environ.get('GOOGLE_CLIENT_SECRET', '')
+            ANDROID_SHA256         = os.environ.get('ANDROID_SHA256_FINGERPRINT', '')
+            CORS_ORIGINS           = os.environ.get('CORS_ORIGINS', 'https://api.bladeburu.com')
+
+            compose = f"""services:
+              manga-tracker-api:
+                image: bladeburu/manga-tracker-api:{TAG}
+                pull_policy: always
+                restart: unless-stopped
+                environment:
+                  PORT: "3000"
+                  NODE_ENV: production
+                  DATABASE_HOST: "{DATABASE_HOST}"
+                  DATABASE_NAME: "{DATABASE_NAME}"
+                  DATABASE_USER: "{DATABASE_USER}"
+                  DATABASE_PASSWORD: "{DATABASE_PASSWORD}"
+                  DATABASE_PORT: "5432"
+                  DATABASE_SCHEMA: "{DATABASE_SCHEMA}"
+                  JWT_KEY: "{JWT_KEY}"
+                  JWT_REFRESH_SECRET: "{JWT_REFRESH_SECRET}"
+                  JWT_KEY_EXPIRES_IN: "1h"
+                  JWT_REFRESH_SECRET_EXPIRES_IN: "7d"
+                  HTTP_TIMEOUT: "15000"
+                  HTTP_MAX_REDIRECT: "1"
+                  ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT: "false"
+                  DISABLE_ERROR_MESSAGES_FOR_API_CLIENT: "false"
+                  TYPEORM_DEBUG_LOGGING: "false"
+                  SMTP_HOST: "smtp-relay.brevo.com"
+                  SMTP_PORT: "587"
+                  SMTP_USER: "{SMTP_USER}"
+                  SMTP_PASSWORD: "{SMTP_PASSWORD}"
+                  SMTP_FROM: "noreply@bladeburu.com"
+                  SMTP_FROM_NAME: "Manga Tracker"
+                  PUBLIC_WEB_URL: "https://api.bladeburu.com"
+                  GOOGLE_CALLBACK_URL: "https://api.bladeburu.com/auth/google/callback"
+                  CORS_ORIGINS: "{CORS_ORIGINS}"
+                  GOOGLE_CLIENT_ID: "{GOOGLE_CLIENT_ID}"
+                  GOOGLE_CLIENT_SECRET: "{GOOGLE_CLIENT_SECRET}"
+                  ANDROID_PACKAGE_NAME: "com.example.manga_tracker"
+                  ANDROID_SHA256_FINGERPRINT: "{ANDROID_SHA256}"
+                ports:
+                  - "3000:3000"
+                healthcheck:
+                  test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+                  interval: 30s
+                  timeout: 10s
+                  retries: 3
+                  start_period: 40s
+            """
+
+            # Stop
+            print("⏹  Arrêt de l'app...")
+            subprocess.run(['midclt', 'call', 'app.stop', 'manga-tracker-api'], capture_output=True)
+            time.sleep(8)
+
+            # Update compose config
+            print("🔄 Mise à jour de la configuration...")
+            payload = json.dumps({'custom_compose_config_string': compose})
+            r = subprocess.run(
+                ['midclt', 'call', '-j', 'app.update', 'manga-tracker-api', payload],
+                capture_output=True, text=True, timeout=120
+            )
+            if r.returncode != 0:
+                print(f"ERREUR app.update: {r.stdout[:500]} {r.stderr[:500]}", file=sys.stderr)
+                sys.exit(1)
+            print("✅ Configuration mise à jour")
+
+            # Start
+            print("▶  Démarrage de l'app...")
+            r = subprocess.run(
+                ['midclt', 'call', '-j', 'app.start', 'manga-tracker-api'],
+                capture_output=True, text=True, timeout=60
+            )
+            if r.returncode != 0:
+                print(f"ERREUR app.start: {r.stderr[:300]}", file=sys.stderr)
+                sys.exit(1)
+
+            # Attente démarrage NestJS + migrations TypeORM (~30s)
+            print("⏳ Attente démarrage NestJS + migrations...")
+            time.sleep(35)
+
+            # Vérification état des containers
+            r = subprocess.run(['midclt', 'call', 'app.query'], capture_output=True, text=True)
+            apps = json.loads(r.stdout)
+            for a in apps:
+                if a['name'] == 'manga-tracker-api':
+                    state = a.get('state')
+                    print(f"   État app: {state}")
+                    for c in a.get('active_workloads', {}).get('container_details', []):
+                        cstate = c.get('state')
+                        cname  = c.get('service_name')
+                        print(f"   Container {cname}: {cstate}")
+                        if cstate != 'running':
+                            print(f"ERREUR: container {cname} non démarré ({cstate})", file=sys.stderr)
+                            sys.exit(1)
+
+            print(f"✅ Déploiement réussi — tag: {TAG}")
+            PYEOF
+
+            # Nettoyage images orphelines
+            echo "🧹 Nettoyage images..."
+            midclt call -j app.image.prune '{"filters": {"dangling": true}}' 2>/dev/null || true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 4. Smoke-test HTTP post-deploy
+  # ─────────────────────────────────────────────────────────────────────────────
+  smoke-test:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+
+    steps:
+      - name: Healthcheck HTTP (retry 5×)
+        run: |
+          echo "🔍 Vérification https://api.bladeburu.com/health"
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://api.bladeburu.com/health)
+            echo "  Tentative $i → HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ API opérationnelle"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "❌ API ne répond pas après 5 tentatives"
+          exit 1

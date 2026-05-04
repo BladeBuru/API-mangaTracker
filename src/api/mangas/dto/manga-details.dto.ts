@@ -81,6 +81,12 @@ export class MangaDetailsDto {
   @IsOptional()
   associated?: { title: string }[];
 
+  @ApiPropertyOptional({
+    description: 'Recommandations MangaUpdates (séries similaires avec poids 1-10)',
+  })
+  @IsOptional()
+  muRecommendations?: { series_id: number; series_name: string; weight: number }[];
+
   @ApiPropertyOptional({ description: 'Custom user link for this manga' })
   @IsOptional()
   @IsString()
@@ -100,6 +106,37 @@ export class MangaDetailsDto {
   @IsOptional()
   @IsNumber()
   read_chapters_count?: number;
+
+  @ApiPropertyOptional({
+    description: "Note de l'utilisateur connecté (0 = pas de note, 1-10)",
+  })
+  @IsOptional()
+  @IsNumber()
+  user_rating?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Moyenne des notes des utilisateurs Manga Tracker pour ce manga',
+  })
+  @IsOptional()
+  @IsNumber()
+  community_rating?: number;
+
+  @ApiPropertyOptional({
+    description:
+      "Nombre d'utilisateurs Manga Tracker ayant noté ce manga",
+  })
+  @IsOptional()
+  @IsNumber()
+  community_rating_count?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Note agrégée Bayesian (note MU + notes communautaires locales)',
+  })
+  @IsOptional()
+  @IsNumber()
+  aggregated_rating?: number;
 
   private static parseLatestChapter(status: string, fallback: number): number {
     if (!status) return fallback;
@@ -305,6 +342,22 @@ export class MangaDetailsDto {
     mangaDetailsDto['authors'] = muObject['authors'];
     mangaDetailsDto['genres'] = muObject['genres'];
     mangaDetailsDto['associated'] = muObject['associated'] ?? [];
+
+    // Recommandations communautaires MangaUpdates (poids 1-10)
+    // MU retourne : { series_id: { series_id: number, title: string }, weight: number }
+    const rawRecos: any[] = muObject['recommendations'] ?? [];
+    mangaDetailsDto.muRecommendations = rawRecos
+      .filter((r) => r.weight > 0 && (r.series_id?.series_id ?? r.series_id))
+      .map((r) => {
+        const isNested = typeof r.series_id === 'object' && r.series_id !== null;
+        return {
+          series_id: isNested ? Number(r.series_id.series_id) : Number(r.series_id),
+          series_name: isNested ? (r.series_id.title ?? r.series_id.series_name ?? '') : (r.series_name ?? ''),
+          weight: Number(r.weight),
+        };
+      })
+      .filter((r) => !isNaN(r.series_id) && r.series_id > 0);
+
     return mangaDetailsDto;
   }
 }

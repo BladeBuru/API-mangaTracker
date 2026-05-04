@@ -43,9 +43,48 @@ export class MangaQuickViewDto {
 
   @IsOptional()
   @ApiPropertyOptional({
-    description: 'Lien personnalisé de l’utilisateur pour ce manga',
+    description: "Lien personnalisé de l'utilisateur pour ce manga",
   })
   customLink?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description: "Note donnée par l'utilisateur (0 = pas de note, 1-10)",
+  })
+  userRating?: number;
+
+  @IsOptional()
+  @ApiPropertyOptional({
+    description:
+      "Titres des mangas de la bibliothèque qui ont conduit à cette recommandation (top 3 contributeurs au score). Présent uniquement dans les réponses de /recommendations.",
+    type: [String],
+  })
+  recommendedBecauseOf?: string[];
+
+  @IsNumber()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description:
+      "Moyenne des notes données par les utilisateurs de Manga Tracker (1-10). Null si personne n'a noté ce manga localement.",
+  })
+  communityRating?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description:
+      "Nombre d'utilisateurs Manga Tracker ayant noté ce manga (rating > 0).",
+  })
+  communityRatingCount?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description:
+      "Note agrégée Bayesian combinant la note globale MangaUpdates (rating) et la note communautaire locale (communityRating), pondérée par le nombre de votants. Plus stable pour les mangas peu notés.",
+  })
+  aggregatedRating?: number;
 
   static fromMu(data: any) {
     const dto = new MangaQuickViewDto();
@@ -72,6 +111,7 @@ export class MangaQuickViewDto {
     dto.readingStatus = userManga.readingStatus;
     dto.associated = userManga.manga.associated ?? [];
     dto.customLink = userManga.custom_link ?? undefined;
+    dto.userRating = userManga.user_rating ?? 0;
     return dto;
   }
 
