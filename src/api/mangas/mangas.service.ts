@@ -141,7 +141,7 @@ export class MangasService {
     const normalizedGenres = Array.isArray(rawGenres)
       ? rawGenres
           .map((g: any) =>
-            typeof g === 'string' ? g : (g?.genre ?? g?.name ?? ''),
+            typeof g === 'string' ? g : g?.genre ?? g?.name ?? '',
           )
           .filter((g: string) => g.length > 0)
       : null;
@@ -194,10 +194,10 @@ export class MangasService {
           recommended_title: reco.series_name,
           weight: reco.weight,
         })
-        .orUpdate(['weight', 'recommended_title', 'updated_at'], [
-          'source_mu_id',
-          'recommended_mu_id',
-        ])
+        .orUpdate(
+          ['weight', 'recommended_title', 'updated_at'],
+          ['source_mu_id', 'recommended_mu_id'],
+        )
         .execute();
     }
   }
@@ -237,10 +237,15 @@ export class MangasService {
       const recos = rawRecos
         .filter((r) => r.weight > 0 && (r.series_id?.series_id ?? r.series_id))
         .map((r) => {
-          const isNested = typeof r.series_id === 'object' && r.series_id !== null;
+          const isNested =
+            typeof r.series_id === 'object' && r.series_id !== null;
           return {
-            series_id: isNested ? Number(r.series_id.series_id) : Number(r.series_id),
-            series_name: isNested ? (r.series_id.title ?? r.series_id.series_name ?? '') : (r.series_name ?? ''),
+            series_id: isNested
+              ? Number(r.series_id.series_id)
+              : Number(r.series_id),
+            series_name: isNested
+              ? r.series_id.title ?? r.series_id.series_name ?? ''
+              : r.series_name ?? '',
             weight: Number(r.weight),
           };
         })
@@ -270,7 +275,7 @@ export class MangasService {
       prev.updated_at < cur.updated_at ? prev : cur,
     );
     if (Date.now() - oldest.updated_at.getTime() > RECO_CACHE_TTL_MS) {
-      this.fetchAndCacheRecommendations(muId).catch(() => {});
+      this.fetchAndCacheRecommendations(muId).catch(() => undefined);
     }
     return cached;
   }
