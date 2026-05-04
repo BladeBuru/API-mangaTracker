@@ -136,7 +136,7 @@ jobs:
           DATABASE_NAME: "MangaTracker"
           DATABASE_USER: "postgres"
           DATABASE_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
-          DATABASE_SCHEMA: "dev"
+          DATABASE_SCHEMA: "public"
           JWT_KEY: ${{ secrets.PROD_JWT_KEY }}
           JWT_REFRESH_SECRET: ${{ secrets.PROD_JWT_REFRESH_SECRET }}
           SMTP_USER: "aa11e8001@smtp-brevo.com"
