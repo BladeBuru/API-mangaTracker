@@ -28,8 +28,17 @@ lerna-debug.log*
 *.sublime-workspace
 
 # IDE - VSCode
-.vscode/*
+.vscode
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+
+# Environment
+.env
+src/common/envs/development.env
+
+# Bash Scripts
+
+start-ssh-tunneling.sh
+restart-ssh-tunneling.sh

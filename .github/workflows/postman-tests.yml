@@ -1,0 +1,81 @@
+name: Postman TNR
+
+on:
+    pull_request:
+        branches: ["dev"]
+
+jobs:
+    postman-tests:
+      runs-on: ubuntu-latest
+      timeout-minutes: 10
+
+      services:
+          postgres:
+            image: postgres
+
+            env:
+              POSTGRES_PASSWORD: postgres
+              POSTGRES_USER: postgres
+              POSTGRES_DB: MangaTracker
+            
+            options: >-
+              --health-cmd pg_isready
+              --health-interval 10s
+              --health-timeout 5s
+              --health-retries 5
+            ports:
+              - 5432:5432
+
+
+
+      steps:
+        -
+          name: Checkout
+          uses: actions/checkout@v3
+        - name: Install PostgreSQL client (psql)
+          run: |
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+        - name: Create PostgreSQL schema
+          env:
+            PGHOST: ${{ secrets.TNR_DATABASE_HOST }}
+            PGPORT: ${{ secrets.TNR_DATABASE_PORT }}
+            PGUSER: ${{ secrets.TNR_DATABASE_USER }}
+            PGPASSWORD: ${{ secrets.TNR_DATABASE_PASSWORD }}
+            PGDATABASE: ${{ secrets.TNR_DATABASE_NAME }}
+            TNR_DATABASE_SCHEMA: ${{ secrets.TNR_DATABASE_SCHEMA }}
+          run: |
+            psql -c "CREATE SCHEMA IF NOT EXISTS \"$TNR_DATABASE_SCHEMA\";"
+        -
+          name: Install Packages
+          run: npm ci
+        -
+          name: Install newman
+          run: npm install -g newman
+        -
+          name: Create and Populate Env File
+          run: |
+            touch src/common/envs/development.env
+            echo PORT=3000 >> src/common/envs/development.env
+            echo NODE_ENV=${{ secrets.TNR_NODE_ENV }} >> src/common/envs/development.env
+            echo DATABASE_HOST=${{ secrets.TNR_DATABASE_HOST }} >> src/common/envs/development.env
+            echo DATABASE_NAME=${{ secrets.TNR_DATABASE_NAME }} >> src/common/envs/development.env
+            echo DATABASE_USER=${{ secrets.TNR_DATABASE_USER }} >> src/common/envs/development.env
+            echo DATABASE_PASSWORD=${{ secrets.TNR_DATABASE_PASSWORD }} >> src/common/envs/development.env
+            echo DATABASE_PORT=${{ secrets.TNR_DATABASE_PORT }} >> src/common/envs/development.env
+            echo DATABASE_SCHEMA=${{ secrets.TNR_DATABASE_SCHEMA }} >> src/common/envs/development.env
+            echo JWT_KEY=${{ secrets.TNR_JWT_KEY }} >> src/common/envs/development.env
+            echo JWT_KEY_EXPIRES_IN=${{ secrets.TNR_JWT_EXPIRES }} >> src/common/envs/development.env
+            echo JWT_REFRESH_SECRET=${{ secrets.TNR_JWT_REFRESH_KEY }} >> src/common/envs/development.env
+            echo JWT_REFRESH_SECRET_EXPIRES_IN=${{ secrets.TNR_JWT_REFRESH_SECRET_EXPIRES_IN }} >> src/common/envs/development.env
+            echo HTTP_TIMEOUT=${{ secrets.TNR_HTTP_TIMEOUT}} >> src/common/envs/development.env
+            echo HTTP_MAX_REDIRECT=1 >> src/common/envs/development.env
+            echo ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT=${{ secrets.TNR_ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT }} >> src/common/envs/development.env
+            echo DISABLE_ERROR_MESSAGES_FOR_API_CLIENT=${{ secrets.TNR_DISABLE_ERROR_MESSAGES_FOR_API_CLIENT }} >> src/common/envs/development.env
+            echo TYPEORM_DEBUG_LOGGING=${{ secrets.TNR_TYPEORM_DEBUG_LOGGING }} >> src/common/envs/development.env
+        -
+          name: Run the API and Postman's tests
+          run: |
+            npm run start:dev &
+            sleep 60
+            newman run https://api.postman.com/collections/21616667-b4278202-be33-4b8c-a274-5113955e6838?access_key=${{ secrets.POSTMAN_API_ACCESS_KEY }}

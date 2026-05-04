@@ -1,8 +1,11 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="200" alt="Nest Logo" /></a>
-</p>
+## MangaTracker API Information
+
+![Image Publication Status](https://github.com/FLT-Yann/API-mangaTracker/actions/workflows/publish-image/badge.svg?branch=master)
+
+## NestJS Framework Information
 
 [circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
+
 [circleci-url]: https://circleci.com/gh/nestjs/nest
 
   <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
@@ -45,6 +48,8 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+The server will start running at `http://localhost:3000`
+
 ## Test
 
 ```bash
@@ -58,16 +63,26 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
-## Support
+## API Documentation (Swagger)
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+After starting the developement server, you can access API's endpoints specifications at the following address:
 
-## Stay in touch
+```bash
+http://localhost:3000/api
+```
 
-- Author - [Kamil Myśliwiec](https://kamilmysliwiec.com)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## Local Development Database
 
-## License
+> The following procedure has been tested on a Linux environment. It might need a few adjustment for Windows or Mac
+> users.
 
-Nest is [MIT licensed](LICENSE).
+1. Go inside the `toolbox` folder at the root of the project
+
+2. Run `docker-compose up -d` to deploy the Docker Container hosting the Postgres Database
+
+3. You can now connect to the newly deployed database with `psql -h localhost -p 6543 -U postgres -d postgres`
+
+4. Inside your shell terminal, execute the database init script with
+   `psql -h localhost -p 6543 -U postgres -d postgres -f init-local-db.sql`
+
+5. Replace your environment variables with the ones from your local database
