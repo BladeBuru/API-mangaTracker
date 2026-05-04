@@ -1,0 +1,77 @@
+name: DB Backup — MangaTracker
+
+# Sauvegarde automatique PostgreSQL prod via SSH sur le NAS
+# Le dump est stocké sur le NAS (~/ manga-tracker-backups/) — 30 jours de rétention
+# Déclenchement : tous les jours à 03h00 UTC + manuel
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 03:00 UTC = ~04h-05h heure Paris
+  workflow_dispatch:       # déclenchement manuel depuis GitHub UI
+
+jobs:
+  backup:
+    name: pg_dump sur NAS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Backup via SSH (pg_dump sur NAS)
+        uses: appleboy/ssh-action@v1
+        env:
+          DATABASE_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
+        with:
+          host: ${{ secrets.NAS_HOST }}
+          port: ${{ secrets.NAS_PORT }}
+          username: ${{ secrets.NAS_USER }}
+          key: ${{ secrets.NAS_SSH_KEY }}
+          envs: DATABASE_PASSWORD
+          script: |
+            set -euo pipefail
+
+            BACKUP_DIR="$HOME/manga-tracker-backups"
+            mkdir -p "$BACKUP_DIR"
+
+            TIMESTAMP=$(date -u +%Y-%m-%d_%H-%M)
+            BACKUP_FILE="$BACKUP_DIR/MangaTracker_${TIMESTAMP}.dump"
+
+            echo "▶ Démarrage backup MangaTracker → $BACKUP_FILE"
+
+            # pg_dump via image Docker postgres (déjà présente sur le NAS)
+            # --network host pour atteindre postgres sur 127.0.0.1:5432
+            docker run --rm \
+              --network host \
+              -e PGPASSWORD="$DATABASE_PASSWORD" \
+              postgres:16-alpine \
+              pg_dump \
+                -h 127.0.0.1 \
+                -p 5432 \
+                -U postgres \
+                -d MangaTracker \
+                --format=custom \
+                --compress=9 \
+                --no-owner \
+                --no-acl \
+              > "$BACKUP_FILE"
+
+            SIZE=$(du -sh "$BACKUP_FILE" | cut -f1)
+            echo "✅ Backup créé : $BACKUP_FILE ($SIZE)"
+
+            # Rotation : on garde les 30 derniers dumps
+            ls -t "$BACKUP_DIR"/*.dump 2>/dev/null | tail -n +31 | xargs rm -f 2>/dev/null || true
+            REMAINING=$(ls "$BACKUP_DIR"/*.dump 2>/dev/null | wc -l)
+            echo "📦 Dumps conservés : $REMAINING"
+
+      - name: Résumé
+        if: always()
+        run: |
+          echo "### 📦 DB Backup MangaTracker" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Heure** : $(date -u)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **DB** : MangaTracker @ NAS (192.168.1.119)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Stockage** : \`~/manga-tracker-backups/\` sur le NAS" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Rétention** : 30 derniers dumps" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Restauration :**" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`bash" >> "$GITHUB_STEP_SUMMARY"
+          echo "pg_restore --clean -h 192.168.1.119 -U postgres -d MangaTracker MangaTracker_YYYY-MM-DD.dump" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
