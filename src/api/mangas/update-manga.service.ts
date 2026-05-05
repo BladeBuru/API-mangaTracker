@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { MangasService } from './mangas.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Manga } from './manga.entity';
 import { Repository } from 'typeorm';
 import { DateHelper } from '@/common/helper/date.helper';
 import { UserManga } from './user-manga.entity';
+import { MangaQuickViewDto } from './dto/manga-quick-view.dto';
 
 @Injectable()
 export class UpdateMangaService {
@@ -17,11 +18,61 @@ export class UpdateMangaService {
   ) {}
   private readonly logger = new Logger(UpdateMangaService.name);
 
+  /**
+   * Force le rafraîchissement des URLs de couverture d'un manga depuis
+   * MangaUpdates. Utile lorsqu'un client détecte une cover cassée (les URLs
+   * MU expirent périodiquement).
+   *
+   * Refetch via {@link MangasService.getMangaDetails} qui :
+   *   1. Appelle l'API MangaUpdates,
+   *   2. Met à jour `small_cover_url` / `medium_cover_url` (et autres champs)
+   *      en BDD,
+   *   3. Sauvegarde les recommandations en arrière-plan.
+   *
+   * @throws {NotFoundException} si le manga n'existe pas en base.
+   */
+  async refreshCovers(muId: number): Promise<MangaQuickViewDto> {
+    const existing = await this.mangaRepository.findOneBy({
+      mu_id: muId.toString(),
+    });
+    if (!existing) {
+      throw new NotFoundException(`Manga with mu_id ${muId} not found`);
+    }
+
+    // getMangaDetails fait l'appel MU + UPDATE en BDD des URLs covers.
+    // Si l'API MU est indispo, getMangaDetails throw une exception qui
+    // remontera proprement au controller (404 ou 503).
+    await this.mangasService.getMangaDetails(muId);
+
+    const refreshed = await this.mangaRepository.findOneBy({
+      mu_id: muId.toString(),
+    });
+    if (!refreshed) {
+      // Théoriquement impossible — le manga existait juste avant l'update.
+      throw new NotFoundException(
+        `Manga with mu_id ${muId} disappeared during refresh`,
+      );
+    }
+
+    const dto = new MangaQuickViewDto();
+    dto.muId = Number(refreshed.mu_id);
+    dto.title = refreshed.title;
+    dto.year = refreshed.year;
+    dto.mediumCoverUrl = refreshed.small_cover_url;
+    dto.largeCoverUrl = refreshed.medium_cover_url;
+    dto.rating = Number(refreshed.rating);
+    dto.totalChapters = refreshed.total_chapters;
+    dto.associated = refreshed.associated ?? [];
+    return dto;
+  }
+
   async checkIfMangaArrayInfoIsOutdated(muIds: number[]): Promise<Manga[]> {
     const results = await Promise.all(
       muIds.map((muId) => this.checkIfMangaInfoIsOutdated(Number(muId))),
     );
-    return results.filter((manga): manga is Manga => manga !== null && manga !== undefined);
+    return results.filter(
+      (manga): manga is Manga => manga !== null && manga !== undefined,
+    );
   }
 
   async checkIfMangaInfoIsOutdated(muId: number): Promise<Manga | null> {

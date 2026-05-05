@@ -26,6 +26,8 @@ import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { LibraryService } from '@/api/library/library.service';
 import { ConfigService } from '@nestjs/config';
 import { MangaSyncService } from './sync-manga.service';
+import { UpdateMangaService } from './update-manga.service';
+import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('Mangas')
 @ApiBearerAuth()
@@ -36,6 +38,7 @@ export class MangasController {
     private readonly libraryService: LibraryService,
     private readonly configService: ConfigService,
     private readonly mangaSyncService: MangaSyncService,
+    private readonly updateMangaService: UpdateMangaService,
   ) {}
 
   @ApiOperation({
@@ -158,7 +161,9 @@ export class MangasController {
 
     // Enrichir avec la note communautaire agrégée (Bayesian)
     const muIds = [id.toString()];
-    const muRatings = new Map([[id.toString(), Number(mangaDetails.rating) || 0]]);
+    const muRatings = new Map([
+      [id.toString(), Number(mangaDetails.rating) || 0],
+    ]);
     const community = await this.mangasService.getCommunityRatings(
       muIds,
       muRatings,
@@ -194,6 +199,23 @@ export class MangasController {
       searchMangaDto.limit,
       searchMangaDto.offset,
     );
+  }
+
+  @ApiOperation({ summary: 'Refresh manga covers from MangaUpdates' })
+  @ApiResponse({
+    status: 200,
+    description: 'Covers refreshed; returns the updated MangaQuickViewDto',
+    type: MangaQuickViewDto,
+  })
+  @ApiResponse({ status: 404, description: 'Manga not found' })
+  @ApiResponse({ status: 429, description: 'Too many requests' })
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @UseGuards(JwtAuthGuard)
+  @Post(':muId/refresh-cover')
+  async refreshCover(
+    @Param('muId', ParseIntPipe) muId: number,
+  ): Promise<MangaQuickViewDto> {
+    return this.updateMangaService.refreshCovers(muId);
   }
 
   @Post('admin/sync-all')
