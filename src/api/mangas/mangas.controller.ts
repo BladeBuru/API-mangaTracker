@@ -1,14 +1,12 @@
 import {
   Body,
   Controller,
-  DefaultValuePipe,
   Get,
   Param,
   ParseIntPipe,
   Post,
   Query,
   UseGuards,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { MangaQuickViewDto } from './dto/manga-quick-view.dto';
 import { MangasService } from './mangas.service';
@@ -24,10 +22,6 @@ import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 import { SearchMangaDto } from './dto/search-manga.dto';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { LibraryService } from '@/api/library/library.service';
-import { ConfigService } from '@nestjs/config';
-import { MangaSyncService } from './sync-manga.service';
-import { UpdateMangaService } from './update-manga.service';
-import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('Mangas')
 @ApiBearerAuth()
@@ -36,9 +30,6 @@ export class MangasController {
   constructor(
     private readonly mangasService: MangasService,
     private readonly libraryService: LibraryService,
-    private readonly configService: ConfigService,
-    private readonly mangaSyncService: MangaSyncService,
-    private readonly updateMangaService: UpdateMangaService,
   ) {}
 
   @ApiOperation({
@@ -199,32 +190,5 @@ export class MangasController {
       searchMangaDto.limit,
       searchMangaDto.offset,
     );
-  }
-
-  @ApiOperation({ summary: 'Refresh manga covers from MangaUpdates' })
-  @ApiResponse({
-    status: 200,
-    description: 'Covers refreshed; returns the updated MangaQuickViewDto',
-    type: MangaQuickViewDto,
-  })
-  @ApiResponse({ status: 404, description: 'Manga not found' })
-  @ApiResponse({ status: 429, description: 'Too many requests' })
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
-  @UseGuards(JwtAuthGuard)
-  @Post(':muId/refresh-cover')
-  async refreshCover(
-    @Param('muId', ParseIntPipe) muId: number,
-  ): Promise<MangaQuickViewDto> {
-    return this.updateMangaService.refreshCovers(muId);
-  }
-
-  @Post('admin/sync-all')
-  async syncAllMangas(@Query('secret') secret: string) {
-    const adminSecret = this.configService.get<string>('DATABASE_PASSWORD');
-    if (secret !== adminSecret) {
-      throw new UnauthorizedException('Invalid secret');
-    }
-    await this.mangaSyncService.syncAllMangasWithApi();
-    return { message: 'Synchronisation lancée' };
   }
 }

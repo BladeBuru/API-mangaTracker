@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MangasController } from './mangas.controller';
+import { MangaCoversController } from './manga-covers.controller';
 import { MangasService } from './mangas.service';
 import { HelperService } from './helper.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -18,7 +19,7 @@ import { MangaSyncService } from './sync-manga.service';
     TypeOrmModule.forFeature([Manga, MangaRecommendation, User, UserManga]),
     forwardRef(() => LibraryModule),
   ],
-  controllers: [MangasController],
+  controllers: [MangasController, MangaCoversController],
   providers: [
     MangasService,
     HelperService,
