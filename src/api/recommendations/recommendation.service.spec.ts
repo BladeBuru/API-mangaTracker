@@ -135,8 +135,10 @@ describe('RecommendationService', () => {
     expect(result).toHaveLength(1);
     expect(result[0].muId).toBe(2000);
     expect(result[0].title).toBe('Manga 2000');
-    // Le mapping cover doit utiliser small (mediumCoverUrl) et medium (largeCoverUrl)
-    expect(result[0].mediumCoverUrl).toBe('https://cdn/2000-s.jpg');
+    // mediumCoverUrl + largeCoverUrl pointent désormais sur medium_cover_url
+    // (= image.url.original côté MU). small_cover_url (thumb) n'est plus
+    // exposé car il rend flou sur mobile.
+    expect(result[0].mediumCoverUrl).toBe('https://cdn/2000-m.jpg');
     expect(result[0].largeCoverUrl).toBe('https://cdn/2000-m.jpg');
   });
 
@@ -558,7 +560,9 @@ describe('RecommendationService', () => {
       });
 
       const result = await service.findSleeperHits(42, 20);
-      expect(result[0].mediumCoverUrl).toBe('https://cdn/2000-s.jpg');
+      // mediumCoverUrl + largeCoverUrl pointent désormais tous deux sur
+      // medium_cover_url (= image.url.original côté MU).
+      expect(result[0].mediumCoverUrl).toBe('https://cdn/2000-m.jpg');
       expect(result[0].largeCoverUrl).toBe('https://cdn/2000-m.jpg');
     });
   });
