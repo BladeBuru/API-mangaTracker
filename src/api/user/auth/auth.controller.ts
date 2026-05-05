@@ -14,6 +14,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { randomBytes } from 'crypto';
 import { RegisterDto, LoginDto, TokenDto, GoogleMobileLoginDto } from './auth.dto';
 import { AuthService } from './auth.service';
 import User from '../user.entity';
@@ -138,27 +139,45 @@ export class AuthController {
     const isWebBrowser = !ua.includes('Dart') && !ua.includes('Flutter');
 
     if (isWebBrowser) {
-      res.send(`
-        <!DOCTYPE html>
-        <html>
-          <head><title>Connexion réussie</title></head>
-          <body>
-            <script>
-              // Transmet les tokens à la fenêtre parente Flutter web
-              if (window.opener) {
-                window.opener.postMessage({
-                  type: 'GOOGLE_AUTH_SUCCESS',
-                  accessToken: '${tokens.accessToken}',
-                  refreshToken: '${tokens.refreshToken}'
-                }, '*');
-                window.close();
-              } else {
-                document.body.innerHTML = '<p>Connexion réussie ! Vous pouvez fermer cette page.</p>';
-              }
-            </script>
-          </body>
-        </html>
-      `);
+      // Override la CSP de Helmet pour cette réponse uniquement.
+      // Le script inline ci-dessous fait `window.opener.postMessage` ; il est
+      // autorisé via un nonce CSP unique par requête (script-src 'nonce-…').
+      // C'est plus sûr que `'unsafe-inline'` global et plus simple qu'un hash
+      // (qui changerait à chaque token).
+      const nonce = randomBytes(16).toString('base64');
+      res.setHeader(
+        'Content-Security-Policy',
+        `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'`,
+      );
+      // Échappe les tokens JWT pour le contexte JS (pas de quote possible mais
+      // ceinture & bretelles : on encode pour éviter toute injection si un
+      // jour le format change).
+      const safeAccessToken = tokens.accessToken.replace(/[^a-zA-Z0-9._-]/g, '');
+      const safeRefreshToken = tokens.refreshToken.replace(/[^a-zA-Z0-9._-]/g, '');
+      res.send(`<!DOCTYPE html>
+<html>
+  <head><meta charset="utf-8"><title>Connexion réussie</title></head>
+  <body>
+    <p>Connexion réussie ! Vous pouvez fermer cette page.</p>
+    <script nonce="${nonce}">
+      (function () {
+        var payload = {
+          type: 'GOOGLE_AUTH_SUCCESS',
+          accessToken: '${safeAccessToken}',
+          refreshToken: '${safeRefreshToken}'
+        };
+        try {
+          if (window.opener && !window.opener.closed) {
+            window.opener.postMessage(payload, '*');
+          }
+        } catch (e) { /* opener inaccessible (cross-origin) */ }
+        // Tente de fermer la popup ; si bloqué (Brave/Safari), le user fermera
+        // manuellement — le postMessage a déjà été envoyé.
+        try { window.close(); } catch (e) {}
+      })();
+    </script>
+  </body>
+</html>`);
     } else {
       res.redirect(`mangatracker://auth/callback?${params.toString()}`);
     }

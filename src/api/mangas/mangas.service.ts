@@ -305,7 +305,8 @@ export class MangasService {
         dto.muId = Number(reco.recommended_mu_id);
         dto.title = manga?.title ?? reco.recommended_title ?? '';
         dto.year = manga?.year ?? 0;
-        dto.mediumCoverUrl = manga?.small_cover_url ?? '';
+        // medium_cover_url = full size (image.url.original côté MU).
+        dto.mediumCoverUrl = manga?.medium_cover_url ?? '';
         dto.largeCoverUrl = manga?.medium_cover_url ?? '';
         dto.rating = manga?.rating ? Number(manga.rating) : 0;
         return dto;

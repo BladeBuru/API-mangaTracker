@@ -91,7 +91,10 @@ export class MangaQuickViewDto {
     dto.muId = data['record']['series_id'];
     dto.title = data['record']['title'];
     dto.year = data['record']['year'];
-    dto.mediumCoverUrl = data['record']['image']['url']['thumb'];
+    // mediumCoverUrl = image principale haute qualité (servie au client par défaut).
+    // largeCoverUrl = même URL pour compat (les clients utilisaient large pour
+    // les zooms cover plein écran). On évite la `thumb` qui rend flou sur tel.
+    dto.mediumCoverUrl = data['record']['image']['url']['original'];
     dto.largeCoverUrl = data['record']['image']['url']['original'];
     dto.rating = data['record']['bayesian_rating'];
     dto.associated = data['record']['associated'] ?? [];
@@ -103,7 +106,9 @@ export class MangaQuickViewDto {
     dto.muId = parseInt(userManga.manga.mu_id);
     dto.title = userManga.manga.title;
     dto.year = userManga.manga.year;
-    dto.mediumCoverUrl = userManga.manga.small_cover_url;
+    // medium_cover_url stocke `image.url.original` (full size) — c'est ce
+    // qu'on veut servir comme image principale (la `small`/`thumb` rend flou).
+    dto.mediumCoverUrl = userManga.manga.medium_cover_url;
     dto.largeCoverUrl = userManga.manga.medium_cover_url;
     dto.rating = userManga.manga.rating;
     dto.readChapters = userManga.user_read_chapters;

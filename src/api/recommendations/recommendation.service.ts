@@ -167,7 +167,9 @@ export class RecommendationService {
       dto.muId = Number(s.manga.mu_id);
       dto.title = s.manga.title;
       dto.year = s.manga.year;
-      dto.mediumCoverUrl = s.manga.small_cover_url;
+      // medium_cover_url stocke `image.url.original` (haute qualité). On évite
+      // small_cover_url (thumb) qui rend flou et était souvent absent en prod.
+      dto.mediumCoverUrl = s.manga.medium_cover_url;
       dto.largeCoverUrl = s.manga.medium_cover_url;
       dto.rating = Number(s.manga.rating);
       if (s.community) {
@@ -499,7 +501,8 @@ export class RecommendationService {
           dto.muId = Number(scored.mu_id);
           dto.title = m.title;
           dto.year = m.year;
-          dto.mediumCoverUrl = m.small_cover_url;
+          // medium_cover_url = full size (image.url.original côté MU).
+          dto.mediumCoverUrl = m.medium_cover_url;
           dto.largeCoverUrl = m.medium_cover_url;
           dto.rating = Number(m.rating);
           const topSources = Array.from(scored.sources.entries())
@@ -669,7 +672,8 @@ export class RecommendationService {
         dto.muId = Number(scored.mu_id);
         dto.title = manga.title;
         dto.year = manga.year;
-        dto.mediumCoverUrl = manga.small_cover_url;
+        // medium_cover_url = full size (image.url.original côté MU).
+        dto.mediumCoverUrl = manga.medium_cover_url;
         dto.largeCoverUrl = manga.medium_cover_url;
         dto.rating = Number(manga.rating);
         const topSources = Array.from(scored.sources.entries())

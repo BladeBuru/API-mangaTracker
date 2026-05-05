@@ -58,7 +58,9 @@ export class UpdateMangaService {
     dto.muId = Number(refreshed.mu_id);
     dto.title = refreshed.title;
     dto.year = refreshed.year;
-    dto.mediumCoverUrl = refreshed.small_cover_url;
+    // medium_cover_url stocke `image.url.original` (haute qualité) — pas la
+    // vignette `small_cover_url` (thumb) qui rend flou sur mobile.
+    dto.mediumCoverUrl = refreshed.medium_cover_url;
     dto.largeCoverUrl = refreshed.medium_cover_url;
     dto.rating = Number(refreshed.rating);
     dto.totalChapters = refreshed.total_chapters;
