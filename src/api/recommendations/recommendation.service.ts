@@ -49,10 +49,10 @@ export class RecommendationService {
   private static readonly MAX_LIMIT = 100;
 
   /** Taille de batch pour les fetches MU bloquants. */
-  private static readonly BATCH_SIZE = 10;
+  private static readonly BATCH_SIZE = 5;
 
   /** Timeout par fetch MU (ms). */
-  private static readonly FETCH_TIMEOUT_MS = 8000;
+  private static readonly FETCH_TIMEOUT_MS = 15000;
 
   constructor(
     @InjectRepository(UserManga)
@@ -154,8 +154,7 @@ export class RecommendationService {
         if (aggregated <= 0) return null;
         const localCount = c?.communityRatingCount ?? 0;
         const recencyBoost = Math.exp(-(currentYear - manga.year) / 2);
-        const score =
-          aggregated * Math.log(localCount + 2) * recencyBoost;
+        const score = aggregated * Math.log(localCount + 2) * recencyBoost;
         return { manga, score, community: c };
       })
       .filter((s): s is Scored => s !== null);
@@ -197,7 +196,7 @@ export class RecommendationService {
    *
    * Stratégie cache :
    * 1. Cache existant → réponse rapide. Fetches manquants en background.
-   * 2. Cache vide → fetch bloquant batch=10 timeout=8s.
+   * 2. Cache vide → fetch bloquant batch=5 timeout=15s.
    */
   async buildUserRecommendations(
     userId: number,
@@ -260,10 +259,7 @@ export class RecommendationService {
       i < userMangas.length;
       i += RecommendationService.BATCH_SIZE
     ) {
-      const batch = userMangas.slice(
-        i,
-        i + RecommendationService.BATCH_SIZE,
-      );
+      const batch = userMangas.slice(i, i + RecommendationService.BATCH_SIZE);
       await Promise.all(
         batch.map(async (um) => {
           const muId = Number(um.manga.mu_id);
@@ -279,9 +275,7 @@ export class RecommendationService {
               ),
             ]);
           } catch (err) {
-            this.logger.warn(
-              `Reco fetch timeout/erreur pour ${muId}: ${err}`,
-            );
+            this.logger.warn(`Reco fetch timeout/erreur pour ${muId}: ${err}`);
             return;
           }
           this.scoreRecos(
@@ -354,10 +348,7 @@ export class RecommendationService {
       i < userMangas.length;
       i += RecommendationService.BATCH_SIZE
     ) {
-      const batch = userMangas.slice(
-        i,
-        i + RecommendationService.BATCH_SIZE,
-      );
+      const batch = userMangas.slice(i, i + RecommendationService.BATCH_SIZE);
       await Promise.all(
         batch.map(async (um) => {
           const muId = Number(um.manga.mu_id);
@@ -495,9 +486,7 @@ export class RecommendationService {
             where: { mu_id: In(Array.from(allSourceMuIds)) },
           })
         : [];
-    const sourceTitleMap = new Map(
-      sourceMangas.map((m) => [m.mu_id, m.title]),
-    );
+    const sourceTitleMap = new Map(sourceMangas.map((m) => [m.mu_id, m.title]));
 
     // Build result
     const result: Record<string, MangaQuickViewDto[]> = {};
@@ -521,7 +510,8 @@ export class RecommendationService {
           if (topSources.length > 0) dto.recommendedBecauseOf = topSources;
           const c = community.get(scored.mu_id);
           if (c) {
-            if (c.communityRating !== null) dto.communityRating = c.communityRating;
+            if (c.communityRating !== null)
+              dto.communityRating = c.communityRating;
             dto.communityRatingCount = c.communityRatingCount;
             dto.aggregatedRating = c.aggregatedRating;
           }
@@ -539,12 +529,10 @@ export class RecommendationService {
    * `m_total = m_rating × m_status × m_recency`
    */
   private computeMultiplier(um: UserManga): number {
-    const ratingMultiplier =
-      um.user_rating > 0 ? um.user_rating / 5.0 : 1.0;
+    const ratingMultiplier = um.user_rating > 0 ? um.user_rating / 5.0 : 1.0;
     const statusMultiplier =
       RecommendationService.STATUS_MULTIPLIER[um.readingStatus] ?? 1.0;
-    const ageDays =
-      (Date.now() - um.adding_date.getTime()) / 86_400_000;
+    const ageDays = (Date.now() - um.adding_date.getTime()) / 86_400_000;
     const recencyMultiplier = Math.exp(
       -ageDays / RecommendationService.RECENCY_HALF_LIFE_DAYS,
     );
@@ -656,9 +644,7 @@ export class RecommendationService {
             where: { mu_id: In(sourceMuIds) },
           })
         : ([] as Manga[]);
-    const sourceTitleMap = new Map(
-      sourceMangas.map((m) => [m.mu_id, m.title]),
-    );
+    const sourceTitleMap = new Map(sourceMangas.map((m) => [m.mu_id, m.title]));
 
     // Enrichissement note communautaire (Bayesian aggregation MU + locaux)
     const finalMuIds = sorted.map((s) => s.mu_id);
