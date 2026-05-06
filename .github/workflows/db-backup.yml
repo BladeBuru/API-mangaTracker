@@ -8,6 +8,9 @@ on:
   schedule:
     - cron: '0 3 * * *'   # 03:00 UTC = ~04h-05h heure Paris
   workflow_dispatch:       # déclenchement manuel depuis GitHub UI
+  push:                    # tourne aussi quand on modifie ce workflow
+    paths:                 # (force GitHub à enregistrer le workflow + sanity test)
+      - '.github/workflows/db-backup.yml'
 
 jobs:
   backup:
