@@ -1,7 +1,7 @@
-name: DB Backup — MangaTracker
+name: db-backup-mangatracker
 
 # Sauvegarde automatique PostgreSQL prod via SSH sur le NAS
-# Le dump est stocké sur le NAS (~/ manga-tracker-backups/) — 30 jours de rétention
+# Stockage : NAS (~/manga-tracker-backups/) + GitHub Artifacts (off-site, 90j)
 # Déclenchement : tous les jours à 03h00 UTC + manuel
 
 on:
@@ -11,38 +11,41 @@ on:
 
 jobs:
   backup:
-    name: pg_dump sur NAS
+    name: pg_dump NAS + Artifact off-site
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
+      - name: Generate timestamp
+        id: ts
+        run: echo "ts=$(date -u +%Y-%m-%d_%H-%M)" >> "$GITHUB_OUTPUT"
+
       - name: Backup via SSH (pg_dump sur NAS)
         uses: appleboy/ssh-action@v1
         env:
           DATABASE_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
+          TS: ${{ steps.ts.outputs.ts }}
         with:
           host: ${{ secrets.NAS_HOST }}
           port: ${{ secrets.NAS_PORT }}
           username: ${{ secrets.NAS_USER }}
           key: ${{ secrets.NAS_SSH_KEY }}
-          envs: DATABASE_PASSWORD
+          envs: DATABASE_PASSWORD,TS
           script: |
             set -euo pipefail
 
             BACKUP_DIR="$HOME/manga-tracker-backups"
             mkdir -p "$BACKUP_DIR"
+            BACKUP_FILE="$BACKUP_DIR/MangaTracker_${TS}.dump"
 
-            TIMESTAMP=$(date -u +%Y-%m-%d_%H-%M)
-            BACKUP_FILE="$BACKUP_DIR/MangaTracker_${TIMESTAMP}.dump"
+            echo "Backup MangaTracker → $BACKUP_FILE"
 
-            echo "▶ Démarrage backup MangaTracker → $BACKUP_FILE"
-
-            # pg_dump via image Docker postgres (déjà présente sur le NAS)
+            # pg_dump via container postgres déjà présent sur le NAS
             # --network host pour atteindre postgres sur 127.0.0.1:5432
-            docker run --rm \
+            sudo docker run --rm \
               --network host \
               -e PGPASSWORD="$DATABASE_PASSWORD" \
-              postgres:16-alpine \
+              postgres:17 \
               pg_dump \
                 -h 127.0.0.1 \
                 -p 5432 \
@@ -55,23 +58,61 @@ jobs:
               > "$BACKUP_FILE"
 
             SIZE=$(du -sh "$BACKUP_FILE" | cut -f1)
-            echo "✅ Backup créé : $BACKUP_FILE ($SIZE)"
+            BYTES=$(stat -c%s "$BACKUP_FILE")
+            echo "Backup OK : $BACKUP_FILE ($SIZE / $BYTES bytes)"
+
+            # Sanity check : un dump utile fait au moins 5 KB (header + au moins
+            # une table). Si plus petit → quelque chose s'est mal passé.
+            if [ "$BYTES" -lt 5000 ]; then
+              echo "::error::Dump suspectement petit ($BYTES bytes) — abort"
+              exit 1
+            fi
 
             # Rotation : on garde les 30 derniers dumps
-            ls -t "$BACKUP_DIR"/*.dump 2>/dev/null | tail -n +31 | xargs rm -f 2>/dev/null || true
-            REMAINING=$(ls "$BACKUP_DIR"/*.dump 2>/dev/null | wc -l)
-            echo "📦 Dumps conservés : $REMAINING"
+            ls -t "$BACKUP_DIR"/MangaTracker_*.dump 2>/dev/null | tail -n +31 | xargs -r rm -f
+            REMAINING=$(ls "$BACKUP_DIR"/MangaTracker_*.dump 2>/dev/null | wc -l)
+            echo "Dumps conservés : $REMAINING"
 
-      - name: Résumé
+      - name: Récupérer le dump pour Artifact off-site
+        uses: nicklasfrahm/scp-action@main
+        with:
+          direction: download
+          host: ${{ secrets.NAS_HOST }}
+          port: ${{ secrets.NAS_PORT }}
+          username: ${{ secrets.NAS_USER }}
+          key: ${{ secrets.NAS_SSH_KEY }}
+          source: ~/manga-tracker-backups/MangaTracker_${{ steps.ts.outputs.ts }}.dump
+          target: ./MangaTracker_${{ steps.ts.outputs.ts }}.dump
+
+      - name: Vérifier le dump récupéré
+        run: |
+          ls -lh ./MangaTracker_${{ steps.ts.outputs.ts }}.dump
+          BYTES=$(stat -c%s ./MangaTracker_${{ steps.ts.outputs.ts }}.dump)
+          if [ "$BYTES" -lt 5000 ]; then
+            echo "::error::Dump invalide ($BYTES bytes)"
+            exit 1
+          fi
+
+      - name: Upload Artifact GitHub (off-site, rétention 90j)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MangaTracker-${{ steps.ts.outputs.ts }}
+          path: ./MangaTracker_${{ steps.ts.outputs.ts }}.dump
+          retention-days: 90
+
+      - name: Résumé GitHub
         if: always()
         run: |
-          echo "### 📦 DB Backup MangaTracker" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Heure** : $(date -u)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **DB** : MangaTracker @ NAS (192.168.1.119)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Stockage** : \`~/manga-tracker-backups/\` sur le NAS" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Rétention** : 30 derniers dumps" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Restauration :**" >> "$GITHUB_STEP_SUMMARY"
-          echo "\`\`\`bash" >> "$GITHUB_STEP_SUMMARY"
-          echo "pg_restore --clean -h 192.168.1.119 -U postgres -d MangaTracker MangaTracker_YYYY-MM-DD.dump" >> "$GITHUB_STEP_SUMMARY"
-          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### 📦 DB Backup MangaTracker — ${{ steps.ts.outputs.ts }}"
+            echo ""
+            echo "- **DB** : MangaTracker @ NAS (192.168.1.119)"
+            echo "- **NAS** : \`~/manga-tracker-backups/MangaTracker_${{ steps.ts.outputs.ts }}.dump\` (rétention 30 derniers dumps)"
+            echo "- **GitHub Artifact** : \`MangaTracker-${{ steps.ts.outputs.ts }}\` (rétention 90 jours)"
+            echo ""
+            echo "**Restauration depuis Artifact :**"
+            echo '```bash'
+            echo "gh run download <run-id> -n MangaTracker-${{ steps.ts.outputs.ts }}"
+            echo "pg_restore --clean -h 192.168.1.119 -U postgres -d MangaTracker MangaTracker_*.dump"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
