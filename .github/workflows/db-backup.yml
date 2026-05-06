@@ -1,8 +1,14 @@
-name: db-backup-mangatracker
+name: db-backup-all
 
-# Sauvegarde automatique PostgreSQL prod via SSH sur le NAS
-# Stockage : NAS (~/manga-tracker-backups/) + GitHub Artifacts (off-site, 90j)
-# Déclenchement : tous les jours à 03h00 UTC + manuel
+# Sauvegarde automatique de TOUTES les DBs hébergées sur le Postgres partagé
+# du NAS (MangaTracker, zenflow, et toute future DB).
+#
+# Stockage en double :
+#   1. NAS : ~/manga-tracker-backups/  (30 derniers dumps par DB)
+#   2. GitHub Artifacts off-site : 90 jours (résiste à la perte du NAS)
+#
+# Déclenchement : tous les jours à 03h00 UTC + manuel + à chaque édition
+# de ce workflow (= sanity test).
 
 on:
   schedule:
@@ -14,16 +20,16 @@ on:
 
 jobs:
   backup:
-    name: pg_dump NAS + Artifact off-site
+    name: pg_dump toutes DBs + Artifact off-site
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Generate timestamp
         id: ts
         run: echo "ts=$(date -u +%Y-%m-%d_%H-%M)" >> "$GITHUB_OUTPUT"
 
-      - name: Backup via SSH (pg_dump sur NAS)
+      - name: Backup via SSH — pg_dump de toutes les DBs user
         uses: appleboy/ssh-action@v1
         env:
           DATABASE_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
@@ -39,44 +45,49 @@ jobs:
 
             BACKUP_DIR="$HOME/manga-tracker-backups"
             mkdir -p "$BACKUP_DIR"
-            BACKUP_FILE="$BACKUP_DIR/MangaTracker_${TS}.dump"
 
-            echo "Backup MangaTracker → $BACKUP_FILE"
-
-            # pg_dump via container postgres déjà présent sur le NAS
-            # --network host pour atteindre postgres sur 127.0.0.1:5432
-            sudo docker run --rm \
-              --network host \
+            # Liste les DBs user (exclut postgres + template0/1)
+            DBS=$(sudo docker run --rm --network host \
               -e PGPASSWORD="$DATABASE_PASSWORD" \
               postgres:17 \
-              pg_dump \
-                -h 127.0.0.1 \
-                -p 5432 \
-                -U postgres \
-                -d MangaTracker \
-                --format=custom \
-                --compress=9 \
-                --no-owner \
-                --no-acl \
-              > "$BACKUP_FILE"
+              psql -h 127.0.0.1 -U postgres -At \
+                -c "SELECT datname FROM pg_database WHERE datname NOT IN ('postgres','template0','template1');")
 
-            SIZE=$(du -sh "$BACKUP_FILE" | cut -f1)
-            BYTES=$(stat -c%s "$BACKUP_FILE")
-            echo "Backup OK : $BACKUP_FILE ($SIZE / $BYTES bytes)"
+            echo "DBs à dump : $DBS"
 
-            # Sanity check : un dump utile fait au moins 5 KB (header + au moins
-            # une table). Si plus petit → quelque chose s'est mal passé.
-            if [ "$BYTES" -lt 5000 ]; then
-              echo "::error::Dump suspectement petit ($BYTES bytes) — abort"
-              exit 1
-            fi
+            for DB in $DBS; do
+              BACKUP_FILE="$BACKUP_DIR/${DB}_${TS}.dump"
+              echo "▶ Backup $DB → $BACKUP_FILE"
 
-            # Rotation : on garde les 30 derniers dumps
-            ls -t "$BACKUP_DIR"/MangaTracker_*.dump 2>/dev/null | tail -n +31 | xargs -r rm -f
-            REMAINING=$(ls "$BACKUP_DIR"/MangaTracker_*.dump 2>/dev/null | wc -l)
-            echo "Dumps conservés : $REMAINING"
+              sudo docker run --rm --network host \
+                -e PGPASSWORD="$DATABASE_PASSWORD" \
+                postgres:17 \
+                pg_dump -h 127.0.0.1 -U postgres -d "$DB" \
+                  --format=custom --compress=9 --no-owner --no-acl \
+                > "$BACKUP_FILE"
 
-      - name: Récupérer le dump pour Artifact off-site
+              BYTES=$(stat -c%s "$BACKUP_FILE")
+              SIZE=$(du -sh "$BACKUP_FILE" | cut -f1)
+              echo "  ✓ $DB : $SIZE ($BYTES bytes)"
+
+              # Sanity : 5 KB minimum (header + au moins une table)
+              if [ "$BYTES" -lt 5000 ]; then
+                echo "::error::Dump $DB suspectement petit ($BYTES bytes) — abort"
+                exit 1
+              fi
+
+              # Rotation : 30 derniers dumps par DB
+              ls -t "$BACKUP_DIR"/${DB}_*.dump 2>/dev/null | tail -n +31 | xargs -r rm -f
+            done
+
+            # Rotation aussi pour Nextcloud_RECOVERY_*, Zenflow_RECOVERY_*, etc.
+            # (les dumps manuels marqués _RECOVERY_ sont conservés)
+
+            echo ""
+            echo "📦 Dumps total dans $BACKUP_DIR :"
+            ls -lh "$BACKUP_DIR"/*.dump 2>/dev/null | tail -20
+
+      - name: Récupérer les dumps pour Artifact off-site
         uses: nicklasfrahm/scp-action@main
         with:
           direction: download
@@ -84,38 +95,43 @@ jobs:
           port: ${{ secrets.NAS_PORT }}
           username: ${{ secrets.NAS_USER }}
           key: ${{ secrets.NAS_SSH_KEY }}
-          source: ~/manga-tracker-backups/MangaTracker_${{ steps.ts.outputs.ts }}.dump
-          target: ./MangaTracker_${{ steps.ts.outputs.ts }}.dump
+          insecure_ignore_fingerprint: true
+          source: ~/manga-tracker-backups/*_${{ steps.ts.outputs.ts }}.dump
+          target: ./
 
-      - name: Vérifier le dump récupéré
+      - name: Vérifier les dumps récupérés
         run: |
-          ls -lh ./MangaTracker_${{ steps.ts.outputs.ts }}.dump
-          BYTES=$(stat -c%s ./MangaTracker_${{ steps.ts.outputs.ts }}.dump)
-          if [ "$BYTES" -lt 5000 ]; then
-            echo "::error::Dump invalide ($BYTES bytes)"
-            exit 1
-          fi
+          ls -lh ./*_${{ steps.ts.outputs.ts }}.dump
+          for f in ./*_${{ steps.ts.outputs.ts }}.dump; do
+            BYTES=$(stat -c%s "$f")
+            if [ "$BYTES" -lt 5000 ]; then
+              echo "::error::Dump $f invalide ($BYTES bytes)"
+              exit 1
+            fi
+          done
 
       - name: Upload Artifact GitHub (off-site, rétention 90j)
         uses: actions/upload-artifact@v4
         with:
-          name: MangaTracker-${{ steps.ts.outputs.ts }}
-          path: ./MangaTracker_${{ steps.ts.outputs.ts }}.dump
+          name: db-backup-${{ steps.ts.outputs.ts }}
+          path: ./*_${{ steps.ts.outputs.ts }}.dump
           retention-days: 90
 
       - name: Résumé GitHub
         if: always()
         run: |
           {
-            echo "### 📦 DB Backup MangaTracker — ${{ steps.ts.outputs.ts }}"
+            echo "### 📦 DB Backup ALL — ${{ steps.ts.outputs.ts }}"
             echo ""
-            echo "- **DB** : MangaTracker @ NAS (192.168.1.119)"
-            echo "- **NAS** : \`~/manga-tracker-backups/MangaTracker_${{ steps.ts.outputs.ts }}.dump\` (rétention 30 derniers dumps)"
-            echo "- **GitHub Artifact** : \`MangaTracker-${{ steps.ts.outputs.ts }}\` (rétention 90 jours)"
+            echo "- **Postgres** : 192.168.1.119:5432 (service partagé NAS)"
+            echo "- **DBs dumpées** : MangaTracker, zenflow (et toute future DB user-créée)"
+            echo "- **Stockage NAS** : \`~/manga-tracker-backups/<db>_<ts>.dump\` (rétention 30 derniers par DB)"
+            echo "- **GitHub Artifact** : \`db-backup-${{ steps.ts.outputs.ts }}\` (rétention 90 jours, off-site)"
             echo ""
             echo "**Restauration depuis Artifact :**"
             echo '```bash'
-            echo "gh run download <run-id> -n MangaTracker-${{ steps.ts.outputs.ts }}"
-            echo "pg_restore --clean -h 192.168.1.119 -U postgres -d MangaTracker MangaTracker_*.dump"
+            echo "gh run download <run-id> -n db-backup-${{ steps.ts.outputs.ts }}"
+            echo "# Puis pour chaque DB :"
+            echo "pg_restore --clean -h 192.168.1.119 -U postgres -d <db_name> <db_name>_<ts>.dump"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
