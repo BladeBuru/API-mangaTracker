@@ -29,7 +29,7 @@ jobs:
         id: ts
         run: echo "ts=$(date -u +%Y-%m-%d_%H-%M)" >> "$GITHUB_OUTPUT"
 
-      - name: Backup via SSH — pg_dump de toutes les DBs user
+      - name: Backup via SSH — pg_dump toutes DBs (Postgres partagé + Nextcloud) + tarball
         uses: appleboy/ssh-action@v1
         env:
           DATABASE_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
@@ -46,9 +46,12 @@ jobs:
             BACKUP_DIR="$HOME/manga-tracker-backups"
             mkdir -p "$BACKUP_DIR"
 
-            # Liste les DBs user (exclut postgres + template0/1)
-            # Stockée dans un fichier pour itération propre par ligne
-            # (un `for DB in $DBS` aurait splité incorrectement les newlines)
+            # Cleanup d'éventuels artefacts d'un run précédent foireux
+            rm -f "$BACKUP_DIR"/*$'\n'* 2>/dev/null || true
+
+            ###########################################################
+            # 1. Postgres partagé (MangaTracker, zenflow, futures DBs)
+            ###########################################################
             sudo docker run --rm --network host \
               -e PGPASSWORD="$DATABASE_PASSWORD" \
               postgres:17 \
@@ -56,11 +59,8 @@ jobs:
                 -c "SELECT datname FROM pg_database WHERE datname NOT IN ('postgres','template0','template1');" \
               > /tmp/dbs.list
 
-            echo "DBs à dump :"
+            echo "DBs Postgres partagé :"
             cat /tmp/dbs.list
-
-            # Cleanup éventuels artefacts d'un run précédent foireux
-            rm -f "$BACKUP_DIR"/*$'\n'* 2>/dev/null || true
 
             while IFS= read -r DB; do
               [ -z "$DB" ] && continue
@@ -75,10 +75,8 @@ jobs:
                 > "$BACKUP_FILE"
 
               BYTES=$(stat -c%s "$BACKUP_FILE")
-              SIZE=$(du -sh "$BACKUP_FILE" | cut -f1)
-              echo "  ✓ $DB : $SIZE ($BYTES bytes)"
+              echo "  ✓ $DB : $(du -sh "$BACKUP_FILE" | cut -f1) ($BYTES bytes)"
 
-              # Sanity : 5 KB minimum (header + au moins une table)
               if [ "$BYTES" -lt 5000 ]; then
                 echo "::error::Dump $DB suspectement petit ($BYTES bytes) — abort"
                 exit 1
@@ -87,17 +85,42 @@ jobs:
               # Rotation : 30 derniers dumps par DB
               ls -t "$BACKUP_DIR"/${DB}_*.dump 2>/dev/null | tail -n +31 | xargs -r rm -f
             done < /tmp/dbs.list
-
             rm -f /tmp/dbs.list
 
-            # Rotation aussi pour Nextcloud_RECOVERY_*, Zenflow_RECOVERY_*, etc.
-            # (les dumps manuels marqués _RECOVERY_ sont conservés)
+            ###########################################################
+            # 2. Nextcloud Postgres (container séparé)
+            #    Best-effort : si le container n'est pas up, on skip.
+            ###########################################################
+            if sudo docker ps --filter name=ix-nextcloud-postgres-1 --format '{{.Names}}' | grep -q nextcloud-postgres; then
+              echo "▶ Backup Nextcloud DB"
+              NC_FILE="$BACKUP_DIR/nextcloud_${TS}.dump"
+              sudo docker exec ix-nextcloud-postgres-1 \
+                pg_dump -U nextcloud -d nextcloud \
+                  --format=custom --compress=9 --no-owner --no-acl \
+                  -f /tmp/nc_${TS}.dump
+              sudo docker cp "ix-nextcloud-postgres-1:/tmp/nc_${TS}.dump" "$NC_FILE"
+              sudo docker exec ix-nextcloud-postgres-1 rm -f /tmp/nc_${TS}.dump
 
-            echo ""
-            echo "📦 Dumps total dans $BACKUP_DIR :"
-            ls -lh "$BACKUP_DIR"/*.dump 2>/dev/null | tail -20
+              BYTES=$(stat -c%s "$NC_FILE")
+              echo "  ✓ nextcloud : $(du -sh "$NC_FILE" | cut -f1) ($BYTES bytes)"
+              if [ "$BYTES" -lt 5000 ]; then
+                echo "::error::Dump nextcloud suspectement petit ($BYTES bytes) — abort"
+                exit 1
+              fi
+              ls -t "$BACKUP_DIR"/nextcloud_*.dump 2>/dev/null | tail -n +31 | xargs -r rm -f
+            else
+              echo "::warning::Nextcloud Postgres container pas up — backup Nextcloud skip"
+            fi
 
-      - name: Récupérer les dumps pour Artifact off-site
+            ###########################################################
+            # 3. Tarball tous les dumps de ce timestamp (1 fichier à
+            #    download = pas de souci wildcard SCP)
+            ###########################################################
+            cd "$BACKUP_DIR"
+            tar czf "/tmp/db-backup-${TS}.tar.gz" *_${TS}.dump
+            ls -lh "/tmp/db-backup-${TS}.tar.gz"
+
+      - name: Récupérer le tarball pour Artifact off-site
         uses: nicklasfrahm/scp-action@main
         with:
           direction: download
@@ -106,26 +129,38 @@ jobs:
           username: ${{ secrets.NAS_USER }}
           key: ${{ secrets.NAS_SSH_KEY }}
           insecure_ignore_fingerprint: true
-          source: ~/manga-tracker-backups/*_${{ steps.ts.outputs.ts }}.dump
-          target: ./
+          source: /tmp/db-backup-${{ steps.ts.outputs.ts }}.tar.gz
+          target: ./db-backup-${{ steps.ts.outputs.ts }}.tar.gz
 
-      - name: Vérifier les dumps récupérés
+      - name: Vérifier le tarball récupéré + extraire
         run: |
-          ls -lh ./*_${{ steps.ts.outputs.ts }}.dump
-          for f in ./*_${{ steps.ts.outputs.ts }}.dump; do
-            BYTES=$(stat -c%s "$f")
-            if [ "$BYTES" -lt 5000 ]; then
-              echo "::error::Dump $f invalide ($BYTES bytes)"
-              exit 1
-            fi
-          done
+          ls -lh ./db-backup-${{ steps.ts.outputs.ts }}.tar.gz
+          BYTES=$(stat -c%s ./db-backup-${{ steps.ts.outputs.ts }}.tar.gz)
+          if [ "$BYTES" -lt 5000 ]; then
+            echo "::error::Tarball invalide ($BYTES bytes)"
+            exit 1
+          fi
+          tar tzf ./db-backup-${{ steps.ts.outputs.ts }}.tar.gz
+          mkdir -p ./extracted
+          tar xzf ./db-backup-${{ steps.ts.outputs.ts }}.tar.gz -C ./extracted
+          ls -lh ./extracted/
 
       - name: Upload Artifact GitHub (off-site, rétention 90j)
         uses: actions/upload-artifact@v4
         with:
           name: db-backup-${{ steps.ts.outputs.ts }}
-          path: ./*_${{ steps.ts.outputs.ts }}.dump
+          path: ./extracted/*.dump
           retention-days: 90
+
+      - name: Cleanup tarball sur le NAS
+        if: always()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.NAS_HOST }}
+          port: ${{ secrets.NAS_PORT }}
+          username: ${{ secrets.NAS_USER }}
+          key: ${{ secrets.NAS_SSH_KEY }}
+          script: rm -f /tmp/db-backup-*.tar.gz
 
       - name: Résumé GitHub
         if: always()
