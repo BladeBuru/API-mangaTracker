@@ -47,15 +47,23 @@ jobs:
             mkdir -p "$BACKUP_DIR"
 
             # Liste les DBs user (exclut postgres + template0/1)
-            DBS=$(sudo docker run --rm --network host \
+            # Stockée dans un fichier pour itération propre par ligne
+            # (un `for DB in $DBS` aurait splité incorrectement les newlines)
+            sudo docker run --rm --network host \
               -e PGPASSWORD="$DATABASE_PASSWORD" \
               postgres:17 \
               psql -h 127.0.0.1 -U postgres -At \
-                -c "SELECT datname FROM pg_database WHERE datname NOT IN ('postgres','template0','template1');")
+                -c "SELECT datname FROM pg_database WHERE datname NOT IN ('postgres','template0','template1');" \
+              > /tmp/dbs.list
 
-            echo "DBs à dump : $DBS"
+            echo "DBs à dump :"
+            cat /tmp/dbs.list
 
-            for DB in $DBS; do
+            # Cleanup éventuels artefacts d'un run précédent foireux
+            rm -f "$BACKUP_DIR"/*$'\n'* 2>/dev/null || true
+
+            while IFS= read -r DB; do
+              [ -z "$DB" ] && continue
               BACKUP_FILE="$BACKUP_DIR/${DB}_${TS}.dump"
               echo "▶ Backup $DB → $BACKUP_FILE"
 
@@ -78,7 +86,9 @@ jobs:
 
               # Rotation : 30 derniers dumps par DB
               ls -t "$BACKUP_DIR"/${DB}_*.dump 2>/dev/null | tail -n +31 | xargs -r rm -f
-            done
+            done < /tmp/dbs.list
+
+            rm -f /tmp/dbs.list
 
             # Rotation aussi pour Nextcloud_RECOVERY_*, Zenflow_RECOVERY_*, etc.
             # (les dumps manuels marqués _RECOVERY_ sont conservés)
