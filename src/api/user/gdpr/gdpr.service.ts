@@ -29,6 +29,14 @@ export interface GdprExport {
     email: string;
     authProvider: string;
     lastLoginAt: string | null;
+    // ─── Phase 3 : profil étendu ───
+    displayName: string | null;
+    bio: string | null;
+    avatarUrl: string | null;
+    dateOfBirth: string | null;
+    gender: string | null;
+    isProfilePublic: boolean;
+    accountCreatedAt: string | null;
     consent: {
       acceptedTosAt: string | null;
       acceptedTosVersion: string | null;
@@ -130,6 +138,15 @@ export class GdprService {
         email: account.email,
         authProvider: account.authProvider,
         lastLoginAt: account.lastLoginAt?.toISOString() ?? null,
+        displayName: account.displayName ?? null,
+        bio: account.bio ?? null,
+        avatarUrl: account.avatarUrl ?? null,
+        dateOfBirth: account.dateOfBirth
+          ? new Date(account.dateOfBirth).toISOString().split('T')[0]
+          : null,
+        gender: account.gender ?? null,
+        isProfilePublic: account.isProfilePublic ?? false,
+        accountCreatedAt: account.createdAt?.toISOString() ?? null,
         consent: {
           acceptedTosAt: account.acceptedTosAt?.toISOString() ?? null,
           acceptedTosVersion: account.acceptedTosVersion,

@@ -5,6 +5,9 @@ import { LibraryModule } from '@/api/library/library.module';
 import { MangasModule } from '@/api/mangas/mangas.module';
 import { RecommendationModule } from './recommendations/recommendation.module';
 import { WellKnownModule } from './well-known/well-known.module';
+import { FriendsModule } from './friends/friends.module';
+import { CommentsModule } from './comments/comments.module';
+import { SharingModule } from './sharing/sharing.module';
 
 @Module({
   imports: [
@@ -14,6 +17,9 @@ import { WellKnownModule } from './well-known/well-known.module';
     MangasModule,
     RecommendationModule,
     WellKnownModule,
+    FriendsModule,
+    CommentsModule,
+    SharingModule,
   ],
 })
 export class ApiModule {}

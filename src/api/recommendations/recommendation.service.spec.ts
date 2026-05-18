@@ -92,10 +92,91 @@ describe('RecommendationService', () => {
     service = module.get<RecommendationService>(RecommendationService);
   });
 
-  it('retourne une liste vide si la bibliothèque est vide', async () => {
+  it('utilise le fallback cold start si la bibliothèque est vide', async () => {
     userMangaRepo.find.mockResolvedValue([]);
+    // Top communauté vide
+    userMangaRepo.createQueryBuilder = jest.fn(() => ({
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      having: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue([]),
+    })) as any;
+    // Sleepers vides aussi → résultat final vide
+    mangaRepo.createQueryBuilder = jest.fn(() => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+    })) as any;
+
     const result = await service.buildUserRecommendations(42);
     expect(result).toEqual([]);
+    // Le scoring personnel n'est pas tenté quand la biblio est vide
+    expect(mangasService.getCachedRecommendations).not.toHaveBeenCalled();
+  });
+
+  it('cold start: remonte le top communauté quand la biblio est vide', async () => {
+    userMangaRepo.find.mockResolvedValue([]);
+    // Top communauté : 2 mangas avec ≥ 5 votes locaux
+    userMangaRepo.createQueryBuilder = jest.fn(() => ({
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      having: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue([
+        { manga_id: '5000', avg: '9.0', count: '10' },
+        { manga_id: '5001', avg: '8.5', count: '8' },
+      ]),
+    })) as any;
+
+    mangaRepo.find.mockImplementation(({ where }) => {
+      const ids = (where as any).mu_id._value;
+      return Promise.resolve(
+        ids.map((id: string) =>
+          makeManga({ mu_id: id, title: `Manga ${id}` }),
+        ),
+      );
+    });
+
+    // Sleepers vides (focus sur top communauté pour ce test)
+    mangaRepo.createQueryBuilder = jest.fn(() => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+    })) as any;
+
+    mangasService.getCommunityRatings.mockResolvedValue(
+      new Map([
+        [
+          '5000',
+          {
+            communityRating: 9.0,
+            communityRatingCount: 10,
+            aggregatedRating: 7.75,
+          },
+        ],
+        [
+          '5001',
+          {
+            communityRating: 8.5,
+            communityRatingCount: 8,
+            aggregatedRating: 7.42,
+          },
+        ],
+      ]),
+    );
+
+    const result = await service.buildUserRecommendations(42, 50, 0);
+    expect(result).toHaveLength(2);
+    // Triés par aggregatedRating desc : 5000 (7.75) avant 5001 (7.42)
+    expect(result.map((r) => r.muId)).toEqual([5000, 5001]);
+    // La pagination tape directement sur le pool sans passer par le scoring
     expect(mangasService.getCachedRecommendations).not.toHaveBeenCalled();
   });
 
@@ -143,15 +224,31 @@ describe('RecommendationService', () => {
   });
 
   it('limite à MAX_RECOS_PER_SOURCE pour la diversité', async () => {
-    userMangaRepo.find.mockResolvedValue([
-      makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
-    ]);
-
-    // Le manga source en recommande 10 → seules les 5 meilleures pèsent
-    const recos = Array.from({ length: 10 }, (_, i) =>
-      makeReco('1000', String(2000 + i), 10 - i, `Reco ${i}`),
+    // 4 mangas en biblio, chacun avec 15 recos disjointes : pool initial = 4×10 = 40,
+    // au-dessus de MIN_POOL_BEFORE_RELAX (30) donc le cap=10 reste appliqué.
+    const userMangas = Array.from({ length: 4 }, (_, i) =>
+      makeUserManga({
+        id: i + 1,
+        manga: makeManga({ id: i + 1, mu_id: String(1000 + i) }),
+      }),
     );
-    mangasService.getCachedRecommendations.mockResolvedValue(recos);
+    userMangaRepo.find.mockResolvedValue(userMangas);
+
+    mangasService.getCachedRecommendations.mockImplementation(
+      (muId: number) => {
+        const base = (muId - 1000) * 100 + 2000;
+        return Promise.resolve(
+          Array.from({ length: 15 }, (_, i) =>
+            makeReco(
+              String(muId),
+              String(base + i),
+              15 - i,
+              `Reco ${base + i}`,
+            ),
+          ),
+        );
+      },
+    );
 
     mangaRepo.find.mockImplementation(({ where }) => {
       const ids = (where as any).mu_id._value;
@@ -162,11 +259,14 @@ describe('RecommendationService', () => {
       );
     });
 
-    const result = await service.buildUserRecommendations(42);
-    // 5 meilleures recos seulement (poids 10, 9, 8, 7, 6 → muIds 2000-2004)
-    expect(result).toHaveLength(5);
-    const muIds = result.map((r) => r.muId).sort((a, b) => a - b);
-    expect(muIds).toEqual([2000, 2001, 2002, 2003, 2004]);
+    const result = await service.buildUserRecommendations(42, 100, 0);
+    // 4 sources × cap=10 = 40 candidats (recos disjointes)
+    expect(result).toHaveLength(40);
+    // Chaque source ne contribue que ses 10 meilleurs (poids 15..6),
+    // ses 5 plus faibles (poids 5..1, muIds *10 à *14) sont tronquées.
+    const muIds = new Set(result.map((r) => r.muId));
+    expect(muIds.has(2009)).toBe(true); // Top 10 de la source 1000
+    expect(muIds.has(2010)).toBe(false); // 11e reco de la source 1000 → tronquée
   });
 
   it("trie par score décroissant et applique offset + limit", async () => {

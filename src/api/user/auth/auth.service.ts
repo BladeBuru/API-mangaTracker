@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { OAuth2Client } from 'google-auth-library';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { ILike, Repository } from 'typeorm';
 import { RegisterDto, LoginDto, TokenDto, GoogleMobileLoginDto } from './auth.dto';
 import { AuthHelper } from './auth.helper';
 import User, { AuthProvider } from '../user.entity';
@@ -19,10 +19,27 @@ export class AuthService {
 
   public async register(body: RegisterDto): Promise<User> {
     const { name, email, password }: RegisterDto = body;
-    let user: User = await this.repository.findOne({ where: { email } });
 
+    // Conflit email (lookup strict — l'email est stocké comme tel).
+    let user: User = await this.repository.findOne({ where: { email } });
     if (user) {
-      throw new HttpException('Conflict', HttpStatus.CONFLICT);
+      throw new HttpException(
+        'Email déjà utilisé',
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    // Conflit username case-insensitive : `John` et `john` ne peuvent
+    // pas coexister (cf. migration `AddUsernameUniqueIndex` qui force
+    // l'unicité au niveau DB sur LOWER(username)).
+    const usernameTaken = await this.repository.findOne({
+      where: { username: ILike(name) },
+    });
+    if (usernameTaken) {
+      throw new HttpException(
+        "Nom d'utilisateur déjà pris",
+        HttpStatus.CONFLICT,
+      );
     }
 
     user = new User();
@@ -60,14 +77,27 @@ export class AuthService {
       throw new HttpException('No user found', HttpStatus.NOT_FOUND);
     }
 
-    await this.repository.update(user.id, { lastLoginAt: new Date() });
-
-    // Crée une nouvelle session pour cet appareil (supporte le multi-appareils)
+    // Ordre critique : créer la session AVANT update(lastLoginAt). Si la
+    // création de session échoue (DB plante, contrainte violée), lastLoginAt
+    // ne doit pas être mis à jour pour ne pas marquer l'user comme "connecté"
+    // alors qu'aucun token ne lui sera retourné.
     const session = await this.helper.createSession(user, deviceInfo);
+    await this.repository.update(user.id, { lastLoginAt: new Date() });
     return this.helper.generateToken(user, session.id);
   }
 
-  /** Rotation du refresh token : invalide l'ancienne session, crée une nouvelle */
+  /**
+   * Rotation du refresh token : crée d'abord une nouvelle session, puis
+   * invalide l'ancienne SEULEMENT après succès.
+   *
+   * Ordre critique : si on supprimait l'ancienne avant de créer la nouvelle
+   * et que `createSession` échouait (DB plantée, contrainte violée), l'user
+   * serait définitivement déconnecté car son refresh token actuel pointerait
+   * sur une session qui n'existe plus.
+   *
+   * Avec cet ordre, en cas d'échec création nouvelle session, l'ancienne
+   * reste valide → l'user peut retenter le refresh.
+   */
   public async refresh(user: User, sessionId: string): Promise<TokenDto> {
     const existingSession = await this.helper.findSession(sessionId);
 
@@ -78,11 +108,19 @@ export class AuthService {
       );
     }
 
-    await this.helper.deleteSession(sessionId);
     const newSession = await this.helper.createSession(
       user,
       existingSession.deviceInfo,
     );
+
+    // Nouvelle session OK → on peut maintenant supprimer l'ancienne.
+    // Si delete échoue, c'est non-bloquant (juste session orpheline en BDD,
+    // sera nettoyée par job de purge — l'user a son nouveau token valide).
+    await this.helper.deleteSession(sessionId).catch((err) => {
+      this.logger.warn(
+        `Échec suppression ancienne session ${sessionId} après refresh OK: ${err?.message ?? err}`,
+      );
+    });
 
     await this.repository.update(user.id, { lastLoginAt: new Date() });
     return this.helper.generateToken(user, newSession.id);
@@ -110,8 +148,10 @@ export class AuthService {
     if (!user) {
       throw new HttpException('User not found', HttpStatus.NOT_FOUND);
     }
-    await this.repository.update(user.id, { lastLoginAt: new Date() });
+    // Idem `login()` : session AVANT update(lastLoginAt) pour éviter
+    // un lastLoginAt updaté sans session retournée.
     const session = await this.helper.createSession(user, deviceInfo);
+    await this.repository.update(user.id, { lastLoginAt: new Date() });
     return this.helper.generateToken(user, session.id);
   }
 
@@ -192,8 +232,9 @@ export class AuthService {
       }
     }
 
-    await this.repository.update(user.id, { lastLoginAt: new Date() });
+    // Idem `login()` : session AVANT update(lastLoginAt).
     const session = await this.helper.createSession(user, deviceInfo);
+    await this.repository.update(user.id, { lastLoginAt: new Date() });
     return this.helper.generateToken(user, session.id);
   }
 }

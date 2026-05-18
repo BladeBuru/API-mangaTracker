@@ -7,12 +7,14 @@ import { UserManga } from 'src/api/mangas/user-manga.entity';
 import { AuthModule } from './auth/auth.module';
 import { UserController } from '@/api/user/users.controller';
 import { GdprModule } from './gdpr/gdpr.module';
+import { StatsModule } from './stats/stats.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, Manga, UserManga]),
     AuthModule,
     GdprModule,
+    StatsModule,
   ],
   controllers: [UserController],
   providers: [UserService],

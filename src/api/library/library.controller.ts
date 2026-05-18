@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  Param,
+  ParseIntPipe,
   Post,
   Put,
   UseGuards,
@@ -25,12 +27,21 @@ import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 import { UpdateReadingStatusDto } from '@/api/library/dto/update-reading-status-dto';
 import { UpdateCustomLinkDto } from './dto/update-custom-link.dto';
 import { UpdateRatingDto } from './dto/update-rating.dto';
+import { ChapterLogService } from './chapter-log.service';
+import {
+  ChapterLogEntryDto,
+  RecordChapterLogDto,
+  ToggleChapterSkipDto,
+} from './dto/chapter-log.dto';
 
 @ApiTags('Library')
 @ApiBearerAuth()
 @Controller('library')
 export class LibraryController {
-  constructor(private readonly libraryService: LibraryService) {}
+  constructor(
+    private readonly libraryService: LibraryService,
+    private readonly chapterLogService: ChapterLogService,
+  ) {}
 
   @ApiOperation({
     summary: "Add a manga to user's collection",
@@ -165,6 +176,58 @@ export class LibraryController {
     return await this.libraryService.deleteCustomLink(
       user.id,
       updateCustomLinkDto.muId,
+    );
+  }
+
+  // ─────── Phase 5 : log additif des sessions de lecture ───────
+
+  @ApiOperation({
+    summary: "Enregistrer une session de lecture d'un chapitre (Phase 5)",
+    description:
+      "Insertion additive — N appels = N lignes (replays). Le compteur `user_read_chapters` reste géré par PUT /library/chapter.",
+  })
+  @ApiResponse({ status: 201, type: ChapterLogEntryDto })
+  @Post(':muId/chapter-log')
+  @UseGuards(JwtAuthGuard)
+  async recordChapterLog(
+    @Param('muId', ParseIntPipe) muId: number,
+    @Body() body: RecordChapterLogDto,
+    @UserDecorator() user: any,
+  ): Promise<ChapterLogEntryDto> {
+    return this.chapterLogService.recordChapterRead(user.id, muId, body);
+  }
+
+  @ApiOperation({
+    summary: "Historique des sessions de lecture pour un manga (Phase 5)",
+  })
+  @ApiResponse({ status: 200, type: [ChapterLogEntryDto] })
+  @Get(':muId/chapter-log')
+  @UseGuards(JwtAuthGuard)
+  async listChapterLog(
+    @Param('muId', ParseIntPipe) muId: number,
+    @UserDecorator() user: any,
+  ): Promise<ChapterLogEntryDto[]> {
+    return this.chapterLogService.listForManga(user.id, muId);
+  }
+
+  @ApiOperation({
+    summary: "Marquer un chapitre comme skippé / unskippé (Phase 5)",
+  })
+  @ApiResponse({ status: 200, type: ChapterLogEntryDto })
+  @Put(':muId/chapter/:chapterNumber/skip')
+  @UseGuards(JwtAuthGuard)
+  async toggleChapterSkip(
+    @Param('muId', ParseIntPipe) muId: number,
+    @Param('chapterNumber') chapterNumberRaw: string,
+    @Body() body: ToggleChapterSkipDto,
+    @UserDecorator() user: any,
+  ): Promise<ChapterLogEntryDto> {
+    const chapterNumber = Number(chapterNumberRaw);
+    return this.chapterLogService.toggleSkip(
+      user.id,
+      muId,
+      chapterNumber,
+      body.skipped,
     );
   }
 

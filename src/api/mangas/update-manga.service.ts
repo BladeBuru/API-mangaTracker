@@ -11,6 +11,17 @@ import { MangaQuickViewDto } from './dto/manga-quick-view.dto';
 export class UpdateMangaService {
   DAYS_INFO_REFRESH_INTERVAL = 1;
 
+  /**
+   * Taille de batch pour les fetches MU en background. MU rate-limite
+   * agressivement au-delà de ~60 req/min — tirer 69 mangas en parallèle
+   * en faisait planter ~85% silencieusement. 5 en parallèle + petite
+   * pause entre batches reste sous le radar et finit en ~14 batches max.
+   */
+  private static readonly REFRESH_BATCH_SIZE = 5;
+
+  /** Pause entre deux batches de refresh, pour étaler la charge MU. */
+  private static readonly REFRESH_BATCH_DELAY_MS = 1000;
+
   constructor(
     private readonly mangasService: MangasService,
     @InjectRepository(Manga)
@@ -68,27 +79,96 @@ export class UpdateMangaService {
     return dto;
   }
 
+  /**
+   * Vérifie quels mangas de la liste ont des infos périmées (> 1 jour) et
+   * lance leur rafraîchissement en arrière-plan. Les fetches MU sont
+   * **batchés** (5 en parallèle, pause 1s entre batches) pour rester sous
+   * le rate-limit MU. Le précédent `Promise.all` brut sur 69 mangas
+   * faisait planter ~85% des fetches en silence.
+   *
+   * Retourne immédiatement la liste des mangas détectés comme outdated
+   * (le caller n'attend pas la fin du refresh — c'est intentionnel).
+   */
   async checkIfMangaArrayInfoIsOutdated(muIds: number[]): Promise<Manga[]> {
-    const results = await Promise.all(
-      muIds.map((muId) => this.checkIfMangaInfoIsOutdated(Number(muId))),
+    // 1. Détection synchrone des mangas outdated (lecture DB rapide)
+    const candidatesNullable = await Promise.all(
+      muIds.map(async (muId) => {
+        const entity = await this.mangasService.returnMangaIfExist(
+          muId.toString(),
+        );
+        if (!entity || !this.isMangaInfoOutdated(entity)) return null;
+        return entity;
+      }),
     );
-    return results.filter(
-      (manga): manga is Manga => manga !== null && manga !== undefined,
+    const outdated = candidatesNullable.filter(
+      (m): m is Manga => m !== null && m !== undefined,
     );
+
+    if (outdated.length === 0) return [];
+
+    // 2. Refresh en background, batché — fire-and-forget pour ne pas
+    //    bloquer la response de la library.
+    this.refreshOutdatedInBatches(outdated).catch((err) =>
+      this.logger.warn(`Batched refresh fatal: ${err}`),
+    );
+
+    return outdated;
   }
 
+  /**
+   * @deprecated Conservé pour compat des call sites éventuels — préférer
+   * `checkIfMangaArrayInfoIsOutdated` qui batche correctement.
+   */
   async checkIfMangaInfoIsOutdated(muId: number): Promise<Manga | null> {
     const mangaEntity: Manga = await this.mangasService.returnMangaIfExist(
       muId.toString(),
     );
 
-    if (!this.isMangaInfoOutdated(mangaEntity)) return null;
+    if (!mangaEntity || !this.isMangaInfoOutdated(mangaEntity)) return null;
 
     this.updateMangaInfo(mangaEntity).catch((err) =>
       this.logger.warn(`Background update failed for manga ${muId}: ${err}`),
     );
 
     return mangaEntity;
+  }
+
+  /**
+   * Rafraîchit les mangas outdated par batches séquentiels avec une pause
+   * entre chaque batch. Trace les compteurs success/error pour visibilité.
+   */
+  private async refreshOutdatedInBatches(outdated: Manga[]): Promise<void> {
+    const total = outdated.length;
+    let success = 0;
+    let failed = 0;
+
+    for (
+      let i = 0;
+      i < outdated.length;
+      i += UpdateMangaService.REFRESH_BATCH_SIZE
+    ) {
+      const batch = outdated.slice(
+        i,
+        i + UpdateMangaService.REFRESH_BATCH_SIZE,
+      );
+      const results = await Promise.allSettled(
+        batch.map((manga) => this.updateMangaInfo(manga)),
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled') success++;
+        else failed++;
+      }
+      // Pause entre batches sauf le dernier
+      if (i + UpdateMangaService.REFRESH_BATCH_SIZE < outdated.length) {
+        await new Promise((r) =>
+          setTimeout(r, UpdateMangaService.REFRESH_BATCH_DELAY_MS),
+        );
+      }
+    }
+
+    this.logger.log(
+      `Background refresh terminé : ${success}/${total} OK, ${failed} échecs`,
+    );
   }
 
   isMangaInfoOutdated(manga: Manga): boolean {
@@ -98,22 +178,20 @@ export class UpdateMangaService {
     );
   }
 
+  /**
+   * Rafraîchit une ligne `manga` en relisant MangaUpdates.
+   *
+   * Implémentation : `getMangaDetails` fait déjà l'UPDATE en BDD avec un
+   * surensemble des champs (title, year, small/medium_cover_url, rating,
+   * total_chapters, completed, associated, genres). Inutile de faire un
+   * deuxième UPDATE derrière (ce qui était fait avant ET non-awaited).
+   *
+   * Throw si MU est down — laissé propager pour que le caller
+   * (`refreshOutdatedInBatches` via `Promise.allSettled`) compte l'échec.
+   */
   async updateMangaInfo(manga: Manga): Promise<void> {
     this.logger.log(`Updating Info for Manga: ${manga.title}`);
-    const freshMangaDto = await this.mangasService.getMangaDetails(
-      Number(manga.mu_id),
-    );
-    this.mangaRepository.update(
-      { mu_id: manga.mu_id },
-      {
-        title: freshMangaDto.title,
-        small_cover_url: freshMangaDto.smallCoverUrl,
-        medium_cover_url: freshMangaDto.mediumCoverUrl,
-        total_chapters: freshMangaDto.totalChapters,
-        rating: freshMangaDto.rating,
-        year: freshMangaDto.year,
-      },
-    );
+    await this.mangasService.getMangaDetails(Number(manga.mu_id));
   }
 
   async getMangasIds(userMangas: UserManga[]): Promise<number[]> {

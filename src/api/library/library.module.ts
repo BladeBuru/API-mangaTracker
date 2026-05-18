@@ -9,15 +9,17 @@ import { UserManga } from 'src/api/mangas/user-manga.entity';
 import { MangasModule } from 'src/api/mangas/mangas.module';
 import { HttpModule } from '@nestjs/axios';
 import { UpdateMangaService } from '../mangas/update-manga.service';
+import { UserMangaChapterLog } from './user-manga-chapter-log.entity';
+import { ChapterLogService } from './chapter-log.service';
 
 @Module({
   imports: [
     forwardRef(() => MangasModule),
     HttpModule,
-    TypeOrmModule.forFeature([Manga, User, UserManga]),
+    TypeOrmModule.forFeature([Manga, User, UserManga, UserMangaChapterLog]),
   ],
   controllers: [LibraryController],
-  providers: [UserService, LibraryService, UpdateMangaService],
-  exports: [LibraryService],
+  providers: [UserService, LibraryService, UpdateMangaService, ChapterLogService],
+  exports: [LibraryService, ChapterLogService],
 })
 export class LibraryModule {}

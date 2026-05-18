@@ -13,6 +13,7 @@ import { LibraryModule } from '../library/library.module';
 import { LibraryService } from '../library/library.service';
 import { UpdateMangaService } from './update-manga.service';
 import { MangaSyncService } from './sync-manga.service';
+import { CoverProxyService } from './cover-proxy.service';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { MangaSyncService } from './sync-manga.service';
     LibraryService,
     UpdateMangaService,
     MangaSyncService,
+    CoverProxyService,
   ],
   exports: [HelperService, UpdateMangaService, MangaSyncService, MangasService],
 })

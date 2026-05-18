@@ -42,11 +42,45 @@ export class RecommendationService {
   /**
    * Nombre maximum de recommandations remontées depuis un même manga source.
    * Empêche un manga très central (One Piece, Naruto…) de monopoliser le top.
+   *
+   * Cap "soft" : si le pool final est trop maigre, on relaxe via
+   * `ADAPTIVE_FALLBACK_CAP` (cf. `scoreRecos`).
+   *
+   * Réglé à 10 pour élargir la long tail : avec 5, un user de 60 mangas
+   * voyait toujours les mêmes classiques (Berserk/Bleach/Naruto) dominer
+   * le score cumulé. Doubler le cap fait remonter les candidats plus rares
+   * sans exploser le coût (toujours borné par offset+limit).
    */
-  private static readonly MAX_RECOS_PER_SOURCE = 5;
+  private static readonly MAX_RECOS_PER_SOURCE = 10;
+
+  /**
+   * Cap secondaire utilisé en repli quand le pool ne dépasse pas
+   * `MIN_POOL_BEFORE_RELAX`. On préfère plus de recos potentiellement
+   * redondantes que zéro reco du tout.
+   */
+  private static readonly ADAPTIVE_FALLBACK_CAP = 25;
+
+  /**
+   * Si la liste de candidats finale a moins de `MIN_POOL_BEFORE_RELAX`
+   * entrées, on rejoue le scoring avec `ADAPTIVE_FALLBACK_CAP`.
+   */
+  private static readonly MIN_POOL_BEFORE_RELAX = 30;
 
   /** Limite max de la pagination. Au-delà → tronqué. */
   private static readonly MAX_LIMIT = 100;
+
+  /**
+   * Cold start (bibliothèque vide) : nombre minimum de votes locaux pour
+   * qu'un manga remonte dans le pool « top communauté ». 5 votes = signal
+   * suffisamment fiable sans exclure trop de titres.
+   */
+  private static readonly COLD_START_MIN_VOTES = 5;
+
+  /**
+   * Cold start : nombre de sleeper hits à concaténer après le top communauté
+   * pour exposer aussi des découvertes récentes peu visibles.
+   */
+  private static readonly COLD_START_SLEEPER_BUDGET = 30;
 
   /** Taille de batch pour les fetches MU bloquants. */
   private static readonly BATCH_SIZE = 5;
@@ -161,17 +195,15 @@ export class RecommendationService {
 
     scored.sort((a, b) => b.score - a.score);
 
-    // 7. Top N → DTO
+    // 7. Top N → DTO (null-safe sur stubs)
     return scored.slice(0, effectiveLimit).map((s) => {
       const dto = new MangaQuickViewDto();
       dto.muId = Number(s.manga.mu_id);
       dto.title = s.manga.title;
-      dto.year = s.manga.year;
-      // medium_cover_url stocke `image.url.original` (haute qualité). On évite
-      // small_cover_url (thumb) qui rend flou et était souvent absent en prod.
-      dto.mediumCoverUrl = s.manga.medium_cover_url;
-      dto.largeCoverUrl = s.manga.medium_cover_url;
-      dto.rating = Number(s.manga.rating);
+      dto.year = s.manga.year ?? 0;
+      dto.mediumCoverUrl = s.manga.medium_cover_url ?? '';
+      dto.largeCoverUrl = s.manga.medium_cover_url ?? '';
+      dto.rating = s.manga.rating !== null ? Number(s.manga.rating) : 0;
       if (s.community) {
         if (s.community.communityRating !== null) {
           dto.communityRating = s.community.communityRating;
@@ -214,7 +246,15 @@ export class RecommendationService {
       relations: ['manga'],
     });
 
-    if (userMangas.length === 0) return [];
+    if (userMangas.length === 0) {
+      // Cold start : pas de signaux d'affinité personnelle. On remonte le
+      // top communauté (notes locales agrégées) complété par des sleepers
+      // récents, pour que l'écran ne soit jamais vide.
+      return this.buildColdStartRecommendations(
+        effectiveLimit,
+        effectiveOffset,
+      );
+    }
 
     const libraryMuIds = new Set(userMangas.map((um) => um.manga.mu_id));
     const scoreMap = new Map<string, ScoredEntry>();
@@ -243,6 +283,8 @@ export class RecommendationService {
       if (uncachedIds.length > 0) {
         this.fetchUncachedInBackground(uncachedIds);
       }
+      // Adaptive : si pool trop maigre, relax le cap par source.
+      await this.relaxIfPoolTooSmall(userMangas, libraryMuIds, scoreMap);
       return this.buildDtoFromScoreMap(
         scoreMap,
         effectiveLimit,
@@ -292,6 +334,7 @@ export class RecommendationService {
     }
 
     if (scoreMap.size === 0) return [];
+    await this.relaxIfPoolTooSmall(userMangas, libraryMuIds, scoreMap);
     return this.buildDtoFromScoreMap(
       scoreMap,
       effectiveLimit,
@@ -341,6 +384,7 @@ export class RecommendationService {
 
     if (scoreMap.size > 0) {
       if (uncachedIds.length > 0) this.fetchUncachedInBackground(uncachedIds);
+      await this.relaxIfPoolTooSmall(userMangas, libraryMuIds, scoreMap);
       return scoreMap;
     }
 
@@ -377,6 +421,9 @@ export class RecommendationService {
           );
         }),
       );
+    }
+    if (scoreMap.size > 0) {
+      await this.relaxIfPoolTooSmall(userMangas, libraryMuIds, scoreMap);
     }
     return scoreMap;
   }
@@ -491,6 +538,11 @@ export class RecommendationService {
     const sourceTitleMap = new Map(sourceMangas.map((m) => [m.mu_id, m.title]));
 
     // Build result
+    // NB : les stubs (issus de saveRecommendations) n'ont pas de genres tant
+    // que getMangaDetails n'a pas tourné — ils sont donc filtrés à l'étape
+    // de regroupement par genre plus haut. La null-safety ci-dessous est de
+    // la défense en profondeur (au cas où un manga existant aurait des
+    // covers null).
     const result: Record<string, MangaQuickViewDto[]> = {};
     for (const [genre, list] of truncatedByGenre) {
       result[genre] = list
@@ -500,11 +552,10 @@ export class RecommendationService {
           const dto = new MangaQuickViewDto();
           dto.muId = Number(scored.mu_id);
           dto.title = m.title;
-          dto.year = m.year;
-          // medium_cover_url = full size (image.url.original côté MU).
-          dto.mediumCoverUrl = m.medium_cover_url;
-          dto.largeCoverUrl = m.medium_cover_url;
-          dto.rating = Number(m.rating);
+          dto.year = m.year ?? 0;
+          dto.mediumCoverUrl = m.medium_cover_url ?? '';
+          dto.largeCoverUrl = m.medium_cover_url ?? '';
+          dto.rating = m.rating !== null ? Number(m.rating) : 0;
           const topSources = Array.from(scored.sources.entries())
             .sort((a, b) => b[1] - a[1])
             .slice(0, 3)
@@ -544,7 +595,9 @@ export class RecommendationService {
 
   /**
    * Applique les recos d'un manga source au scoreMap, en limitant la
-   * contribution à MAX_RECOS_PER_SOURCE pour la diversité.
+   * contribution à `perSourceCap` (par défaut MAX_RECOS_PER_SOURCE) pour
+   * la diversité. Permettre l'override est utilisé par le replay adaptatif
+   * (cf. `relaxIfPoolTooSmall`).
    */
   private scoreRecos(
     sourceMuId: string,
@@ -552,10 +605,11 @@ export class RecommendationService {
     recos: MangaRecommendation[],
     libraryMuIds: Set<string>,
     scoreMap: Map<string, ScoredEntry>,
+    perSourceCap: number = RecommendationService.MAX_RECOS_PER_SOURCE,
   ): void {
     const topRecos = [...recos]
       .sort((a, b) => b.weight - a.weight)
-      .slice(0, RecommendationService.MAX_RECOS_PER_SOURCE);
+      .slice(0, perSourceCap);
 
     for (const reco of topRecos) {
       if (libraryMuIds.has(reco.recommended_mu_id)) continue;
@@ -571,6 +625,57 @@ export class RecommendationService {
         (entry.sources.get(sourceMuId) ?? 0) + contribution,
       );
     }
+  }
+
+  /**
+   * Si le scoreMap a moins de `MIN_POOL_BEFORE_RELAX` entrées, rejoue le
+   * scoring avec `ADAPTIVE_FALLBACK_CAP` pour repêcher des candidats
+   * supplémentaires (long tail). On préfère un pool plus large
+   * potentiellement redondant à un pool quasi-vide.
+   *
+   * Effet : un user avec 1-2 mangas en biblio aura quand même un volume
+   * de recos décent (jusqu'à 25 recos par manga source au lieu de 5).
+   */
+  private async relaxIfPoolTooSmall(
+    userMangas: UserManga[],
+    libraryMuIds: Set<string>,
+    scoreMap: Map<string, ScoredEntry>,
+  ): Promise<void> {
+    if (scoreMap.size >= RecommendationService.MIN_POOL_BEFORE_RELAX) return;
+
+    this.logger.log(
+      `Pool maigre (${scoreMap.size} candidats) — relax cap ${RecommendationService.MAX_RECOS_PER_SOURCE} → ${RecommendationService.ADAPTIVE_FALLBACK_CAP}`,
+    );
+
+    // On rejoue uniquement avec les recos en cache (pas de re-fetch MU :
+    // si le cache est vide, la première passe l'aurait déjà rempli ou
+    // marqué uncached, donc rien à gagner à reposer la question).
+    await Promise.all(
+      userMangas.map(async (um) => {
+        const muId = Number(um.manga.mu_id);
+        const cached = await this.mangasService.getCachedRecommendations(muId);
+        if (cached.length === 0) return;
+        // ATTENTION : rejouer scoreRecos avec un cap plus large RE-AJOUTE les
+        // contributions des recos déjà comptabilisées dans la 1ère passe.
+        // Pour éviter le double-count, on ne scoore QUE les recos au-delà
+        // du cap de base.
+        const extraRecos = [...cached]
+          .sort((a, b) => b.weight - a.weight)
+          .slice(
+            RecommendationService.MAX_RECOS_PER_SOURCE,
+            RecommendationService.ADAPTIVE_FALLBACK_CAP,
+          );
+        this.scoreRecos(
+          um.manga.mu_id,
+          this.computeMultiplier(um),
+          extraRecos,
+          libraryMuIds,
+          scoreMap,
+          // Cap = +∞ ici (les recos sont déjà tronquées au-dessus).
+          extraRecos.length,
+        );
+      }),
+    );
   }
 
   /**
@@ -671,11 +776,14 @@ export class RecommendationService {
         const dto = new MangaQuickViewDto();
         dto.muId = Number(scored.mu_id);
         dto.title = manga.title;
-        dto.year = manga.year;
-        // medium_cover_url = full size (image.url.original côté MU).
-        dto.mediumCoverUrl = manga.medium_cover_url;
-        dto.largeCoverUrl = manga.medium_cover_url;
-        dto.rating = Number(manga.rating);
+        // Stubs : year/rating/cover peuvent être null tant que getMangaDetails
+        // n'a pas été appelé. On expose 0 / '' pour rester compatible avec le
+        // contract du DTO (Flutter affiche un placeholder pour les covers
+        // vides, et 0 pour year/rating jusqu'au premier clic).
+        dto.year = manga.year ?? 0;
+        dto.mediumCoverUrl = manga.medium_cover_url ?? '';
+        dto.largeCoverUrl = manga.medium_cover_url ?? '';
+        dto.rating = manga.rating !== null ? Number(manga.rating) : 0;
         const topSources = Array.from(scored.sources.entries())
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3)
@@ -695,5 +803,116 @@ export class RecommendationService {
         return dto;
       })
       .filter((dto): dto is MangaQuickViewDto => dto !== null);
+  }
+
+  /**
+   * Fallback cold start : user sans bibliothèque (premier login, compte vide).
+   *
+   * Stratégie :
+   *  1. Top communauté : mangas avec ≥ COLD_START_MIN_VOTES votes locaux,
+   *     triés par note bayésienne décroissante (cf. `aggregateRating`).
+   *  2. Sleepers : titres récents bien notés peu recommandés (cf. `findSleeperHits`).
+   *  3. Concat (top puis sleepers), dédup par muId, slice offset/limit.
+   *
+   * On évite de scorer par genre faute de signaux personnels : la priorité est
+   * que la home ne soit jamais vide, et que la pagination remonte de nouveaux
+   * candidats au fil du scroll.
+   */
+  private async buildColdStartRecommendations(
+    limit: number,
+    offset: number,
+  ): Promise<MangaQuickViewDto[]> {
+    // On charge plus large que offset+limit pour absorber les dédups et la
+    // pagination ultérieure sans recalcul.
+    const poolSize = Math.min(
+      offset + limit + 50,
+      RecommendationService.MAX_LIMIT * 3,
+    );
+
+    const topDtos = await this.buildTopCommunityDtos(poolSize);
+
+    // Sleepers : userId sentinelle -1 = aucune biblio à exclure.
+    let sleepers: MangaQuickViewDto[] = [];
+    try {
+      sleepers = await this.findSleeperHits(
+        -1,
+        RecommendationService.COLD_START_SLEEPER_BUDGET,
+      );
+    } catch (err) {
+      this.logger.warn(`Cold start: sleepers fetch failed: ${err}`);
+    }
+
+    const seen = new Set<number>(topDtos.map((d) => d.muId));
+    const combined: MangaQuickViewDto[] = [
+      ...topDtos,
+      ...sleepers.filter((s) => !seen.has(s.muId)),
+    ];
+
+    return combined.slice(offset, offset + limit);
+  }
+
+  /**
+   * Construit les DTOs des mangas les mieux notés par la communauté locale,
+   * filtrés par un seuil minimum de votes pour éviter qu'un seul vote
+   * extrême ne fasse remonter un titre confidentiel.
+   *
+   * Triés par note agrégée bayésienne (mélange MU + locaux).
+   */
+  private async buildTopCommunityDtos(
+    maxRows: number,
+  ): Promise<MangaQuickViewDto[]> {
+    const rows: Array<{ manga_id: string; avg: string; count: string }> =
+      await this.userMangaRepository
+        .createQueryBuilder('um')
+        .select('um.manga_id::text', 'manga_id')
+        .addSelect('AVG(um.user_rating)', 'avg')
+        .addSelect('COUNT(*)', 'count')
+        .where('um.user_rating > 0')
+        .groupBy('um.manga_id')
+        .having('COUNT(*) >= :min', {
+          min: RecommendationService.COLD_START_MIN_VOTES,
+        })
+        .orderBy('AVG(um.user_rating)', 'DESC')
+        .limit(maxRows)
+        .getRawMany();
+
+    if (rows.length === 0) return [];
+
+    const muIds = rows.map((r) => r.manga_id);
+    const mangas = await this.mangaRepository.find({
+      where: { mu_id: In(muIds) },
+    });
+    const mangaMap = new Map(mangas.map((m) => [m.mu_id, m]));
+    const muRatings = new Map(
+      mangas.map((m) => [m.mu_id, Number(m.rating) || 0]),
+    );
+    const community = await this.mangasService.getCommunityRatings(
+      muIds,
+      muRatings,
+    );
+
+    return muIds
+      .map((muId) => {
+        const m = mangaMap.get(muId);
+        if (!m) return null;
+        const c = community.get(muId);
+        const dto = new MangaQuickViewDto();
+        dto.muId = Number(muId);
+        dto.title = m.title;
+        dto.year = m.year ?? 0;
+        dto.mediumCoverUrl = m.medium_cover_url ?? '';
+        dto.largeCoverUrl = m.medium_cover_url ?? '';
+        dto.rating = m.rating !== null ? Number(m.rating) : 0;
+        if (c) {
+          if (c.communityRating !== null) dto.communityRating = c.communityRating;
+          dto.communityRatingCount = c.communityRatingCount;
+          dto.aggregatedRating = c.aggregatedRating;
+        }
+        return dto;
+      })
+      .filter((d): d is MangaQuickViewDto => d !== null)
+      .sort(
+        (a, b) => (b.aggregatedRating ?? 0) - (a.aggregatedRating ?? 0),
+      );
   }
 }

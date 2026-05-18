@@ -177,12 +177,77 @@ export class MangasService {
     });
   }
 
-  /** Upsert les recommandations MU en BDD pour un manga source */
+  /**
+   * Upsert les recommandations MU en BDD pour un manga source.
+   *
+   * Côté `manga_recommendation` : insère les liens (source → recommandé,
+   * weight). Côté `manga` : insère un *stub* (mu_id + title, autres champs
+   * nullable) pour chaque manga recommandé absent — sans ça, ils seraient
+   * filtrés silencieusement de `buildDtoFromScoreMap` (cf. migration
+   * 1746230800000).
+   *
+   * `ON CONFLICT DO NOTHING` sur le stub : on n'écrase JAMAIS un manga
+   * complet existant. Les détails complets sont remplis lazy par
+   * `getMangaDetails` au premier clic user.
+   */
   async saveRecommendations(
     sourceMuId: number,
-    recos: { series_id: number; series_name: string; weight: number }[],
+    recos: {
+      series_id: number;
+      series_name: string;
+      weight: number;
+      small_cover_url?: string | null;
+      medium_cover_url?: string | null;
+    }[],
   ): Promise<void> {
     const sourceId = sourceMuId.toString();
+
+    // 1. Stubs `manga` pour les recommandés absents — ON CONFLICT DO NOTHING
+    //    pour ne jamais écraser un manga existant.
+    //
+    //    On pré-remplit les covers depuis `series_image` (nouveau format MU
+    //    2026) quand elles sont disponibles : ça évite que la dialog
+    //    "Mangas recommandés" reste sur des placeholders gris au premier
+    //    affichage (perçu comme "Impossible de récupérer les recos"
+    //    par les users). Le background refresh `getMangaDetails` complétera
+    //    rating/year/total_chapters au premier clic sur le manga.
+    if (recos.length > 0) {
+      await this.mangaRepository
+        .createQueryBuilder()
+        .insert()
+        .into(Manga)
+        .values(
+          recos.map((reco) => ({
+            mu_id: reco.series_id.toString(),
+            title: reco.series_name || `Manga ${reco.series_id}`,
+            small_cover_url: reco.small_cover_url ?? null,
+            medium_cover_url: reco.medium_cover_url ?? null,
+            // total_chapters a un DEFAULT 0 ; rating/year restent nullable.
+          })),
+        )
+        .orIgnore() // PG : ON CONFLICT (mu_id) DO NOTHING
+        .execute();
+
+      // Rétro-fix : si MU vient de fournir des covers pour des stubs déjà
+      // créés sans cover (situation héritée du déploiement précédent qui ne
+      // lisait pas `series_image`), on les complète sans toucher aux mangas
+      // déjà détaillés (filtre `medium_cover_url IS NULL`).
+      const recosAvecCover = recos.filter((r) => r.medium_cover_url);
+      for (const reco of recosAvecCover) {
+        await this.mangaRepository
+          .createQueryBuilder()
+          .update(Manga)
+          .set({
+            small_cover_url: reco.small_cover_url ?? null,
+            medium_cover_url: reco.medium_cover_url ?? null,
+          })
+          .where('mu_id = :muId', { muId: reco.series_id.toString() })
+          .andWhere('medium_cover_url IS NULL')
+          .execute();
+      }
+    }
+
+    // 2. Liens reco eux-mêmes
     for (const reco of recos) {
       await this.recoRepository
         .createQueryBuilder()
@@ -213,6 +278,50 @@ export class MangasService {
   }
 
   /**
+   * Agrégation **communautaire** des recommandations pour un manga
+   * (2026-05-19). « Les utilisateurs qui ont ce manga ont aussi ces
+   * autres mangas dans leur bibliothèque ». Complète les recos MU (qui
+   * sont limitées à 5 max par leur API upstream).
+   *
+   * Renvoie jusqu'à 100 mangas avec leur compteur d'apparition (= nombre
+   * de users distincts qui ont aussi le manga en biblio). Tri par count
+   * décroissant.
+   *
+   * Note RGPD : on ne renvoie PAS les user_id, juste le compteur agrégé.
+   */
+  async findCommunityRecommendations(
+    sourceMuId: number,
+    limit = 100,
+  ): Promise<{ recommended_mu_id: string; title: string; count: number }[]> {
+    const rows = await this.userMangaRepository
+      .createQueryBuilder('um2')
+      .innerJoin(
+        'user_manga',
+        'um1',
+        'um1.user_id = um2.user_id AND um1.manga_id = :sourceMuId',
+        { sourceMuId: sourceMuId.toString() },
+      )
+      .innerJoin('um2.manga', 'm')
+      .where('um2.manga_id != :sourceMuId', {
+        sourceMuId: sourceMuId.toString(),
+      })
+      .select('um2.manga_id', 'recommended_mu_id')
+      .addSelect('m.title', 'title')
+      .addSelect('COUNT(DISTINCT um2.user_id)', 'count')
+      .groupBy('um2.manga_id')
+      .addGroupBy('m.title')
+      .orderBy('count', 'DESC')
+      .limit(limit)
+      .getRawMany();
+
+    return rows.map((r) => ({
+      recommended_mu_id: r.recommended_mu_id as string,
+      title: (r.title as string) ?? '',
+      count: Number(r.count),
+    }));
+  }
+
+  /**
    * Récupère les recommandations depuis MangaUpdates pour un muId,
    * les sauvegarde et les retourne.
    * Utilisé quand le cache est absent ou périmé.
@@ -232,13 +341,16 @@ export class MangasService {
           }),
         ),
       );
-      // MU retourne : { series_id: { series_id: number, title: string }, weight: number }
+      // Format MU 2026-05 : voir commentaire détaillé dans
+      // `MangaDetailsDto.fromMU` — flat `series_id` + `series_image.url.*`.
+      // Le fallback nested reste là par sécurité.
       const rawRecos: any[] = data['recommendations'] ?? [];
       const recos = rawRecos
         .filter((r) => r.weight > 0 && (r.series_id?.series_id ?? r.series_id))
         .map((r) => {
           const isNested =
             typeof r.series_id === 'object' && r.series_id !== null;
+          const img = r.series_image?.url ?? r.series_id?.image?.url ?? null;
           return {
             series_id: isNested
               ? Number(r.series_id.series_id)
@@ -247,6 +359,8 @@ export class MangasService {
               ? r.series_id.title ?? r.series_id.series_name ?? ''
               : r.series_name ?? '',
             weight: Number(r.weight),
+            small_cover_url: img?.thumb ?? null,
+            medium_cover_url: img?.original ?? null,
           };
         })
         .filter((r) => !isNaN(r.series_id) && r.series_id > 0);
@@ -283,11 +397,44 @@ export class MangasService {
   /**
    * Retourne les recommandations pour un manga sous forme de MangaQuickViewDto[],
    * enrichies avec les covers stockées en BDD.
+   *
+   * Background refresh : pour chaque reco avec une cover manquante (stub
+   * minimal créé par saveRecommendations sans appel MU), déclenche un
+   * fetch détail MU en arrière-plan (fire-and-forget) qui mettra à jour
+   * la cover en BDD pour les prochaines lectures. Sans ça, l'app affiche
+   * un placeholder vide ad vitam, et le widget RefreshableMangaImage ne
+   * déclenche pas le refresh-cover (il ne le fait que sur 404, pas sur
+   * URL vide).
    */
   async getRecommendationsAsQuickView(
     muId: number,
   ): Promise<MangaQuickViewDto[]> {
+    // **2026-05-19** : agrège désormais MU recos (max 5 par manga, limite
+    // upstream MU) + community recos (mangas que les autres users de la
+    // communauté possèdent aussi en biblio). Avant on était limité aux 5
+    // de MU → user veut "toutes les recos de la communauté".
     const recos = await this.getRecommendationsForManga(muId);
+    const communityRecos = await this.findCommunityRecommendations(muId);
+
+    // Merge : MU recos en premier (sorted by weight DESC déjà), puis
+    // community recos par count DESC, dédupliqués sur mu_id. Tous deux
+    // partagent le même format `recommended_mu_id` pour la suite.
+    const seenIds = new Set<string>(recos.map((r) => r.recommended_mu_id));
+    for (const c of communityRecos) {
+      if (seenIds.has(c.recommended_mu_id)) continue;
+      seenIds.add(c.recommended_mu_id);
+      recos.push({
+        // Note : `MangaRecommendation` entity requires id + dates etc.,
+        // mais on n'ajoute jamais ces objets en BDD — ils sont juste shaped
+        // identique pour le traitement aval. On utilise `as any` pour
+        // contourner les champs requis sans risque (objet jamais persisté).
+        source_mu_id: muId.toString(),
+        recommended_mu_id: c.recommended_mu_id,
+        recommended_title: c.title,
+        weight: c.count, // sert juste pour le tri si on en a besoin
+      } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    }
+
     if (!recos.length) return [];
 
     const recMuIds = recos.map((r) => r.recommended_mu_id);
@@ -297,6 +444,32 @@ export class MangasService {
       .getMany();
 
     const mangaMap = new Map(mangas.map((m) => [m.mu_id, m]));
+
+    // Background refresh fire-and-forget des stubs sans cover.
+    // Limité à 5 mu_ids pour ne pas spammer MU sur chaque ouverture.
+    const stubsSansCover = recos
+      .filter((r) => {
+        const m = mangaMap.get(r.recommended_mu_id);
+        return !m || !m.medium_cover_url;
+      })
+      .slice(0, 5)
+      .map((r) => Number(r.recommended_mu_id));
+
+    if (stubsSansCover.length > 0) {
+      this.logger.log(
+        `Background refresh covers pour ${stubsSansCover.length} reco stubs : ${stubsSansCover.join(', ')}`,
+      );
+      // Pas de await — fire-and-forget, on n'attend pas la réponse MU.
+      Promise.allSettled(
+        stubsSansCover.map((id) =>
+          this.getMangaDetails(id).catch((err) => {
+            this.logger.warn(
+              `Background refresh cover ${id} failed: ${err?.message ?? err}`,
+            );
+          }),
+        ),
+      ).catch(() => undefined);
+    }
 
     return recos
       .map((reco) => {
@@ -314,22 +487,87 @@ export class MangasService {
       .filter((dto) => dto.title);
   }
 
-  async searchManga(searchPattern: string, limit: number, offset: number) {
-    const payload = {
+  async searchManga(searchPattern: string, limit?: number, offset?: number) {
+    // Pertinence de recherche MU (testé empiriquement 2026-05-07 sur "one",
+    // "naruto", "one pie") — la combinaison gagnante est :
+    //   - stype: "title" → cherche dans titres + aliases (pas description)
+    //   - orderby: "rating" → MU retourne les mangas qui matchent triés
+    //     par bayesian_rating décroissant. Sans ça, "one" ne ramène que
+    //     des mangas obscurs (One/2000, One+One...) car MU ne sait pas
+    //     prioriser One Piece/One Punch-Man par défaut.
+    //   - perpage: safeLimit*3 → échantillon plus large pour le re-tri.
+    //   - re-tri custom ci-dessous → seul le rating ne suffit pas
+    //     ("How to Win My Husband Over" a 8.22 et matche "naruto" via
+    //     un alias → passerait devant Naruto). Le bonus pour
+    //     "title startsWith query" remonte les vrais matches.
+    //   - exclude_filtered_genres: true → applique filtre user MU global.
+    //
+    // **2026-05-17** : MU a durci leur validation — `perpage` doit être un
+    // entier > 0, sans ça MU retourne 400 "Field Validation Error". Avant
+    // c'était laxiste. D'où les fallbacks ci-dessous.
+    const safeLimit = limit != null && limit > 0 ? limit : 20;
+    const safeOffset = offset != null && offset > 0 ? offset : 1;
+    const payload: Record<string, unknown> = {
       search: searchPattern,
-      perpage: limit,
-      page: offset,
+      stype: 'title',
+      orderby: 'rating',
+      perpage: safeLimit * 3,
+      page: safeOffset,
       exclude_genre: NSFW_GENRES,
+      exclude_filtered_genres: true,
     };
     const { data } = await firstValueFrom(
       this.httpService.post<MangaQuickViewDto[]>(MU_TRENDS_URL, payload).pipe(
         catchError((error: AxiosError) => {
-          this.logger.error(error.code);
+          // Logging détaillé pour diagnostiquer les MU API errors (400, 422…)
+          // — sans ça on ne voyait que `ERR_BAD_REQUEST` opaque.
+          this.logger.error(
+            `MU search failed: code=${error.code} status=${error.response?.status} ` +
+              `body=${JSON.stringify(error.response?.data)} ` +
+              `payload=${JSON.stringify(payload)}`,
+          );
           throw `Impossible to retrieve mangas with search pattern ${searchPattern} from external service`;
         }),
       ),
     );
 
-    return MangaQuickViewDto.arrayFromMu(data['results']);
+    const results: any[] = (data as any)?.results ?? [];
+    if (results.length === 0) return [];
+
+    // Re-tri custom par pertinence
+    const q = (searchPattern ?? '').toLowerCase().trim();
+    const scored = results.map((r) => {
+      const title = String(r?.record?.title ?? '').toLowerCase();
+      const aliases: string[] = (r?.record?.associated ?? [])
+        .map((a: any) => String(a?.title ?? '').toLowerCase())
+        .filter((s: string) => s.length > 0);
+      const rating = Number(r?.record?.bayesian_rating ?? 0) || 0;
+
+      // Boost de pertinence (echelle ~10 000) au-dessus du rating (max 10).
+      let bonus = 0;
+      if (title === q) {
+        bonus = 100_000; // match exact titre
+      } else if (title.startsWith(q + ' ') || title.startsWith(q + ':')) {
+        bonus = 50_000; // titre commence par "<query> ..." (ex: "Naruto: Shippuden")
+      } else if (title.startsWith(q)) {
+        bonus = 30_000; // titre commence par la query
+      } else if (title.includes(' ' + q)) {
+        bonus = 10_000; // query est un mot du titre
+      } else if (title.includes(q)) {
+        bonus = 5_000; // query apparaît dans le titre
+      } else if (aliases.some((a) => a === q)) {
+        bonus = 8_000; // match exact alias
+      } else if (aliases.some((a) => a.startsWith(q))) {
+        bonus = 3_000; // alias commence par la query
+      } else if (aliases.some((a) => a.includes(q))) {
+        bonus = 1_000; // alias contient la query
+      }
+
+      return { record: r, score: bonus + rating };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    const topN = scored.slice(0, safeLimit).map((s) => s.record);
+    return MangaQuickViewDto.arrayFromMu(topN);
   }
 }

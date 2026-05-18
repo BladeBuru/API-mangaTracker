@@ -82,10 +82,20 @@ export class MangaDetailsDto {
   associated?: { title: string }[];
 
   @ApiPropertyOptional({
-    description: 'Recommandations MangaUpdates (séries similaires avec poids 1-10)',
+    description:
+      'Recommandations MangaUpdates (séries similaires avec poids 1-100). ' +
+      'Inclut les URLs de cover (small/medium) quand MU les fournit dans ' +
+      '`series_image`, ce qui permet d\'éviter une cover vide sur la fiche ' +
+      'détail des recos tant que le manga recommandé n\'a pas été ouvert.',
   })
   @IsOptional()
-  muRecommendations?: { series_id: number; series_name: string; weight: number }[];
+  muRecommendations?: {
+    series_id: number;
+    series_name: string;
+    weight: number;
+    small_cover_url?: string | null;
+    medium_cover_url?: string | null;
+  }[];
 
   @ApiPropertyOptional({ description: 'Custom user link for this manga' })
   @IsOptional()
@@ -309,15 +319,23 @@ export class MangaDetailsDto {
     const readingStatus = this.parsePublicationStatus(muObject.status);
 
     const mangaDetailsDto = new MangaDetailsDto();
-    mangaDetailsDto['title'] = muObject['title'];
-    mangaDetailsDto['description'] = muObject['description'];
-    mangaDetailsDto['status'] = muObject['status'];
+    mangaDetailsDto.title = muObject['title'];
+    mangaDetailsDto.description = muObject['description'];
+    mangaDetailsDto.status = muObject['status'];
     mangaDetailsDto.publicationStatus = readingStatus;
-    mangaDetailsDto['small_cover_url'] = muObject['image']['url']['thumb'];
-    mangaDetailsDto['medium_cover_url'] = muObject['image']['url']['original'];
-    mangaDetailsDto['year'] = muObject['year'];
-    mangaDetailsDto['rating'] = muObject['bayesian_rating'];
-    mangaDetailsDto['total_chapters'] = MangaDetailsDto.parseLatestChapter(
+    // ⚠️ Les propriétés du DTO sont en camelCase (cf. déclarations ci-dessus).
+    // Les consumers (mangas.service.ts, sync-manga.service.ts) lisent
+    // `details.smallCoverUrl` / `details.mediumCoverUrl` / `details.totalChapters`.
+    // Assigner en snake_case ici (bracket notation) laissait les propriétés
+    // camelCase à `undefined`, ce qui faisait que `mangaRepository.update()`
+    // ne touchait pas les colonnes `*_cover_url` et `total_chapters` côté DB
+    // → cover NULL ad vitam → endpoint `/mangas/:muId/cover` répondait 404
+    // "No cover URL after refresh".
+    mangaDetailsDto.smallCoverUrl = muObject['image']['url']['thumb'];
+    mangaDetailsDto.mediumCoverUrl = muObject['image']['url']['original'];
+    mangaDetailsDto.year = muObject['year'];
+    mangaDetailsDto.rating = muObject['bayesian_rating'];
+    mangaDetailsDto.totalChapters = MangaDetailsDto.parseLatestChapter(
       muObject.status,
       muObject.latest_chapter,
     );
@@ -327,33 +345,50 @@ export class MangaDetailsDto {
     mangaDetailsDto.bonusChapters = bonusChapters.map(
       ({ season, chapters }) => ({ season, chapters }),
     );
-    mangaDetailsDto['total_chapters'] = MangaDetailsDto.parseLatestChapter(
-      muObject.status,
-      muObject.latest_chapter,
-    );
-    mangaDetailsDto.seasonChapters = seasonChapters.map(
-      ({ season, chapters }) => ({ season, chapters }),
-    );
-    mangaDetailsDto.bonusChapters = bonusChapters.map(
-      ({ season, chapters }) => ({ season, chapters }),
-    );
-    mangaDetailsDto['completed'] = muObject['completed'];
-    mangaDetailsDto['mu_id'] = muObject['series_id'];
-    mangaDetailsDto['authors'] = muObject['authors'];
-    mangaDetailsDto['genres'] = muObject['genres'];
-    mangaDetailsDto['associated'] = muObject['associated'] ?? [];
+    mangaDetailsDto.completed = muObject['completed'];
+    mangaDetailsDto.muId = muObject['series_id'];
+    mangaDetailsDto.authors = muObject['authors'];
+    mangaDetailsDto.genres = muObject['genres'];
+    mangaDetailsDto.associated = muObject['associated'] ?? [];
 
-    // Recommandations communautaires MangaUpdates (poids 1-10)
-    // MU retourne : { series_id: { series_id: number, title: string }, weight: number }
+    // Recommandations communautaires MangaUpdates.
+    //
+    // Format MU observé en 2026-05-18 (validé via curl) :
+    //   {
+    //     series_name: string,
+    //     series_url: string,
+    //     series_id: number,              <-- plat (plus { series_id, title })
+    //     series_image: {
+    //       url: { original: string, thumb: string },
+    //       height, width
+    //     },
+    //     weight: number                  <-- 0-100 maintenant
+    //   }
+    //
+    // Le fallback `isNested` ci-dessous reste là par sécurité au cas où MU
+    // re-publie l'ancien format sur certaines séries — coût minime, évite
+    // une régression silencieuse.
     const rawRecos: any[] = muObject['recommendations'] ?? [];
     mangaDetailsDto.muRecommendations = rawRecos
       .filter((r) => r.weight > 0 && (r.series_id?.series_id ?? r.series_id))
       .map((r) => {
-        const isNested = typeof r.series_id === 'object' && r.series_id !== null;
+        const isNested =
+          typeof r.series_id === 'object' && r.series_id !== null;
+        const img = r.series_image?.url ?? r.series_id?.image?.url ?? null;
         return {
-          series_id: isNested ? Number(r.series_id.series_id) : Number(r.series_id),
-          series_name: isNested ? (r.series_id.title ?? r.series_id.series_name ?? '') : (r.series_name ?? ''),
+          series_id: isNested
+            ? Number(r.series_id.series_id)
+            : Number(r.series_id),
+          series_name: isNested
+            ? (r.series_id.title ?? r.series_id.series_name ?? '')
+            : (r.series_name ?? ''),
           weight: Number(r.weight),
+          // Pre-cache des covers : si MU les fournit on les stocke avec le
+          // stub, sinon `null` et le background refresh ira chercher le
+          // détail complet. Évite l'aspect "vide" perçu comme un bug par le
+          // user à la première ouverture.
+          small_cover_url: img?.thumb ?? null,
+          medium_cover_url: img?.original ?? null,
         };
       })
       .filter((r) => !isNaN(r.series_id) && r.series_id > 0);
