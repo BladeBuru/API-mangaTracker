@@ -41,33 +41,38 @@ export class RecommendationService {
 
   /**
    * Nombre maximum de recommandations remontées depuis un même manga source.
-   * Empêche un manga très central (One Piece, Naruto…) de monopoliser le top.
+   *
+   * **2026-05-19** : passé de 10 à 30. Les recos étant intrinsèquement
+   * subjectives, on préfère un pool large + un tri par score que de
+   * filtrer en amont. L'utilisateur peut scroller via la pagination,
+   * mais si on filtre trop, il n'y a plus rien à scroller.
    *
    * Cap "soft" : si le pool final est trop maigre, on relaxe via
    * `ADAPTIVE_FALLBACK_CAP` (cf. `scoreRecos`).
-   *
-   * Réglé à 10 pour élargir la long tail : avec 5, un user de 60 mangas
-   * voyait toujours les mêmes classiques (Berserk/Bleach/Naruto) dominer
-   * le score cumulé. Doubler le cap fait remonter les candidats plus rares
-   * sans exploser le coût (toujours borné par offset+limit).
    */
-  private static readonly MAX_RECOS_PER_SOURCE = 10;
+  private static readonly MAX_RECOS_PER_SOURCE = 30;
 
   /**
    * Cap secondaire utilisé en repli quand le pool ne dépasse pas
    * `MIN_POOL_BEFORE_RELAX`. On préfère plus de recos potentiellement
    * redondantes que zéro reco du tout.
    */
-  private static readonly ADAPTIVE_FALLBACK_CAP = 25;
+  private static readonly ADAPTIVE_FALLBACK_CAP = 60;
 
   /**
    * Si la liste de candidats finale a moins de `MIN_POOL_BEFORE_RELAX`
    * entrées, on rejoue le scoring avec `ADAPTIVE_FALLBACK_CAP`.
    */
-  private static readonly MIN_POOL_BEFORE_RELAX = 30;
+  private static readonly MIN_POOL_BEFORE_RELAX = 50;
 
-  /** Limite max de la pagination. Au-delà → tronqué. */
-  private static readonly MAX_LIMIT = 100;
+  /** Limite max de la pagination. **2026-05-19** : 100 → 500. */
+  private static readonly MAX_LIMIT = 500;
+
+  // **2026-05-19 (correctif)** : on garde l'exclusion stricte des mangas
+  // déjà en biblio (l'user ne veut PAS voir ce qu'il a déjà). Le vrai
+  // problème était que MAX_RECOS_PER_SOURCE=10 + exclusion ne laissait
+  // que ~3 recos après filtrage. La solution = élargir le cap par source
+  // (30) pour qu'il reste un volume décent APRÈS exclusion biblio.
 
   /**
    * Cold start (bibliothèque vide) : nombre minimum de votes locaux pour
@@ -612,6 +617,10 @@ export class RecommendationService {
       .slice(0, perSourceCap);
 
     for (const reco of topRecos) {
+      // Exclusion stricte des mangas déjà en biblio : l'user ne veut pas
+      // voir ce qu'il a déjà. Le volume restant après filtrage est garanti
+      // par MAX_RECOS_PER_SOURCE=30 (au lieu de 10) pour qu'il reste assez
+      // de candidats même après exclusion (ex: 30 - ~10 déjà-lus = 20).
       if (libraryMuIds.has(reco.recommended_mu_id)) continue;
       const contribution = reco.weight * multiplier;
       let entry = scoreMap.get(reco.recommended_mu_id);
