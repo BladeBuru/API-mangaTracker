@@ -913,15 +913,14 @@ export class RecommendationService {
         dto.largeCoverUrl = m.medium_cover_url ?? '';
         dto.rating = m.rating !== null ? Number(m.rating) : 0;
         if (c) {
-          if (c.communityRating !== null) dto.communityRating = c.communityRating;
+          if (c.communityRating !== null)
+            dto.communityRating = c.communityRating;
           dto.communityRatingCount = c.communityRatingCount;
           dto.aggregatedRating = c.aggregatedRating;
         }
         return dto;
       })
       .filter((d): d is MangaQuickViewDto => d !== null)
-      .sort(
-        (a, b) => (b.aggregatedRating ?? 0) - (a.aggregatedRating ?? 0),
-      );
+      .sort((a, b) => (b.aggregatedRating ?? 0) - (a.aggregatedRating ?? 0));
   }
 }

@@ -186,9 +186,7 @@ export class CommentsService {
     });
     if (!c) throw new NotFoundException('Comment not found');
     if (c.user.id !== userId) {
-      throw new ForbiddenException(
-        "Seul l'auteur peut éditer ce commentaire",
-      );
+      throw new ForbiddenException("Seul l'auteur peut éditer ce commentaire");
     }
     if (c.isDeleted) {
       throw new BadRequestException('Commentaire supprimé');
@@ -245,15 +243,15 @@ export class CommentsService {
     report.reason = reason ?? null;
     await this.reportRepo.save(report);
     this.logger.warn(
-      `Comment ${commentId} reported by user ${userId} (reason=${reason ?? '∅'})`,
+      `Comment ${commentId} reported by user ${userId} (reason=${
+        reason ?? '∅'
+      })`,
     );
   }
 
   private validateContent(content: string): void {
     if (CommentsService.BANNED_WORDS.test(content)) {
-      throw new BadRequestException(
-        'Le contenu contient des mots interdits.',
-      );
+      throw new BadRequestException('Le contenu contient des mots interdits.');
     }
   }
 

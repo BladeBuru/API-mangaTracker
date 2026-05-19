@@ -224,8 +224,8 @@ describe('RecommendationService', () => {
   });
 
   it('limite à MAX_RECOS_PER_SOURCE pour la diversité', async () => {
-    // 4 mangas en biblio, chacun avec 15 recos disjointes : pool initial = 4×10 = 40,
-    // au-dessus de MIN_POOL_BEFORE_RELAX (30) donc le cap=10 reste appliqué.
+    // 4 mangas en biblio, chacun avec 35 recos disjointes : pool initial = 4×30 = 120,
+    // au-dessus de MIN_POOL_BEFORE_RELAX (50) donc le cap=30 reste appliqué.
     const userMangas = Array.from({ length: 4 }, (_, i) =>
       makeUserManga({
         id: i + 1,
@@ -238,11 +238,11 @@ describe('RecommendationService', () => {
       (muId: number) => {
         const base = (muId - 1000) * 100 + 2000;
         return Promise.resolve(
-          Array.from({ length: 15 }, (_, i) =>
+          Array.from({ length: 35 }, (_, i) =>
             makeReco(
               String(muId),
               String(base + i),
-              15 - i,
+              35 - i,
               `Reco ${base + i}`,
             ),
           ),
@@ -259,14 +259,15 @@ describe('RecommendationService', () => {
       );
     });
 
-    const result = await service.buildUserRecommendations(42, 100, 0);
-    // 4 sources × cap=10 = 40 candidats (recos disjointes)
-    expect(result).toHaveLength(40);
-    // Chaque source ne contribue que ses 10 meilleurs (poids 15..6),
-    // ses 5 plus faibles (poids 5..1, muIds *10 à *14) sont tronquées.
+    // limit=500 (=MAX_LIMIT) pour récupérer tous les candidats post-cap.
+    const result = await service.buildUserRecommendations(42, 500, 0);
+    // 4 sources × cap=30 = 120 candidats (recos disjointes)
+    expect(result).toHaveLength(120);
+    // Chaque source ne contribue que ses 30 meilleurs (poids 35..6),
+    // ses 5 plus faibles (poids 5..1, muIds *30 à *34) sont tronquées.
     const muIds = new Set(result.map((r) => r.muId));
-    expect(muIds.has(2009)).toBe(true); // Top 10 de la source 1000
-    expect(muIds.has(2010)).toBe(false); // 11e reco de la source 1000 → tronquée
+    expect(muIds.has(2029)).toBe(true); // Top 30 de la source 1000
+    expect(muIds.has(2030)).toBe(false); // 31e reco de la source 1000 → tronquée
   });
 
   it("trie par score décroissant et applique offset + limit", async () => {

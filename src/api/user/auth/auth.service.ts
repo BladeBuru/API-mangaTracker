@@ -1,8 +1,19 @@
-import { HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { OAuth2Client } from 'google-auth-library';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository } from 'typeorm';
-import { RegisterDto, LoginDto, TokenDto, GoogleMobileLoginDto } from './auth.dto';
+import {
+  RegisterDto,
+  LoginDto,
+  TokenDto,
+  GoogleMobileLoginDto,
+} from './auth.dto';
 import { AuthHelper } from './auth.helper';
 import User, { AuthProvider } from '../user.entity';
 import { UserInformationDto } from '@/api/user/dto/user-information.dto';
@@ -23,10 +34,7 @@ export class AuthService {
     // Conflit email (lookup strict — l'email est stocké comme tel).
     let user: User = await this.repository.findOne({ where: { email } });
     if (user) {
-      throw new HttpException(
-        'Email déjà utilisé',
-        HttpStatus.CONFLICT,
-      );
+      throw new HttpException('Email déjà utilisé', HttpStatus.CONFLICT);
     }
 
     // Conflit username case-insensitive : `John` et `john` ne peuvent
@@ -118,7 +126,9 @@ export class AuthService {
     // sera nettoyée par job de purge — l'user a son nouveau token valide).
     await this.helper.deleteSession(sessionId).catch((err) => {
       this.logger.warn(
-        `Échec suppression ancienne session ${sessionId} après refresh OK: ${err?.message ?? err}`,
+        `Échec suppression ancienne session ${sessionId} après refresh OK: ${
+          err?.message ?? err
+        }`,
       );
     });
 
@@ -186,11 +196,17 @@ export class AuthService {
       payload = ticket.getPayload() ?? {};
     } catch (err) {
       this.logger.error(`❌ Token Google mobile invalide: ${err}`);
-      throw new HttpException('Token Google invalide ou expiré', HttpStatus.UNAUTHORIZED);
+      throw new HttpException(
+        'Token Google invalide ou expiré',
+        HttpStatus.UNAUTHORIZED,
+      );
     }
 
     if (!payload.sub || !payload.email) {
-      throw new HttpException('Token Google invalide (sub ou email manquant)', HttpStatus.UNAUTHORIZED);
+      throw new HttpException(
+        'Token Google invalide (sub ou email manquant)',
+        HttpStatus.UNAUTHORIZED,
+      );
     }
 
     this.logger.log(`🟢 Connexion Google mobile pour: ${payload.email}`);

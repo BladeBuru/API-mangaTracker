@@ -67,11 +67,16 @@ export class EmailService {
    * Génère un nouveau token (invalide les précédents). Échoue silencieusement
    * si déjà vérifié.
    */
-  async sendVerificationEmail(userId: number, ip: string | null = null): Promise<void> {
+  async sendVerificationEmail(
+    userId: number,
+    ip: string | null = null,
+  ): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) return; // anti-énumération
     if (user.emailVerifiedAt) {
-      this.logger.log(`sendVerificationEmail: userId=${userId} already verified, skip`);
+      this.logger.log(
+        `sendVerificationEmail: userId=${userId} already verified, skip`,
+      );
       return;
     }
 
@@ -103,7 +108,10 @@ export class EmailService {
    * Anti-énumération : ne lance jamais d'exception si l'email n'existe pas
    * (le caller retourne 200 dans tous les cas).
    */
-  async sendPasswordResetEmail(email: string, ip: string | null = null): Promise<void> {
+  async sendPasswordResetEmail(
+    email: string,
+    ip: string | null = null,
+  ): Promise<void> {
     const user = await this.userRepository.findOne({ where: { email } });
     if (!user) {
       // Silently ignore (anti-enumeration). On simule un délai pour
@@ -183,14 +191,17 @@ export class EmailService {
   ): Promise<void> {
     const tpl = this.templates.get(template);
     if (!tpl) {
-      throw new ServiceUnavailableException(`Email template '${template}' not loaded`);
+      throw new ServiceUnavailableException(
+        `Email template '${template}' not loaded`,
+      );
     }
     const html = tpl(context);
 
     const transporter = await this.getTransporter();
-    const fromAddress = this.configService.get<string>('SMTP_FROM') ??
-      'noreply@bladeburu.com';
-    const fromName = this.configService.get<string>('SMTP_FROM_NAME') ?? 'Manga Tracker';
+    const fromAddress =
+      this.configService.get<string>('SMTP_FROM') ?? 'noreply@bladeburu.com';
+    const fromName =
+      this.configService.get<string>('SMTP_FROM_NAME') ?? 'Manga Tracker';
 
     try {
       await transporter.sendMail({
@@ -201,9 +212,13 @@ export class EmailService {
       });
     } catch (err) {
       this.logger.error(
-        `SMTP send failed (template=${template}): ${err instanceof Error ? err.message : err}`,
+        `SMTP send failed (template=${template}): ${
+          err instanceof Error ? err.message : err
+        }`,
       );
-      throw new ServiceUnavailableException('Email service temporarily unavailable');
+      throw new ServiceUnavailableException(
+        'Email service temporarily unavailable',
+      );
     }
   }
 
@@ -218,7 +233,9 @@ export class EmailService {
         this.templates.set(name, Handlebars.compile(source));
       } catch (err) {
         this.logger.warn(
-          `Failed to load template '${name}': ${err instanceof Error ? err.message : err}`,
+          `Failed to load template '${name}': ${
+            err instanceof Error ? err.message : err
+          }`,
         );
       }
     }
@@ -227,8 +244,12 @@ export class EmailService {
   private async getTransporter(): Promise<Transporter> {
     if (this.transporter) return this.transporter;
 
-    const host = this.configService.get<string>('SMTP_HOST') ?? 'smtp-relay.brevo.com';
-    const port = parseInt(this.configService.get<string>('SMTP_PORT') ?? '587', 10);
+    const host =
+      this.configService.get<string>('SMTP_HOST') ?? 'smtp-relay.brevo.com';
+    const port = parseInt(
+      this.configService.get<string>('SMTP_PORT') ?? '587',
+      10,
+    );
     const user = this.configService.get<string>('SMTP_USER');
     const pass = this.configService.get<string>('SMTP_PASSWORD');
 
@@ -254,7 +275,8 @@ export class EmailService {
 
   private publicBaseUrl(): string {
     return (
-      this.configService.get<string>('PUBLIC_WEB_URL') ?? 'https://bladeburu.com'
+      this.configService.get<string>('PUBLIC_WEB_URL') ??
+      'https://bladeburu.com'
     );
   }
 

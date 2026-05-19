@@ -7,10 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository, In, Not } from 'typeorm';
-import {
-  FriendshipStatus,
-  UserFriendship,
-} from './user-friendship.entity';
+import { FriendshipStatus, UserFriendship } from './user-friendship.entity';
 import User from '@/api/user/user.entity';
 import {
   FriendshipDto,
@@ -51,9 +48,7 @@ export class FriendsService {
     body: SendFriendRequestDto,
   ): Promise<FriendshipDto> {
     if (!body.addresseeId && !body.addresseeUsername) {
-      throw new BadRequestException(
-        'addresseeId ou addresseeUsername requis',
-      );
+      throw new BadRequestException('addresseeId ou addresseeUsername requis');
     }
 
     // Lookup case-insensitive sur le username (sinon `John` != `john`).
@@ -144,7 +139,9 @@ export class FriendsService {
       newStatus === FriendshipStatus.Accepted &&
       friendship.status !== FriendshipStatus.Pending
     ) {
-      throw new BadRequestException('Seules les demandes pending peuvent être acceptées');
+      throw new BadRequestException(
+        'Seules les demandes pending peuvent être acceptées',
+      );
     }
     friendship.status = newStatus;
     if (newStatus === FriendshipStatus.Accepted) {
@@ -170,7 +167,9 @@ export class FriendsService {
       friendship.requester.id !== currentUserId &&
       friendship.addressee.id !== currentUserId
     ) {
-      throw new ForbiddenException('Vous ne faites pas partie de cette relation');
+      throw new ForbiddenException(
+        'Vous ne faites pas partie de cette relation',
+      );
     }
     await this.friendshipRepo.remove(friendship);
   }
