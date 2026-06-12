@@ -1,10 +1,15 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { Request } from 'express';
 import { UpdatePasswordDto } from './dto/update-password.dto';
-import User from './user.entity';
+import User, { AuthProvider } from './user.entity';
 import { UpdateNameDto } from './dto/update-name.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UserInformationDto } from '@/api/user/dto/user-information.dto';
@@ -25,12 +30,40 @@ export class UserService {
     return UserInformationDto.fromEntity(user);
   }
 
+  /**
+   * Change le mot de passe d'un utilisateur connecté APRÈS vérification du
+   * mot de passe actuel (parade contre le vol d'access token : un attaquant
+   * avec un JWT volé ne peut pas verrouiller le compte).
+   *
+   * Codes d'erreur (corps `message`, consommés par le client Flutter) :
+   *  - 400 `SOCIAL_ACCOUNT_NO_PASSWORD` — compte Google sans mot de passe
+   *    local : rien à changer, la connexion passe par Google.
+   *  - 400 `CURRENT_PASSWORD_INVALID` — mot de passe actuel incorrect.
+   *
+   * ⚠️ 400 et PAS 401 pour le mauvais mot de passe : le `HttpService`
+   * Flutter intercepte les 401 pour déclencher un refresh token puis un
+   * logout forcé — une simple faute de frappe ne doit jamais déconnecter
+   * l'utilisateur.
+   */
   public async updatePassword(
     body: UpdatePasswordDto,
     req: Request,
   ): Promise<UserInformationDto> {
     const user: User = <User>req.user;
-    user.password = bcrypt.hashSync(body.password, bcrypt.genSaltSync(10));
+
+    if (user.authProvider !== AuthProvider.LOCAL || !user.password) {
+      throw new BadRequestException('SOCIAL_ACCOUNT_NO_PASSWORD');
+    }
+
+    const isCurrentPasswordValid: boolean = bcrypt.compareSync(
+      body.currentPassword,
+      user.password,
+    );
+    if (!isCurrentPasswordValid) {
+      throw new BadRequestException('CURRENT_PASSWORD_INVALID');
+    }
+
+    user.password = bcrypt.hashSync(body.newPassword, bcrypt.genSaltSync(10));
     await this.repository.save(user);
     return UserInformationDto.fromEntity(user);
   }
