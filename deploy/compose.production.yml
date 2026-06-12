@@ -52,8 +52,15 @@ services:
       ANDROID_PACKAGE_NAME: "com.example.manga_tracker"
       ANDROID_SHA256_FINGERPRINT: "${ANDROID_SHA256_FINGERPRINT}"
 
+      # ── Covers (mode stream, hotfix-v0-10-1 US-2) ──────────────
+      COVERS_CACHE_DIR: "/uploads/covers"
+
     ports:
       - "3000:3000"
+
+    volumes:
+      # Cache disque des covers servies en mode stream (reconstructible).
+      - manga-tracker-covers:/uploads/covers
 
     # Healthcheck Docker natif (vérifie que l'API répond avant de la marquer healthy)
     healthcheck:
@@ -62,3 +69,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+volumes:
+  manga-tracker-covers:

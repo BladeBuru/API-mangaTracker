@@ -51,6 +51,9 @@
     "src/api/comments/dto/comment.dto.ts",
     "src/api/user/dto/public-profile.dto.ts",
     "src/api/friends/dto/friend.dto.ts",
-    "src/api/user/auth/username.helper.spec.ts"
+    "src/api/user/auth/username.helper.spec.ts",
+    "src/api/mangas/cover-proxy.service.ts",
+    "src/api/mangas/manga-covers.controller.ts",
+    ".github/workflows/ci-cd.yml"
   ]
 }

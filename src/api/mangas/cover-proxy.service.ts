@@ -8,35 +8,71 @@ import { HttpService } from '@nestjs/axios';
 import { InjectRepository } from '@nestjs/typeorm';
 import { firstValueFrom } from 'rxjs';
 import { Repository } from 'typeorm';
+import { promises as fs } from 'fs';
+import * as path from 'path';
 import { MU_DETAIL_URL } from './constants';
 import { Manga } from './manga.entity';
 import { UpdateMangaService } from './update-manga.service';
 
 /**
- * Proxy de couvertures (Phase 4 — refactoré en 302 redirect).
+ * Proxy de couvertures — mode hybride 302 / stream (hotfix-v0-10-1 US-2).
  *
- * **Stratégie révisée** : plutôt que de fetch upstream MU côté serveur
- * Node (qui peut être bloqué par MU CDN selon User-Agent, géo IP, ou
- * réseau du serveur API), on **redirige (302) le client** vers l'URL MU.
- * Le navigateur (ou `cached_network_image` côté Flutter mobile) gère le
- * fetch et le cache.
+ * **Mode `redirect` (défaut, mobile)** : on redirige (302) le client vers
+ * l'URL MU — le fetch Node-side peut être bloqué par le CDN MU (User-Agent,
+ * géo IP), le navigateur/`cached_network_image` gère le fetch et le cache.
  *
- * Avantages :
- *  - Pas de fetch Node-side → fin du problème User-Agent / TLS / DNS.
- *  - Browser cache natif (et NPMplus peut cacher la redirection 302).
- *  - Si l'URL upstream MU est 404, le client retombe sur `refresh-cover`
- *    (fallback existant côté Flutter via `RefreshableMangaImage`).
- *  - Drastiquement moins de bande passante côté serveur API.
+ * **Mode `stream` (Flutter Web)** : sur le web, CanvasKit fetch les bytes
+ * de l'image → le navigateur suit le 302 vers `cdn.mangaupdates.com` qui
+ * n'envoie PAS de header CORS → image bloquée. En mode stream, l'API fetch
+ * les bytes elle-même (User-Agent navigateur), les met en cache disque
+ * (`COVERS_CACHE_DIR`, défaut `./uploads/covers`) et les sert directement —
+ * même origine que l'API → CORS OK.
  *
- * Le service expose uniquement la résolution `muId → URL stable` ; le
- * controller fait le `res.redirect(302, url)`.
+ * Échec du fetch upstream en mode stream → le controller retombe sur le
+ * 302 (dégradation douce — pas de 500).
  */
 
 export type CoverSize = 'small' | 'medium' | 'large';
 
+/** Bytes + content-type d'une cover servie en mode stream. */
+export interface CoverPayload {
+  data: Buffer;
+  contentType: string;
+}
+
+/** Extensions gérées par le cache disque, mappées par content-type. */
+const EXT_BY_CONTENT_TYPE: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+const CONTENT_TYPE_BY_EXT: Record<string, string> = Object.fromEntries(
+  Object.entries(EXT_BY_CONTENT_TYPE).map(([ct, ext]) => [ext, ct]),
+);
+
+/**
+ * User-Agent navigateur réaliste pour le fetch upstream : le CDN MU bloque
+ * certains User-Agents serveur (raison historique du refactor 302).
+ */
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
 @Injectable()
 export class CoverProxyService {
   private readonly logger = new Logger(CoverProxyService.name);
+
+  /**
+   * Dossier du cache disque des covers (mode stream). Monté sur un volume
+   * NAS en prod via `COVERS_CACHE_DIR`. Si le dossier n'est pas créable
+   * (droits), le cache est désactivé silencieusement (pass-through).
+   */
+  private readonly cacheDir =
+    process.env.COVERS_CACHE_DIR ??
+    path.join(process.cwd(), 'uploads', 'covers');
+
+  private cacheDirReady: Promise<boolean> | null = null;
 
   constructor(
     @InjectRepository(Manga)
@@ -44,6 +80,95 @@ export class CoverProxyService {
     private readonly updateMangaService: UpdateMangaService,
     private readonly httpService: HttpService,
   ) {}
+
+  /**
+   * Sert les bytes d'une cover (mode `stream`, hotfix-v0-10-1 US-2) :
+   *  1. cache disque → hit : servi sans re-fetch upstream ;
+   *  2. miss : résolution URL (logique 302 existante) + fetch bytes avec
+   *     User-Agent navigateur + écriture disque best-effort.
+   *
+   * @throws si l'upstream est inaccessible — le controller retombe en 302.
+   */
+  async streamCover(muId: number, size: CoverSize): Promise<CoverPayload> {
+    const cached = await this.readDiskCache(muId, size);
+    if (cached) return cached;
+
+    const url = await this.resolveUpstreamUrl(muId, size);
+    const payload = await this.fetchImageBytes(url);
+    await this.writeDiskCache(muId, size, payload);
+    return payload;
+  }
+
+  /** Fetch les bytes d'une image upstream (timeout 8s, UA navigateur). */
+  private async fetchImageBytes(url: string): Promise<CoverPayload> {
+    const response = await firstValueFrom(
+      this.httpService.get<ArrayBuffer>(url, {
+        timeout: 8000,
+        responseType: 'arraybuffer',
+        headers: { 'User-Agent': BROWSER_UA, Accept: 'image/*' },
+      }),
+    );
+    const contentType =
+      (response.headers?.['content-type'] as string | undefined) ??
+      'image/jpeg';
+    return { data: Buffer.from(response.data), contentType };
+  }
+
+  /** Lecture du cache disque — null si miss ou cache indisponible. */
+  private async readDiskCache(
+    muId: number,
+    size: CoverSize,
+  ): Promise<CoverPayload | null> {
+    if (!(await this.ensureCacheDir())) return null;
+    for (const [ext, contentType] of Object.entries(CONTENT_TYPE_BY_EXT)) {
+      try {
+        const data = await fs.readFile(this.cachePath(muId, size, ext));
+        return { data, contentType };
+      } catch {
+        // Fichier absent pour cette extension — on essaie la suivante.
+      }
+    }
+    return null;
+  }
+
+  /** Écriture best-effort : un échec disque ne casse jamais la réponse. */
+  private async writeDiskCache(
+    muId: number,
+    size: CoverSize,
+    payload: CoverPayload,
+  ): Promise<void> {
+    if (!(await this.ensureCacheDir())) return;
+    const ext = EXT_BY_CONTENT_TYPE[payload.contentType] ?? 'jpg';
+    try {
+      await fs.writeFile(this.cachePath(muId, size, ext), payload.data);
+    } catch (err) {
+      this.logger.warn(
+        `Cover disk cache write failed muId=${muId}: ${err?.message ?? err}`,
+      );
+    }
+  }
+
+  private cachePath(muId: number, size: CoverSize, ext: string): string {
+    return path.join(this.cacheDir, `${muId}-${size}.${ext}`);
+  }
+
+  /** Crée le dossier de cache au premier usage (résultat mémoïsé). */
+  private ensureCacheDir(): Promise<boolean> {
+    if (!this.cacheDirReady) {
+      this.cacheDirReady = fs
+        .mkdir(this.cacheDir, { recursive: true })
+        .then(() => true)
+        .catch((err) => {
+          this.logger.warn(
+            `Covers cache dir unavailable (${this.cacheDir}): ${
+              err?.message ?? err
+            } — disk cache disabled`,
+          );
+          return false;
+        });
+    }
+    return this.cacheDirReady;
+  }
 
   /**
    * Résout l'URL upstream à utiliser pour un manga.
