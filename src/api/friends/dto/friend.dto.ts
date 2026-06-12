@@ -1,13 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  Length,
-} from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Length } from 'class-validator';
 import { FriendshipStatus, UserFriendship } from '../user-friendship.entity';
 import User from '@/api/user/user.entity';
+import { stripEmailFormat } from '@/api/user/auth/username.helper';
 
 /**
  * Body pour `POST /friends/request`. Permet d'envoyer une demande
@@ -15,7 +10,10 @@ import User from '@/api/user/user.entity';
  * dans le service).
  */
 export class SendFriendRequestDto {
-  @ApiPropertyOptional({ description: "ID de l'utilisateur cible", example: 42 })
+  @ApiPropertyOptional({
+    description: "ID de l'utilisateur cible",
+    example: 42,
+  })
   @IsOptional()
   @IsInt()
   addresseeId?: number;
@@ -82,8 +80,11 @@ export class FriendshipDto {
     dto.status = friendship.status;
     dto.direction = isRequester ? 'sent' : 'received';
     dto.otherUserId = other.id;
-    dto.otherUsername = other.username;
-    dto.otherDisplayName = other.displayName ?? null;
+    // Defense-in-depth RGPD : jamais de format email exposé (hotfix-v0-10-1).
+    dto.otherUsername = stripEmailFormat(other.username);
+    dto.otherDisplayName = other.displayName
+      ? stripEmailFormat(other.displayName)
+      : null;
     dto.otherAvatarUrl = other.avatarUrl ?? null;
     dto.createdAt = friendship.createdAt.toISOString();
     dto.acceptedAt = friendship.acceptedAt?.toISOString() ?? null;
@@ -108,8 +109,10 @@ export class UserSearchResultDto {
   static fromEntity(user: User): UserSearchResultDto {
     const dto = new UserSearchResultDto();
     dto.id = user.id;
-    dto.username = user.username;
-    dto.displayName = user.displayName ?? null;
+    dto.username = stripEmailFormat(user.username);
+    dto.displayName = user.displayName
+      ? stripEmailFormat(user.displayName)
+      : null;
     dto.avatarUrl = user.avatarUrl ?? null;
     return dto;
   }

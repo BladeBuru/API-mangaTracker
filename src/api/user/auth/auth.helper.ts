@@ -51,7 +51,10 @@ export class AuthHelper {
   }
 
   /** Crée une nouvelle session pour un appareil */
-  public async createSession(user: User, deviceInfo?: string): Promise<UserSession> {
+  public async createSession(
+    user: User,
+    deviceInfo?: string,
+  ): Promise<UserSession> {
     const session = this.sessionRepository.create({
       id: randomUUID(),
       user,

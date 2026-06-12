@@ -16,6 +16,11 @@ import {
 } from './auth.dto';
 import { AuthHelper } from './auth.helper';
 import User, { AuthProvider } from '../user.entity';
+import {
+  sanitizeUsername,
+  usernameFromEmail,
+  withRandomSuffix,
+} from './username.helper';
 import { UserInformationDto } from '@/api/user/dto/user-information.dto';
 
 @Injectable()
@@ -52,6 +57,9 @@ export class AuthService {
 
     user = new User();
     user.username = name;
+    // displayName rempli dès l'inscription : c'est lui qui est affiché
+    // publiquement (commentaires, profil) — le username sert de fallback.
+    user.displayName = name ?? null;
     user.email = email;
     user.password = this.helper.encodePassword(password);
     user.authProvider = AuthProvider.LOCAL;
@@ -209,11 +217,12 @@ export class AuthService {
       );
     }
 
-    this.logger.log(`🟢 Connexion Google mobile pour: ${payload.email}`);
+    // RGPD : ne jamais logger l'email (règle projet) — log neutre.
+    this.logger.log('🟢 Connexion Google mobile vérifiée');
     return this.findOrCreateGoogleUser(
       payload.sub,
       payload.email,
-      payload.name ?? payload.email,
+      payload.name ?? '',
       dto.deviceInfo,
     );
   }
@@ -222,7 +231,7 @@ export class AuthService {
   public async findOrCreateGoogleUser(
     googleId: string,
     email: string,
-    username: string,
+    displayName: string,
     deviceInfo?: string,
   ): Promise<TokenDto> {
     let user = await this.repository.findOne({ where: { googleId } });
@@ -236,10 +245,17 @@ export class AuthService {
         user.googleId = googleId;
         await this.repository.save(user);
       } else {
-        // Nouveau compte créé via Google
+        // Nouveau compte créé via Google. **RGPD (hotfix-v0-10-1 US-1)** :
+        // le username ne doit JAMAIS être l'email complet — il est exposé
+        // publiquement. On dérive depuis le displayName Google, sinon depuis
+        // la part locale de l'email, avec résolution de collision.
+        const username = await this.resolveAvailableUsername(
+          sanitizeUsername(displayName) ?? usernameFromEmail(email) ?? 'user',
+        );
         user = this.repository.create({
           email,
           username,
+          displayName: sanitizeUsername(displayName) ?? username,
           googleId,
           authProvider: AuthProvider.GOOGLE,
           password: null,
@@ -252,5 +268,22 @@ export class AuthService {
     const session = await this.helper.createSession(user, deviceInfo);
     await this.repository.update(user.id, { lastLoginAt: new Date() });
     return this.helper.generateToken(user, session.id);
+  }
+
+  /**
+   * Retourne `base` si l'username est libre (case-insensitive, RETRO-006),
+   * sinon ajoute un suffixe aléatoire à 4 chiffres (3 tentatives max avant
+   * fallback timestamp — collision quasi impossible en pratique).
+   */
+  private async resolveAvailableUsername(base: string): Promise<string> {
+    let candidate = base;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const taken = await this.repository.findOne({
+        where: { username: ILike(candidate) },
+      });
+      if (!taken) return candidate;
+      candidate = withRandomSuffix(base);
+    }
+    return withRandomSuffix(`${base.slice(0, 20)}${Date.now() % 10000}`);
   }
 }

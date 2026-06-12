@@ -21,7 +21,7 @@ import { UserGender } from '../user.entity';
  */
 export class UpdateProfileDto {
   @ApiPropertyOptional({
-    description: "Nom à afficher publiquement (distinct du username)",
+    description: 'Nom à afficher publiquement (distinct du username)',
     example: 'Otaku Sensei',
   })
   @IsOptional()
@@ -31,7 +31,8 @@ export class UpdateProfileDto {
 
   @ApiPropertyOptional({
     description: 'Courte description du profil (max 500 chars)',
-    example: 'Fan de seinen depuis 2010. Top 3 : Berserk, Vinland Saga, Vagabond.',
+    example:
+      'Fan de seinen depuis 2010. Top 3 : Berserk, Vinland Saga, Vagabond.',
   })
   @IsOptional()
   @IsString()
@@ -65,7 +66,10 @@ export class UpdateProfileDto {
   @MaxLength(200_000)
   @Matches(
     /^(https?:\/\/[^\s]+|data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+)$/,
-    { message: 'avatarUrl doit être une URL http(s) ou un data URL image base64' },
+    {
+      message:
+        'avatarUrl doit être une URL http(s) ou un data URL image base64',
+    },
   )
   public readonly avatarUrl?: string;
 

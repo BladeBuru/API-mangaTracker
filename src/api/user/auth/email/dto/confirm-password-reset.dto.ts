@@ -21,7 +21,11 @@ import {
  * faciles ; on s'appuie surtout sur la longueur (NIST recommandation).
  */
 export class ConfirmPasswordResetDto {
-  @ApiProperty({ description: 'Token reçu par email', minLength: 64, maxLength: 64 })
+  @ApiProperty({
+    description: 'Token reçu par email',
+    minLength: 64,
+    maxLength: 64,
+  })
   @IsString()
   @IsNotEmpty()
   @IsHexadecimal()

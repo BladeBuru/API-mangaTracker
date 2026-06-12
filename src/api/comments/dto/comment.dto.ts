@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { MangaComment } from '../manga-comment.entity';
+import { stripEmailFormat } from '@/api/user/auth/username.helper';
 
 /**
  * Tri possible pour la liste des commentaires (top-level uniquement).
@@ -129,8 +130,13 @@ export class CommentDto {
     dto.content = c.isDeleted ? '[supprimé]' : c.content;
     dto.rating = c.isDeleted ? null : c.rating;
     dto.authorId = c.user?.id;
-    dto.authorUsername = c.user?.username ?? '';
-    dto.authorDisplayName = c.user?.displayName ?? null;
+    // Defense-in-depth RGPD (hotfix-v0-10-1 US-1) : si une donnée legacy au
+    // format email a survécu à la migration SanitizeEmailUsernames, on ne
+    // l'expose JAMAIS — on tronque à la part locale.
+    dto.authorUsername = stripEmailFormat(c.user?.username ?? '');
+    dto.authorDisplayName = c.user?.displayName
+      ? stripEmailFormat(c.user.displayName)
+      : null;
     dto.authorAvatarUrl = c.user?.avatarUrl ?? null;
     dto.parentCommentId = c.parentComment?.id ?? null;
     dto.isDeleted = c.isDeleted;

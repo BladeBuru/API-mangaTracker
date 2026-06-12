@@ -16,7 +16,9 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       scope: ['email', 'profile'],
     });
     this.logger.log(`✅ GoogleStrategy initialisée`);
-    this.logger.log(`   CLIENT_ID   : ${process.env.GOOGLE_CLIENT_ID?.slice(0, 20)}...`);
+    this.logger.log(
+      `   CLIENT_ID   : ${process.env.GOOGLE_CLIENT_ID?.slice(0, 20)}...`,
+    );
     this.logger.log(`   CALLBACK_URL: ${process.env.GOOGLE_CALLBACK_URL}`);
   }
 
@@ -26,17 +28,17 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     profile: any,
     done: VerifyCallback,
   ): Promise<void> {
-    this.logger.log(`🔑 Google callback reçu — profil: ${profile?.displayName} (${profile?.id})`);
+    // RGPD : ne jamais logger email ni displayName (règle projet).
+    this.logger.log(`🔑 Google callback reçu (googleId: ${profile?.id})`);
     const { id, emails, displayName } = profile;
     const email = emails?.[0]?.value;
-    this.logger.log(`   Email: ${email}`);
     try {
       const tokens: TokenDto = await this.authService.findOrCreateGoogleUser(
         id,
         email,
         displayName,
       );
-      this.logger.log(`✅ Utilisateur Google authentifié : ${email}`);
+      this.logger.log('✅ Utilisateur Google authentifié');
       done(null, tokens);
     } catch (err) {
       this.logger.error(`❌ Erreur lors de findOrCreateGoogleUser : ${err}`);

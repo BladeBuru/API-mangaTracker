@@ -15,7 +15,12 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { randomBytes } from 'crypto';
-import { RegisterDto, LoginDto, TokenDto, GoogleMobileLoginDto } from './auth.dto';
+import {
+  RegisterDto,
+  LoginDto,
+  TokenDto,
+  GoogleMobileLoginDto,
+} from './auth.dto';
 import { AuthService } from './auth.service';
 import User from '../user.entity';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -36,9 +41,15 @@ export class AuthController {
   @Inject(EmailService)
   private readonly emailService: EmailService;
 
-  @ApiOperation({ summary: 'Register user (envoie automatiquement un mail de vérification)' })
+  @ApiOperation({
+    summary: 'Register user (envoie automatiquement un mail de vérification)',
+  })
   @ApiResponse({ status: 403, description: 'Forbidden' })
-  @ApiResponse({ status: 200, description: 'The found record', type: UserInformationDto })
+  @ApiResponse({
+    status: 200,
+    description: 'The found record',
+    type: UserInformationDto,
+  })
   @Post('register')
   @UseInterceptors(ClassSerializerInterceptor)
   private async register(
@@ -52,7 +63,9 @@ export class AuthController {
       .sendVerificationEmail(user.id, ip)
       .catch((err) =>
         this.logger.warn(
-          `Failed to send verification email after register for userId=${user.id}: ${err?.message ?? err}`,
+          `Failed to send verification email after register for userId=${
+            user.id
+          }: ${err?.message ?? err}`,
         ),
       );
     return UserInformationDto.fromEntity(user);
@@ -68,7 +81,11 @@ export class AuthController {
 
   @ApiOperation({ summary: 'Refresh token avec rotation de session' })
   @ApiResponse({ status: 403, description: 'Session invalide ou expirée' })
-  @ApiResponse({ status: 201, description: 'Nouveaux tokens JWT', type: TokenDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Nouveaux tokens JWT',
+    type: TokenDto,
+  })
   @Post('refresh')
   @UseGuards(RefreshTokenGuard)
   private refresh(
@@ -93,13 +110,13 @@ export class AuthController {
   @Post('logout-all')
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(AuthGuard('jwt'))
-  private logoutAll(
-    @UserDecorator() user: User,
-  ): Promise<void> {
+  private logoutAll(@UserDecorator() user: User): Promise<void> {
     return this.service.logoutAll(user.id);
   }
 
-  @ApiOperation({ summary: 'Connexion Google via app mobile (idToken google_sign_in)' })
+  @ApiOperation({
+    summary: 'Connexion Google via app mobile (idToken google_sign_in)',
+  })
   @ApiResponse({ status: 201, description: 'Tokens JWT', type: TokenDto })
   @Post('google/mobile')
   googleMobileLogin(@Body() body: GoogleMobileLoginDto): Promise<TokenDto> {
@@ -152,8 +169,14 @@ export class AuthController {
       // Échappe les tokens JWT pour le contexte JS (pas de quote possible mais
       // ceinture & bretelles : on encode pour éviter toute injection si un
       // jour le format change).
-      const safeAccessToken = tokens.accessToken.replace(/[^a-zA-Z0-9._-]/g, '');
-      const safeRefreshToken = tokens.refreshToken.replace(/[^a-zA-Z0-9._-]/g, '');
+      const safeAccessToken = tokens.accessToken.replace(
+        /[^a-zA-Z0-9._-]/g,
+        '',
+      );
+      const safeRefreshToken = tokens.refreshToken.replace(
+        /[^a-zA-Z0-9._-]/g,
+        '',
+      );
       res.send(`<!DOCTYPE html>
 <html>
   <head><meta charset="utf-8"><title>Connexion réussie</title></head>

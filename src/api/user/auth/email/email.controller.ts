@@ -129,7 +129,10 @@ export class EmailController {
     @Body() dto: ConfirmPasswordResetDto,
     @Ip() ip: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    const passwordHash = bcrypt.hashSync(dto.newPassword, bcrypt.genSaltSync(10));
+    const passwordHash = bcrypt.hashSync(
+      dto.newPassword,
+      bcrypt.genSaltSync(10),
+    );
     const userId = await this.emailService.confirmPasswordReset(
       dto.token,
       passwordHash,

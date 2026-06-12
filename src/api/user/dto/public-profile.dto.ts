@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import User from '../user.entity';
+import { stripEmailFormat } from '../auth/username.helper';
 
 /**
  * Profil public d'un utilisateur — exposé via `GET /user/profile/:id` quand
@@ -30,8 +31,9 @@ export class PublicProfileDto {
   static fromEntity(user: User): PublicProfileDto {
     const dto = new PublicProfileDto();
     dto.id = user.id;
-    dto.username = user.username;
-    dto.displayName = user.displayName ?? user.username;
+    // Defense-in-depth RGPD : jamais de format email exposé (hotfix-v0-10-1).
+    dto.username = stripEmailFormat(user.username);
+    dto.displayName = stripEmailFormat(user.displayName ?? user.username);
     dto.bio = user.bio ?? null;
     dto.avatarUrl = user.avatarUrl ?? null;
     dto.accountCreatedAt =
