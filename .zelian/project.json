@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "framework_version": "2.5.8",
+  "project_id": "b52c986e-5adf-466b-8ae4-18e21e4384f8",
+  "initialized_at": "2026-06-04T12:34:24.528Z",
+  "stack": "NestJS 9 (`@nestjs/core ^9.0.0`, `@nestjs/common ^9.0.0`)",
+  "monorepo": false,
+  "apps": [],
+  "initialized_via": "retro"
+}

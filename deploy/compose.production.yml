@@ -20,7 +20,7 @@ services:
       JWT_KEY: "${JWT_KEY}"
       JWT_REFRESH_SECRET: "${JWT_REFRESH_SECRET}"
       JWT_KEY_EXPIRES_IN: "${JWT_KEY_EXPIRES_IN:-1h}"
-      JWT_REFRESH_SECRET_EXPIRES_IN: "${JWT_REFRESH_SECRET_EXPIRES_IN:-7d}"
+      JWT_REFRESH_SECRET_EXPIRES_IN: "${JWT_REFRESH_SECRET_EXPIRES_IN:-90d}"
 
       # ── HTTP ───────────────────────────────────────────────────
       HTTP_TIMEOUT: "15000"

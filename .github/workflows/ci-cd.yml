@@ -196,7 +196,9 @@ jobs:
                   JWT_KEY: "{JWT_KEY}"
                   JWT_REFRESH_SECRET: "{JWT_REFRESH_SECRET}"
                   JWT_KEY_EXPIRES_IN: "1h"
-                  JWT_REFRESH_SECRET_EXPIRES_IN: "7d"
+                  # 90d : standard apps de tracking média (Goodreads/MAL : 30-180j).
+                  # 7d forçait un re-login hebdomadaire injustifié (spec hotfix-v0-10-1 US-3).
+                  JWT_REFRESH_SECRET_EXPIRES_IN: "90d"
                   HTTP_TIMEOUT: "15000"
                   HTTP_MAX_REDIRECT: "1"
                   ENABLE_DEBUG_MESSAGES_FOR_API_CLIENT: "false"
