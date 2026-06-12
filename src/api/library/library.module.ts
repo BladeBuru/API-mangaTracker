@@ -11,14 +11,15 @@ import { HttpModule } from '@nestjs/axios';
 import { UpdateMangaService } from '../mangas/update-manga.service';
 import { UserMangaChapterLog } from './user-manga-chapter-log.entity';
 import { ChapterLogService } from './chapter-log.service';
-import { RecommendationModule } from '../recommendations/recommendation.module';
+import { RecoCacheModule } from '../recommendations/reco-cache.module';
 
 @Module({
   imports: [
     forwardRef(() => MangasModule),
     // Pour RecoCacheService : invalidation du cache recos d'un user sur
-    // mutation de sa bibliothèque (hotfix-v0-10-1 US-4).
-    RecommendationModule,
+    // mutation de sa bibliothèque (hotfix-v0-10-1 US-4). Module autonome
+    // sans dépendance → pas de cycle library → recommendations.
+    RecoCacheModule,
     HttpModule,
     TypeOrmModule.forFeature([Manga, User, UserManga, UserMangaChapterLog]),
   ],
