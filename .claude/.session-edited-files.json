@@ -62,6 +62,12 @@
     "src/api/library/library.module.ts",
     "src/api/recommendations/recommendation.service.spec.ts",
     "C:/Users/User/Documents/Travail/Perso/Crea-entrprise/manga_tracker/lib/features/auth/views/login.view.dart",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "src/api/recommendations/reco-cache.module.ts",
+    "src/api/mangas/mangas.module.ts",
+    "docs/specs/hotfix-v0-10-1/spec-technique.md",
+    ".claude/memory-bank/progress.md",
+    "src/api/sharing/dto/reading-group.dto.ts",
+    "src/api/sharing/dto/share.dto.ts"
   ]
 }

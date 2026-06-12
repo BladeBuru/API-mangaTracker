@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { stripEmailFormat } from '@/api/user/auth/username.helper';
 import {
   ArrayMinSize,
   ArrayUnique,
@@ -12,7 +13,7 @@ import { MangaShare } from '../manga-share.entity';
 
 export class ShareMangaDto {
   @ApiProperty({
-    description: "IDs des amis à qui partager (max 20)",
+    description: 'IDs des amis à qui partager (max 20)',
     example: [42, 17],
   })
   @IsArray()
@@ -63,7 +64,8 @@ export class MangaShareDto {
     const dto = new MangaShareDto();
     dto.id = share.id;
     dto.senderId = share.sender.id;
-    dto.senderUsername = share.sender.username;
+    // Defense-in-depth RGPD : jamais de format email exposé.
+    dto.senderUsername = stripEmailFormat(share.sender.username);
     dto.senderAvatarUrl = share.sender.avatarUrl ?? null;
     dto.mangaMuId = share.manga.mu_id;
     dto.mangaTitle = share.manga.title;

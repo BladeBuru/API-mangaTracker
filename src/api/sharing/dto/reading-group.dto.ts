@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { stripEmailFormat } from '@/api/user/auth/username.helper';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -131,8 +132,12 @@ export class ReadingGroupDto {
     dto.members = (group.members ?? []).map((m) => {
       const md = new ReadingGroupMemberDto();
       md.userId = m.user.id;
-      md.username = m.user.username;
-      md.displayName = m.user.displayName ?? null;
+      // Defense-in-depth RGPD : jamais de format email exposé
+      // (hotfix-v0-10-1 — oubli relevé en review adversariale).
+      md.username = stripEmailFormat(m.user.username);
+      md.displayName = m.user.displayName
+        ? stripEmailFormat(m.user.displayName)
+        : null;
       md.avatarUrl = m.user.avatarUrl ?? null;
       md.readChapters = progressByUser[m.user.id] ?? null;
       md.customLink = customLinksByUser[m.user.id] ?? null;
