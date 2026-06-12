@@ -19,6 +19,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
+import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
 import { FriendsService } from './friends.service';
 import {
   FriendshipDto,
@@ -36,7 +37,10 @@ export class FriendsController {
 
   @ApiOperation({ summary: "Envoyer une demande d'amitié" })
   @ApiResponse({ status: 201, type: FriendshipDto })
-  @ApiResponse({ status: 400, description: 'Relation déjà existante / self-add' })
+  @ApiResponse({
+    status: 400,
+    description: 'Relation déjà existante / self-add',
+  })
   @ApiResponse({ status: 403, description: 'Relation bloquée' })
   @ApiResponse({ status: 404, description: 'Utilisateur introuvable' })
   // Anti-spam : 5 demandes par minute par user (throttler explicite).
@@ -71,6 +75,19 @@ export class FriendsController {
     @UserDecorator() user: any,
   ): Promise<UserSearchResultDto[]> {
     return this.service.searchUsers(user.id, query ?? '');
+  }
+
+  @ApiOperation({
+    summary: "Bibliothèque d'un ami (amitié acceptée requise)",
+  })
+  @ApiResponse({ status: 200, type: [MangaQuickViewDto] })
+  @ApiResponse({ status: 403, description: 'Pas amis' })
+  @Get(':id/library')
+  async friendLibrary(
+    @Param('id', ParseIntPipe) id: number,
+    @UserDecorator() user: any,
+  ): Promise<MangaQuickViewDto[]> {
+    return this.service.getFriendLibrary(user.id, id);
   }
 
   @ApiOperation({

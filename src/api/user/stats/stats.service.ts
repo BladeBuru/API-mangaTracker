@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import User from '@/api/user/user.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
+import { UserMangaChapterLog } from '@/api/library/user-manga-chapter-log.entity';
 import { UserStatsDto } from './stats.dto';
 import { ReadingStatus } from '@/api/library/reading-status.enum';
 
@@ -22,6 +23,8 @@ export class StatsService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(UserManga)
     private readonly userMangaRepository: Repository<UserManga>,
+    @InjectRepository(UserMangaChapterLog)
+    private readonly chapterLogRepository: Repository<UserMangaChapterLog>,
   ) {}
 
   /**
@@ -47,9 +50,16 @@ export class StatsService {
       (sum, um) => sum + (um.user_read_chapters ?? 0),
       0,
     );
-    const topGenres = this.computeTopGenres(userMangas);
+    const genreCounts = this.computeGenreCounts(userMangas);
     const lastReadAt = this.findLastReadAt(userMangas);
     const completionRate = this.computeCompletionRate(mangasByStatus);
+
+    // Stats v2 : journal de lecture (historique + activité hebdo). Les deux
+    // requêtes sont indépendantes → parallèle.
+    const [readingHistory, chaptersPerWeek] = await Promise.all([
+      this.fetchReadingHistory(userId),
+      this.computeChaptersPerWeek(userId),
+    ]);
 
     this.logger.log(
       `User stats requested for userId=${userId} (${userMangas.length} mangas)`,
@@ -60,13 +70,68 @@ export class StatsService {
       totalChaptersRead,
       estimatedReadingTimeMinutes:
         totalChaptersRead * AVERAGE_MINUTES_PER_CHAPTER,
-      topGenres,
+      topGenres: genreCounts.slice(0, 5).map((g) => g.genre),
       lastReadAt: lastReadAt?.toISOString() ?? null,
       completionRate,
       accountCreatedAt:
         user.createdAt?.toISOString() ?? new Date().toISOString(),
       totalMangas: userMangas.length,
+      genreCounts,
+      readingHistory,
+      chaptersPerWeek,
     };
+  }
+
+  /**
+   * Dernières sessions de lecture (max 20, skips exclus) — Stats v2.
+   * Source : journal additif `user_manga_chapter_log` (RETRO-015).
+   */
+  private async fetchReadingHistory(
+    userId: number,
+  ): Promise<UserStatsDto['readingHistory']> {
+    const logs = await this.chapterLogRepository.find({
+      where: { user: { id: userId }, isSkipped: false },
+      relations: ['manga'],
+      order: { readAt: 'DESC' },
+      take: 20,
+    });
+    return logs.map((log) => ({
+      muId: Number(log.manga?.mu_id ?? 0),
+      mangaTitle: log.manga?.title ?? '',
+      chapterNumber: Number(log.chapterNumber),
+      isBonus: log.isBonus,
+      readAt: log.readAt.toISOString(),
+    }));
+  }
+
+  /**
+   * Sessions de lecture par semaine (8 dernières semaines, skips exclus),
+   * clé = lundi de la semaine (yyyy-MM-dd) — Stats v2, pour le graphique
+   * d'activité.
+   */
+  private async computeChaptersPerWeek(
+    userId: number,
+  ): Promise<Record<string, number>> {
+    const since = new Date();
+    since.setDate(since.getDate() - 7 * 8);
+
+    const rows: Array<{ week: string; count: string }> =
+      await this.chapterLogRepository
+        .createQueryBuilder('log')
+        .select("TO_CHAR(DATE_TRUNC('week', log.readAt), 'YYYY-MM-DD')", 'week')
+        .addSelect('COUNT(*)', 'count')
+        .where('log.user_id = :userId', { userId })
+        .andWhere('log.isSkipped = false')
+        .andWhere('log.readAt >= :since', { since })
+        .groupBy("DATE_TRUNC('week', log.readAt)")
+        .orderBy("DATE_TRUNC('week', log.readAt)", 'ASC')
+        .getRawMany();
+
+    const result: Record<string, number> = {};
+    for (const row of rows) {
+      result[row.week] = parseInt(row.count, 10);
+    }
+    return result;
   }
 
   /** Groupe les mangas par statut de lecture (4 statuts standards). */
@@ -84,11 +149,13 @@ export class StatsService {
   }
 
   /**
-   * Top 5 des genres les plus présents dans la biblio. Compte chaque
-   * occurrence (un manga "Action,Romance" compte +1 dans Action et +1
-   * dans Romance). Tri par fréquence décroissante.
+   * Genres de la biblio avec compteurs, triés par fréquence décroissante
+   * (un manga "Action,Romance" compte +1 dans chaque). Top 10 — le DTO
+   * `topGenres` (compat) prend les 5 premiers, les graphiques v2 tout.
    */
-  private computeTopGenres(userMangas: UserManga[]): string[] {
+  private computeGenreCounts(
+    userMangas: UserManga[],
+  ): Array<{ genre: string; count: number }> {
     const counts = new Map<string, number>();
     for (const um of userMangas) {
       const genres = um.manga?.genres ?? [];
@@ -99,8 +166,8 @@ export class StatsService {
     }
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([genre]) => genre);
+      .slice(0, 10)
+      .map(([genre, count]) => ({ genre, count }));
   }
 
   /** Max(lastUpdated) sur la biblio — null si aucun manga ou aucune date. */

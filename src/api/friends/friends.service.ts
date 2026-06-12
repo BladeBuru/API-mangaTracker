@@ -9,6 +9,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository, In, Not } from 'typeorm';
 import { FriendshipStatus, UserFriendship } from './user-friendship.entity';
 import User from '@/api/user/user.entity';
+import { UserManga } from '@/api/mangas/user-manga.entity';
+import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
 import {
   FriendshipDto,
   SendFriendRequestDto,
@@ -32,6 +34,8 @@ export class FriendsService {
     private readonly friendshipRepo: Repository<UserFriendship>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(UserManga)
+    private readonly userMangaRepo: Repository<UserManga>,
   ) {}
 
   /**
@@ -172,6 +176,51 @@ export class FriendsService {
       );
     }
     await this.friendshipRepo.remove(friendship);
+  }
+
+  /**
+   * Bibliothèque d'un ami (Stats v2 / profil ami enrichi).
+   *
+   * RGPD : accessible UNIQUEMENT si une amitié `accepted` existe entre le
+   * demandeur et `friendUserId` (peu importe le sens) — 403 sinon. Pas de
+   * condition `isProfilePublic` : l'acceptation d'amitié vaut consentement
+   * de partage de la biblio entre amis (RETRO-014 sharing-friend-only).
+   */
+  async getFriendLibrary(
+    currentUserId: number,
+    friendUserId: number,
+  ): Promise<MangaQuickViewDto[]> {
+    const friendship = await this.friendshipRepo.findOne({
+      where: [
+        {
+          requester: { id: currentUserId },
+          addressee: { id: friendUserId },
+          status: FriendshipStatus.Accepted,
+        },
+        {
+          requester: { id: friendUserId },
+          addressee: { id: currentUserId },
+          status: FriendshipStatus.Accepted,
+        },
+      ],
+    });
+    if (!friendship) {
+      throw new ForbiddenException(
+        'Vous devez être ami avec cet utilisateur pour voir sa bibliothèque',
+      );
+    }
+
+    const userMangas = await this.userMangaRepo.find({
+      where: { user: { id: friendUserId } },
+      relations: ['manga'],
+    });
+    return userMangas
+      .slice()
+      .sort(
+        (a, b) =>
+          new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime(),
+      )
+      .map((um) => MangaQuickViewDto.fromLibrary(um));
   }
 
   /** Liste des amis acceptés (peu importe le sens de la demande initiale). */

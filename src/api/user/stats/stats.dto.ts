@@ -27,7 +27,8 @@ export class UserStatsDto {
   totalChaptersRead: number;
 
   @ApiProperty({
-    description: "Temps de lecture estimé en minutes (4 min/chapitre en moyenne)",
+    description:
+      'Temps de lecture estimé en minutes (4 min/chapitre en moyenne)',
     example: 4980,
   })
   estimatedReadingTimeMinutes: number;
@@ -64,4 +65,46 @@ export class UserStatsDto {
     example: 59,
   })
   totalMangas: number;
+
+  @ApiProperty({
+    description:
+      'Top genres avec compteurs (Stats v2 — pour les graphiques). ' +
+      'Superset de `topGenres` (conservé pour compat).',
+    example: [
+      { genre: 'Action', count: 24 },
+      { genre: 'Romance', count: 17 },
+    ],
+  })
+  genreCounts: Array<{ genre: string; count: number }>;
+
+  @ApiProperty({
+    description:
+      'Historique des dernières sessions de lecture (journal chapter_log, ' +
+      'max 20, plus récentes en premier). Vide si le journal ne contient rien.',
+    example: [
+      {
+        muId: 12345,
+        mangaTitle: 'One Piece',
+        chapterNumber: 1118,
+        isBonus: false,
+        readAt: '2026-06-10T21:14:00.000Z',
+      },
+    ],
+  })
+  readingHistory: Array<{
+    muId: number;
+    mangaTitle: string;
+    chapterNumber: number;
+    isBonus: boolean;
+    readAt: string;
+  }>;
+
+  @ApiProperty({
+    description:
+      'Chapitres lus par semaine (8 dernières semaines, journal chapter_log). ' +
+      'Clé = lundi de la semaine en ISO date (yyyy-MM-dd), valeur = nombre ' +
+      'de sessions de lecture (skips exclus).',
+    example: { '2026-06-08': 12, '2026-06-01': 7 },
+  })
+  chaptersPerWeek: Record<string, number>;
 }
