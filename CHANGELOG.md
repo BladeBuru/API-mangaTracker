@@ -8,6 +8,9 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 ## [Unreleased] — sprint hotfix-v0-10-1
 
 ### Added
+- `GET /friends/:id/library` : bibliothèque d'un ami — 403 si l'amitié n'est pas acceptée (l'acceptation vaut consentement, RETRO-014) *(sprint social/stats)*
+- `GET /user/stats` enrichi Stats v2 : `readingHistory` (20 dernières sessions du journal chapter_log), `chaptersPerWeek` (8 semaines), `genreCounts` (top 10 avec compteurs) — `topGenres` conservé pour compat
+- `PUT /user/password` durci : `currentPassword` requis + révocation des sessions après changement *(sprint change-password, en cours de finalisation côté front)*
 - `GET /mangas/:muId/cover?mode=stream` : sert les bytes de la cover (cache disque `COVERS_CACHE_DIR`, User-Agent navigateur, fallback 302) — fix CORS Flutter Web
 - `RecoCacheService` + `RecoCacheModule` : cache in-memory user-level des recommandations (TTL 1h, MAX_ENTRIES 5000, invalidation sur mutation library) — micro-module autonome sans dépendance externe
 - `username.helper.ts` : sanitisation des usernames (pattern, dérivation depuis email, anti-collision, `stripEmailFormat`)
