@@ -94,6 +94,12 @@
 - ✅ Image Docker multi-stage, user `node` non-root
 - ✅ Sessions par device (UserSessionEntity, rotation refresh token)
 
+### Sprint hotfix-v0-10-1 (2026-06-12)
+- ✅ **[US-1 RGPD — 2026-06-12]** `RegisterDto.name` : validation stricte `@Matches` (3-32 chars, `@` interdit). `username.helper.ts` (NEW) : sanitisation depuis email, anti-collision. `googleStrategy` : username dérivé de `displayName` Google ou part locale email — jamais l'email complet. `displayName` rempli à la création. DTOs publics (`comments`, `friends`, `public-profile`) : `stripEmailFormat` en defense-in-depth. Logs d'emails retirés de `googleStrategy`. Migration `1749600000000-SanitizeEmailUsernames` : backfill `displayName` + réécriture des usernames au format email (part locale + suffixe anti-collision RETRO-006 unicité LOWER).
+- ✅ **[US-2 Cover stream — 2026-06-12]** `CoverProxyService.streamCover()` : serve bytes depuis cache disque `COVERS_CACHE_DIR`, fetch upstream avec User-Agent navigateur, write disque, fallback 302 si échec. `manga-covers.controller.ts` : param `?mode=stream` → 200 bytes, sinon 302 actuel. Volume Docker `manga-tracker-covers` dans `ci-cd.yml` et `compose.production.yml`.
+- ✅ **[US-3 Refresh 90d — 2026-06-12]** `JWT_REFRESH_SECRET_EXPIRES_IN` : 7d → 90d dans `ci-cd.yml` (job deploy) et `compose.production.yml` (default `:-90d`).
+- ✅ **[US-4 Cache recos — 2026-06-12]** `RecoCacheService` (in-memory, TTL 1h, `MAX_ENTRIES=5000`, invalidation ciblée O(k) par user) + `RecoCacheModule` (micro-module autonome sans dépendance — casse le cycle `LibraryModule→RecommendationModule→MangasModule→LibraryModule` qui crashait le bootstrap). `RecommendationService` : wrap cache sur `buildUserRecommendations`/`buildUserRecommendationsByGenre`. `LibraryService` : `invalidateUser` sur toute mutation. Caps `MAX_RECOS_PER_SOURCE` 30→40, `ADAPTIVE_FALLBACK_CAP` 60→80.
+
 ---
 
 ## 🔴 À implémenter
@@ -110,7 +116,7 @@
 > Voir `.claude/skills/secure-deployment/SKILL.md` pour le workflow complet.
 
 ### Court terme
-- 🔴 Endpoint proxy pour les images MangaUpdates (CORS)
+- ✅ ~~Endpoint proxy pour les images MangaUpdates (CORS)~~ — résolu par US-2 (mode=stream, cache disque)
 - 🔴 Traduction des champs manga (titre, description) selon la langue utilisateur
 - 🔴 Historique de recherche utilisateur
 - 🔴 Confirmation e-mail

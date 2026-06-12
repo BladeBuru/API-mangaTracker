@@ -3,23 +3,54 @@
 | Champ      | Valeur                          |
 |------------|---------------------------------|
 | Module     | hotfix-v0-10-1                  |
-| Version    | 0.1.0                           |
-| Date       | 2026-06-11                      |
+| Version    | 0.2.0                           |
+| Date       | 2026-06-12                      |
 | Auteur     | Claude (audits vérifiés)        |
-| Statut     | À valider                       |
+| Statut     | Implémenté — à valider          |
 
 ---
 
 ## Architecture
 
-Quatre chantiers indépendants, aucun nouveau module. Tout reste dans les modules existants (`user/auth`, `comments`, `mangas`, `recommendations`).
+Quatre chantiers indépendants. US-4 a introduit **deux nouveaux fichiers** : `RecoCacheService` (service in-memory maison) et `RecoCacheModule` (micro-module autonome sans dépendance). Les autres chantiers restent dans les modules existants.
 
 ```
 US-1 RGPD username      → AuthModule (validation + OAuth) + migration
 US-2 Cover stream       → MangasModule (cover-proxy.service + controller)
 US-3 Refresh 90d        → CI/CD env uniquement (aucun code)
-US-4 Cache recos        → RecommendationModule (+ @nestjs/cache-manager)
+US-4 Cache recos        → RecoCacheModule (NEW, autonome) + RecommendationModule + LibraryModule + MangasModule
 ```
+
+### US-4 — Architecture réelle vs spec initiale
+
+La spec initiale prévoyait `@nestjs/cache-manager` injecté dans `RecommendationModule`. L'implémentation réelle est différente :
+
+**Implémentation choisie : service in-memory maison + micro-module autonome**
+
+`RecoCacheService` (`src/api/recommendations/reco-cache.service.ts`) est un `@Injectable()` qui maintient deux `Map` internes :
+- `store : Map<string, { expiresAt: number; data: unknown }>` — entrées TTL 1h, clé `${userId}:${variant}`
+- `keysByUser : Map<number, Set<string>>` — index inverse userId → clés, pour invalidation ciblée O(k)
+
+Garde-fous : `MAX_ENTRIES = 5000` avec flush complet si atteint (le cache est une optimisation, pas une source de vérité).
+
+`RecoCacheModule` (`src/api/recommendations/reco-cache.module.ts`) est un module sans import, sans dépendance externe :
+```typescript
+@Module({ providers: [RecoCacheService], exports: [RecoCacheService] })
+export class RecoCacheModule {}
+```
+
+**Raison du choix** : `@nestjs/cache-manager` injecté dans `RecommendationModule` créait un cycle de modules au bootstrap :
+`LibraryModule` → `RecoCacheService` → `RecommendationModule` → `MangasModule` → `LibraryModule`
+(cycle détecté car `MangasModule` re-déclare `LibraryService` dans ses providers). Un module autonome sans dépendance est importable par les trois modules sans créer de cycle. Le singleton `RecoCacheService` est partagé entre tous les contextes d'injection grâce au mécanisme de modules NestJS.
+
+**Modules importeurs de `RecoCacheModule`** :
+| Module | Raison |
+|--------|--------|
+| `RecommendationModule` | lecture et écriture du cache sur `GET /recommendations` |
+| `LibraryModule` | invalidation sur toute mutation (add/remove/status/chapter/rating) |
+| `MangasModule` | même raison que LibraryModule (LibraryService re-déclaré dans ses providers) |
+
+**Note** : `@nestjs/cache-manager` n'a pas été ajouté aux dépendances. Pas de migration `package.json`.
 
 ## Fichiers impactés (preuves d'audit fichier:ligne)
 
@@ -65,10 +96,13 @@ Consommation unique vérifiée : `src/api/user/auth/auth.helper.ts:47`.
 
 | Fichier | Changement |
 |---|---|
-| `package.json` | + `@nestjs/cache-manager` + `cache-manager` |
-| `src/api/recommendations/recommendation.module.ts` | + `CacheModule.register({ ttl: 3_600_000 })` |
-| `src/api/recommendations/recommendation.service.ts` | Wrap `buildUserRecommendations` / `buildUserRecommendationsByGenre` : clé `recos:${userId}:${genre ?? 'all'}:${limit}:${offset}` ; get → return, miss → compute + set |
-| `src/api/library/library.service.ts` | Sur mutation (add/remove/status/chapter) : `cache.del()` par préfixe `recos:${userId}:` (itération des clés connues ou seconde map user→clés) |
+| `src/api/recommendations/reco-cache.service.ts` | **NEW** — `RecoCacheService` : cache in-memory maison, `get/set/invalidateUser`, TTL 1h, clé `${userId}:${variant}`, `MAX_ENTRIES=5000` |
+| `src/api/recommendations/reco-cache.module.ts` | **NEW** — `RecoCacheModule` : micro-module autonome (zéro dépendance), exporte `RecoCacheService`, importable sans cycle |
+| `src/api/recommendations/recommendation.module.ts` | + import `RecoCacheModule` (remplace le `CacheModule.register` prévu) |
+| `src/api/recommendations/recommendation.service.ts` | Wrap `buildUserRecommendations` / `buildUserRecommendationsByGenre` : `recoCache.get(userId, variant)` → return si hit ; miss → compute + `recoCache.set` ; caps `MAX_RECOS_PER_SOURCE` 30→40, `ADAPTIVE_FALLBACK_CAP` 60→80 |
+| `src/api/library/library.service.ts` | Sur mutation (add/remove/status/chapter/rating) : `recoCache.invalidateUser(userId)` |
+| `src/api/library/library.module.ts` | + import `RecoCacheModule` |
+| `src/api/mangas/mangas.module.ts` | + import `RecoCacheModule` (car `LibraryService` est re-déclaré dans ses providers — nécessaire pour le bootstrap) |
 
 ## Schéma BDD
 
