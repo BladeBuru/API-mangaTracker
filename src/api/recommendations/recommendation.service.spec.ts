@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { RecommendationService } from './recommendation.service';
+import { RecoCacheService } from './reco-cache.service';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { MangaRecommendation } from '@/api/mangas/manga-recommendation.entity';
 import { Manga } from '@/api/mangas/manga.entity';
@@ -82,8 +83,14 @@ describe('RecommendationService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RecommendationService,
+        // Instance réelle (in-memory pur) — recréée à chaque test par le
+        // beforeEach, donc pas de fuite de cache entre les cas.
+        RecoCacheService,
         { provide: getRepositoryToken(UserManga), useValue: userMangaRepo },
-        { provide: getRepositoryToken(MangaRecommendation), useValue: recoRepo },
+        {
+          provide: getRepositoryToken(MangaRecommendation),
+          useValue: recoRepo,
+        },
         { provide: getRepositoryToken(Manga), useValue: mangaRepo },
         { provide: MangasService, useValue: mangasService },
       ],
@@ -138,9 +145,7 @@ describe('RecommendationService', () => {
     mangaRepo.find.mockImplementation(({ where }) => {
       const ids = (where as any).mu_id._value;
       return Promise.resolve(
-        ids.map((id: string) =>
-          makeManga({ mu_id: id, title: `Manga ${id}` }),
-        ),
+        ids.map((id: string) => makeManga({ mu_id: id, title: `Manga ${id}` })),
       );
     });
 
@@ -188,15 +193,17 @@ describe('RecommendationService', () => {
     ]);
 
     // Le manga source 1000 recommande 1001 (déjà en biblio) et 2000 (nouveau)
-    mangasService.getCachedRecommendations.mockImplementation((muId: number) => {
-      if (muId === 1000) {
-        return Promise.resolve([
-          makeReco('1000', '1001', 9, 'Already in lib'),
-          makeReco('1000', '2000', 8, 'New manga'),
-        ]);
-      }
-      return Promise.resolve([]);
-    });
+    mangasService.getCachedRecommendations.mockImplementation(
+      (muId: number) => {
+        if (muId === 1000) {
+          return Promise.resolve([
+            makeReco('1000', '1001', 9, 'Already in lib'),
+            makeReco('1000', '2000', 8, 'New manga'),
+          ]);
+        }
+        return Promise.resolve([]);
+      },
+    );
 
     mangaRepo.find.mockImplementation(({ where }) => {
       const targetIds = (where as any).mu_id._value;
@@ -224,8 +231,8 @@ describe('RecommendationService', () => {
   });
 
   it('limite à MAX_RECOS_PER_SOURCE pour la diversité', async () => {
-    // 4 mangas en biblio, chacun avec 35 recos disjointes : pool initial = 4×30 = 120,
-    // au-dessus de MIN_POOL_BEFORE_RELAX (50) donc le cap=30 reste appliqué.
+    // 4 mangas en biblio, chacun avec 45 recos disjointes : pool initial = 4×40 = 160,
+    // au-dessus de MIN_POOL_BEFORE_RELAX (50) donc le cap=40 reste appliqué.
     const userMangas = Array.from({ length: 4 }, (_, i) =>
       makeUserManga({
         id: i + 1,
@@ -238,11 +245,11 @@ describe('RecommendationService', () => {
       (muId: number) => {
         const base = (muId - 1000) * 100 + 2000;
         return Promise.resolve(
-          Array.from({ length: 35 }, (_, i) =>
+          Array.from({ length: 45 }, (_, i) =>
             makeReco(
               String(muId),
               String(base + i),
-              35 - i,
+              45 - i,
               `Reco ${base + i}`,
             ),
           ),
@@ -253,24 +260,44 @@ describe('RecommendationService', () => {
     mangaRepo.find.mockImplementation(({ where }) => {
       const ids = (where as any).mu_id._value;
       return Promise.resolve(
-        ids.map((id: string) =>
-          makeManga({ mu_id: id, title: `Manga ${id}` }),
-        ),
+        ids.map((id: string) => makeManga({ mu_id: id, title: `Manga ${id}` })),
       );
     });
 
     // limit=500 (=MAX_LIMIT) pour récupérer tous les candidats post-cap.
     const result = await service.buildUserRecommendations(42, 500, 0);
-    // 4 sources × cap=30 = 120 candidats (recos disjointes)
-    expect(result).toHaveLength(120);
-    // Chaque source ne contribue que ses 30 meilleurs (poids 35..6),
-    // ses 5 plus faibles (poids 5..1, muIds *30 à *34) sont tronquées.
+    // 4 sources × cap=40 = 160 candidats (recos disjointes)
+    expect(result).toHaveLength(160);
+    // Chaque source ne contribue que ses 40 meilleurs (poids 45..6),
+    // ses 5 plus faibles (poids 5..1, muIds *40 à *44) sont tronquées.
     const muIds = new Set(result.map((r) => r.muId));
-    expect(muIds.has(2029)).toBe(true); // Top 30 de la source 1000
-    expect(muIds.has(2030)).toBe(false); // 31e reco de la source 1000 → tronquée
+    expect(muIds.has(2039)).toBe(true); // Top 40 de la source 1000
+    expect(muIds.has(2040)).toBe(false); // 41e reco de la source 1000 → tronquée
   });
 
-  it("trie par score décroissant et applique offset + limit", async () => {
+  it('sert les recos depuis le cache user-level au 2e appel (US-4)', async () => {
+    userMangaRepo.find.mockResolvedValue([
+      makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
+    ]);
+    mangasService.getCachedRecommendations.mockResolvedValue([
+      makeReco('1000', '2000', 10),
+    ]);
+    mangaRepo.find.mockImplementation(({ where }) => {
+      const ids = (where as any).mu_id._value;
+      return Promise.resolve(
+        ids.map((id: string) => makeManga({ mu_id: id, title: `Manga ${id}` })),
+      );
+    });
+
+    const first = await service.buildUserRecommendations(42, 50, 0);
+    const second = await service.buildUserRecommendations(42, 50, 0);
+
+    expect(second).toEqual(first);
+    // Un seul passage dans le pipeline de scoring : le 2e appel = cache hit.
+    expect(userMangaRepo.find).toHaveBeenCalledTimes(1);
+  });
+
+  it('trie par score décroissant et applique offset + limit', async () => {
     userMangaRepo.find.mockResolvedValue([
       makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
     ]);
@@ -286,9 +313,7 @@ describe('RecommendationService', () => {
     mangaRepo.find.mockImplementation(({ where }) => {
       const ids = (where as any).mu_id._value;
       return Promise.resolve(
-        ids.map((id: string) =>
-          makeManga({ mu_id: id, title: `Manga ${id}` }),
-        ),
+        ids.map((id: string) => makeManga({ mu_id: id, title: `Manga ${id}` })),
       );
     });
 
@@ -311,22 +336,22 @@ describe('RecommendationService', () => {
       }),
     ]);
 
-    mangasService.getCachedRecommendations.mockImplementation((muId: number) => {
-      if (muId === 1000) {
-        return Promise.resolve([makeReco('1000', '2000', 10)]);
-      }
-      if (muId === 1001) {
-        return Promise.resolve([makeReco('1001', '2001', 10)]);
-      }
-      return Promise.resolve([]);
-    });
+    mangasService.getCachedRecommendations.mockImplementation(
+      (muId: number) => {
+        if (muId === 1000) {
+          return Promise.resolve([makeReco('1000', '2000', 10)]);
+        }
+        if (muId === 1001) {
+          return Promise.resolve([makeReco('1001', '2001', 10)]);
+        }
+        return Promise.resolve([]);
+      },
+    );
 
     mangaRepo.find.mockImplementation(({ where }) => {
       const ids = (where as any).mu_id._value;
       return Promise.resolve(
-        ids.map((id: string) =>
-          makeManga({ mu_id: id, title: `Manga ${id}` }),
-        ),
+        ids.map((id: string) => makeManga({ mu_id: id, title: `Manga ${id}` })),
       );
     });
 
@@ -335,7 +360,7 @@ describe('RecommendationService', () => {
     expect(result.map((r) => r.muId)).toEqual([2000, 2001]);
   });
 
-  it("populate recommendedBecauseOf avec le top des mangas sources", async () => {
+  it('populate recommendedBecauseOf avec le top des mangas sources', async () => {
     userMangaRepo.find.mockResolvedValue([
       makeUserManga({
         manga: makeManga({ mu_id: '1000', title: 'One Piece' }),
@@ -349,15 +374,17 @@ describe('RecommendationService', () => {
     ]);
 
     // Les deux sources recommandent 2000
-    mangasService.getCachedRecommendations.mockImplementation((muId: number) => {
-      if (muId === 1000) {
-        return Promise.resolve([makeReco('1000', '2000', 9)]);
-      }
-      if (muId === 1001) {
-        return Promise.resolve([makeReco('1001', '2000', 8)]);
-      }
-      return Promise.resolve([]);
-    });
+    mangasService.getCachedRecommendations.mockImplementation(
+      (muId: number) => {
+        if (muId === 1000) {
+          return Promise.resolve([makeReco('1000', '2000', 9)]);
+        }
+        if (muId === 1001) {
+          return Promise.resolve([makeReco('1001', '2000', 8)]);
+        }
+        return Promise.resolve([]);
+      },
+    );
 
     mangaRepo.find.mockImplementation(({ where }) => {
       const ids = (where as any).mu_id._value;
@@ -366,8 +393,8 @@ describe('RecommendationService', () => {
           id === '2000'
             ? makeManga({ mu_id: id, title: 'Bleach' })
             : id === '1000'
-              ? makeManga({ mu_id: id, title: 'One Piece' })
-              : makeManga({ mu_id: id, title: 'Naruto' }),
+            ? makeManga({ mu_id: id, title: 'One Piece' })
+            : makeManga({ mu_id: id, title: 'Naruto' }),
         ),
       );
     });
@@ -380,7 +407,7 @@ describe('RecommendationService', () => {
     expect(result[0].recommendedBecauseOf).toContain('Naruto');
   });
 
-  it("fait un fetch MU bloquant si le cache est vide", async () => {
+  it('fait un fetch MU bloquant si le cache est vide', async () => {
     userMangaRepo.find.mockResolvedValue([
       makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
     ]);
@@ -392,14 +419,14 @@ describe('RecommendationService', () => {
     mangaRepo.find.mockImplementation(({ where }) => {
       const ids = (where as any).mu_id._value;
       return Promise.resolve(
-        ids.map((id: string) =>
-          makeManga({ mu_id: id, title: `Manga ${id}` }),
-        ),
+        ids.map((id: string) => makeManga({ mu_id: id, title: `Manga ${id}` })),
       );
     });
 
     const result = await service.buildUserRecommendations(42);
-    expect(mangasService.fetchAndCacheRecommendations).toHaveBeenCalledWith(1000);
+    expect(mangasService.fetchAndCacheRecommendations).toHaveBeenCalledWith(
+      1000,
+    );
     expect(result).toHaveLength(1);
     expect(result[0].muId).toBe(2000);
   });
@@ -445,20 +472,28 @@ describe('RecommendationService', () => {
         return Promise.resolve(
           ids.map((id: string) => {
             const genres =
-              id === '2000' ? ['Action'] :
-              id === '2001' ? ['Romance'] :
-              id === '2002' ? ['Action', 'Adventure'] :
-              [];
+              id === '2000'
+                ? ['Action']
+                : id === '2001'
+                ? ['Romance']
+                : id === '2002'
+                ? ['Action', 'Adventure']
+                : [];
             return makeMangaWithGenres(id, genres);
           }),
         );
       });
 
-      const result = await service.buildUserRecommendations(42, 50, 0, 'action');
+      const result = await service.buildUserRecommendations(
+        42,
+        50,
+        0,
+        'action',
+      );
       expect(result.map((r) => r.muId).sort()).toEqual([2000, 2002]);
     });
 
-    it("retourne [] si aucun manga ne match le genre filtré", async () => {
+    it('retourne [] si aucun manga ne match le genre filtré', async () => {
       userMangaRepo.find.mockResolvedValue([
         makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
       ]);
@@ -487,7 +522,7 @@ describe('RecommendationService', () => {
       });
     }
 
-    it("groupe les recommandations par genre, top N par section", async () => {
+    it('groupe les recommandations par genre, top N par section', async () => {
       userMangaRepo.find.mockResolvedValue([
         makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
       ]);
@@ -503,11 +538,15 @@ describe('RecommendationService', () => {
         return Promise.resolve(
           ids.map((id: string) => {
             const genres =
-              id === '2000' ? ['Action'] :
-              id === '2001' ? ['Action'] :
-              id === '2002' ? ['Romance'] :
-              id === '2003' ? ['Action', 'Romance'] :
-              ['Misc'];
+              id === '2000'
+                ? ['Action']
+                : id === '2001'
+                ? ['Action']
+                : id === '2002'
+                ? ['Romance']
+                : id === '2003'
+                ? ['Action', 'Romance']
+                : ['Misc'];
             return makeMangaWithGenres(id, genres, `Manga ${id}`);
           }),
         );
@@ -519,7 +558,7 @@ describe('RecommendationService', () => {
       expect(result['Romance'].length).toBe(2); // 2002, 2003
     });
 
-    it("filtre les genres NSFW (Adult, Hentai, etc.)", async () => {
+    it('filtre les genres NSFW (Adult, Hentai, etc.)', async () => {
       userMangaRepo.find.mockResolvedValue([
         makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
       ]);
@@ -537,7 +576,7 @@ describe('RecommendationService', () => {
       expect(result['Adult']).toBeUndefined();
     });
 
-    it("retourne {} si la bibliothèque est vide", async () => {
+    it('retourne {} si la bibliothèque est vide', async () => {
       userMangaRepo.find.mockResolvedValue([]);
       const result = await service.buildUserRecommendationsByGenre(42);
       expect(result).toEqual({});
@@ -595,7 +634,7 @@ describe('RecommendationService', () => {
       recoRepo.createQueryBuilder = jest.fn(() => recoQb) as any;
     }
 
-    it("retourne [] si aucun candidat (rating < 7.5 ou trop ancien)", async () => {
+    it('retourne [] si aucun candidat (rating < 7.5 ou trop ancien)', async () => {
       userMangaRepo.find.mockResolvedValue([]);
       mockQueryBuilders({ candidates: [], recoCounts: new Map() });
 
@@ -638,7 +677,7 @@ describe('RecommendationService', () => {
       expect(result.map((r) => r.muId)).toEqual([2001]);
     });
 
-    it("trie par score sleeper décroissant", async () => {
+    it('trie par score sleeper décroissant', async () => {
       userMangaRepo.find.mockResolvedValue([]);
       mockQueryBuilders({
         candidates: [
@@ -679,24 +718,22 @@ describe('RecommendationService', () => {
 
     // 1000 est en cache, 1001 non
     mangasService.getCachedRecommendations.mockImplementation((muId: number) =>
-      Promise.resolve(
-        muId === 1000 ? [makeReco('1000', '2000', 10)] : [],
-      ),
+      Promise.resolve(muId === 1000 ? [makeReco('1000', '2000', 10)] : []),
     );
     mangasService.fetchAndCacheRecommendations.mockResolvedValue([]);
 
     mangaRepo.find.mockImplementation(({ where }) => {
       const ids = (where as any).mu_id._value;
       return Promise.resolve(
-        ids.map((id: string) =>
-          makeManga({ mu_id: id, title: `Manga ${id}` }),
-        ),
+        ids.map((id: string) => makeManga({ mu_id: id, title: `Manga ${id}` })),
       );
     });
 
     const result = await service.buildUserRecommendations(42);
     expect(result).toHaveLength(1);
     // Le fetch background est asynchrone — vérifier qu'il est lancé sans bloquer
-    expect(mangasService.fetchAndCacheRecommendations).toHaveBeenCalledWith(1001);
+    expect(mangasService.fetchAndCacheRecommendations).toHaveBeenCalledWith(
+      1001,
+    );
   });
 });

@@ -22,6 +22,7 @@ import {
   isReadingStatus,
   ReadingStatus,
 } from './reading-status.enum';
+import { RecoCacheService } from '@/api/recommendations/reco-cache.service';
 
 @Injectable()
 export class LibraryService {
@@ -31,6 +32,7 @@ export class LibraryService {
     private readonly userService: UserService,
     private readonly mangasService: MangasService,
     private readonly updateMangaService: UpdateMangaService,
+    private readonly recoCache: RecoCacheService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(Manga)
@@ -57,6 +59,8 @@ export class LibraryService {
     userManga.manga = mangaEntity;
     userManga.lastUpdated = new Date();
     await this.userMangaRepository.save(userManga);
+    // La biblio a changé → les recos doivent le refléter immédiatement.
+    this.recoCache.invalidateUser(userId);
     return await this.mangasService.getMangaDetails(muId);
   }
 
@@ -72,9 +76,11 @@ export class LibraryService {
 
     // Les mises à jour sont lancées en arrière-plan par checkIfMangaArrayInfoIsOutdated
     // On ne re-requête plus la BDD après : les données fraîches seront visibles à la prochaine ouverture
-    this.updateMangaService.checkIfMangaArrayInfoIsOutdated(mangaIds).catch(
-      (err) => this.logger.warn(`Background manga array update failed: ${err}`),
-    );
+    this.updateMangaService
+      .checkIfMangaArrayInfoIsOutdated(mangaIds)
+      .catch((err) =>
+        this.logger.warn(`Background manga array update failed: ${err}`),
+      );
 
     return user.user_mangas
       .slice()
@@ -100,6 +106,7 @@ export class LibraryService {
 
     if (mangaToDelete.length === 1) {
       await this.userMangaRepository.remove(mangaToDelete[0]);
+      this.recoCache.invalidateUser(userId);
     } else if (mangaToDelete.length > 1) {
       throw new ConflictException(
         'Too much records found in user library for given muId',
@@ -153,6 +160,8 @@ export class LibraryService {
       .andWhere('manga_id = :muId', { muId: muId.toString() })
       .execute();
 
+    // La progression influe sur le scoring des recos (statut/récence).
+    this.recoCache.invalidateUser(userId);
     return true;
   }
 
@@ -188,6 +197,8 @@ export class LibraryService {
       .andWhere('manga_id = :muId', { muId: muId.toString() })
       .execute();
 
+    // Le statut de lecture est un multiplicateur du scoring des recos.
+    this.recoCache.invalidateUser(userId);
     return true;
   }
 
@@ -292,6 +303,8 @@ export class LibraryService {
     userManga.user_rating = rating;
     userManga.lastUpdated = new Date();
     await this.userMangaRepository.save(userManga);
+    // La note user est un multiplicateur du scoring des recos.
+    this.recoCache.invalidateUser(userId);
     return true;
   }
 }

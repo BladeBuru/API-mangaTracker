@@ -54,6 +54,12 @@
     "src/api/user/auth/username.helper.spec.ts",
     "src/api/mangas/cover-proxy.service.ts",
     "src/api/mangas/manga-covers.controller.ts",
-    ".github/workflows/ci-cd.yml"
+    ".github/workflows/ci-cd.yml",
+    "src/api/recommendations/reco-cache.service.ts",
+    "src/api/recommendations/recommendation.service.ts",
+    "src/api/recommendations/recommendation.module.ts",
+    "src/api/library/library.service.ts",
+    "src/api/library/library.module.ts",
+    "src/api/recommendations/recommendation.service.spec.ts"
   ]
 }

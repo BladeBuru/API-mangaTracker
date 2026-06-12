@@ -1,11 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsBoolean,
-  IsInt,
-  IsNumber,
-  IsOptional,
-  Min,
-} from 'class-validator';
+import { IsBoolean, IsInt, IsNumber, IsOptional, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { UserMangaChapterLog } from '../user-manga-chapter-log.entity';
 
@@ -14,7 +8,10 @@ import { UserMangaChapterLog } from '../user-manga-chapter-log.entity';
  * `POST /library/:muId/chapter-log`.
  */
 export class RecordChapterLogDto {
-  @ApiProperty({ description: 'Numéro de chapitre (peut être décimal)', example: 42 })
+  @ApiProperty({
+    description: 'Numéro de chapitre (peut être décimal)',
+    example: 42,
+  })
   @IsNumber()
   @Type(() => Number)
   chapterNumber: number;

@@ -184,7 +184,7 @@ export class LibraryController {
   @ApiOperation({
     summary: "Enregistrer une session de lecture d'un chapitre (Phase 5)",
     description:
-      "Insertion additive — N appels = N lignes (replays). Le compteur `user_read_chapters` reste géré par PUT /library/chapter.",
+      'Insertion additive — N appels = N lignes (replays). Le compteur `user_read_chapters` reste géré par PUT /library/chapter.',
   })
   @ApiResponse({ status: 201, type: ChapterLogEntryDto })
   @Post(':muId/chapter-log')
@@ -198,7 +198,7 @@ export class LibraryController {
   }
 
   @ApiOperation({
-    summary: "Historique des sessions de lecture pour un manga (Phase 5)",
+    summary: 'Historique des sessions de lecture pour un manga (Phase 5)',
   })
   @ApiResponse({ status: 200, type: [ChapterLogEntryDto] })
   @Get(':muId/chapter-log')
@@ -211,7 +211,7 @@ export class LibraryController {
   }
 
   @ApiOperation({
-    summary: "Marquer un chapitre comme skippé / unskippé (Phase 5)",
+    summary: 'Marquer un chapitre comme skippé / unskippé (Phase 5)',
   })
   @ApiResponse({ status: 200, type: ChapterLogEntryDto })
   @Put(':muId/chapter/:chapterNumber/skip')
@@ -235,7 +235,10 @@ export class LibraryController {
     summary: 'Mettre à jour la note personnelle (1-10) pour un manga',
   })
   @ApiResponse({ status: 200, description: 'Note mise à jour' })
-  @ApiResponse({ status: 404, description: 'Manga non trouvé dans la bibliothèque' })
+  @ApiResponse({
+    status: 404,
+    description: 'Manga non trouvé dans la bibliothèque',
+  })
   @Put('rating')
   @UseGuards(JwtAuthGuard)
   async updateRating(

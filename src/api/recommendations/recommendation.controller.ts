@@ -22,9 +22,7 @@ import { RecommendationService } from './recommendation.service';
 @ApiBearerAuth()
 @Controller('recommendations')
 export class RecommendationController {
-  constructor(
-    private readonly recommendationService: RecommendationService,
-  ) {}
+  constructor(private readonly recommendationService: RecommendationService) {}
 
   @ApiOperation({
     summary:

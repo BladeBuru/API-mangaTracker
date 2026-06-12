@@ -6,6 +6,7 @@ import { MangaRecommendation } from '@/api/mangas/manga-recommendation.entity';
 import { Manga } from '@/api/mangas/manga.entity';
 import { MangasService } from '@/api/mangas/mangas.service';
 import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
+import { RecoCacheService } from './reco-cache.service';
 
 /**
  * Entrée scorée pour un manga candidat.
@@ -42,22 +43,24 @@ export class RecommendationService {
   /**
    * Nombre maximum de recommandations remontées depuis un même manga source.
    *
-   * **2026-05-19** : passé de 10 à 30. Les recos étant intrinsèquement
-   * subjectives, on préfère un pool large + un tri par score que de
-   * filtrer en amont. L'utilisateur peut scroller via la pagination,
-   * mais si on filtre trop, il n'y a plus rien à scroller.
+   * **2026-05-19** : passé de 10 à 30. **2026-06-11 (hotfix-v0-10-1)** :
+   * 30 → 40 — l'utilisateur trouvait le volume encore insuffisant avec
+   * ~60 mangas en bibliothèque (l'exclusion biblio mange 20-40% du pool).
+   * Les recos étant intrinsèquement subjectives, on préfère un pool large
+   * + un tri par score que de filtrer en amont.
    *
    * Cap "soft" : si le pool final est trop maigre, on relaxe via
    * `ADAPTIVE_FALLBACK_CAP` (cf. `scoreRecos`).
    */
-  private static readonly MAX_RECOS_PER_SOURCE = 30;
+  private static readonly MAX_RECOS_PER_SOURCE = 40;
 
   /**
    * Cap secondaire utilisé en repli quand le pool ne dépasse pas
    * `MIN_POOL_BEFORE_RELAX`. On préfère plus de recos potentiellement
-   * redondantes que zéro reco du tout.
+   * redondantes que zéro reco du tout. (60 → 80 le 2026-06-11, suit le
+   * bump du cap principal.)
    */
-  private static readonly ADAPTIVE_FALLBACK_CAP = 60;
+  private static readonly ADAPTIVE_FALLBACK_CAP = 80;
 
   /**
    * Si la liste de candidats finale a moins de `MIN_POOL_BEFORE_RELAX`
@@ -101,6 +104,7 @@ export class RecommendationService {
     @InjectRepository(Manga)
     private readonly mangaRepository: Repository<Manga>,
     private readonly mangasService: MangasService,
+    private readonly recoCache: RecoCacheService,
   ) {}
 
   /**
@@ -246,6 +250,14 @@ export class RecommendationService {
     const effectiveLimit = Math.min(limit, RecommendationService.MAX_LIMIT);
     const effectiveOffset = Math.max(0, offset);
 
+    // Cache user-level (hotfix-v0-10-1 US-4) : TTL 1h, invalidé sur toute
+    // mutation de la bibliothèque (cf. RecoCacheService).
+    const variant = `flat:${
+      genreFilter ?? 'all'
+    }:${effectiveLimit}:${effectiveOffset}`;
+    const cached = this.recoCache.get<MangaQuickViewDto[]>(userId, variant);
+    if (cached) return cached;
+
     const userMangas = await this.userMangaRepository.find({
       where: { user: { id: userId } },
       relations: ['manga'],
@@ -290,12 +302,14 @@ export class RecommendationService {
       }
       // Adaptive : si pool trop maigre, relax le cap par source.
       await this.relaxIfPoolTooSmall(userMangas, libraryMuIds, scoreMap);
-      return this.buildDtoFromScoreMap(
+      const result = await this.buildDtoFromScoreMap(
         scoreMap,
         effectiveLimit,
         effectiveOffset,
         genreFilter,
       );
+      this.recoCache.set(userId, variant, result);
+      return result;
     }
 
     // Cache totalement vide : fetch bloquant
@@ -340,12 +354,14 @@ export class RecommendationService {
 
     if (scoreMap.size === 0) return [];
     await this.relaxIfPoolTooSmall(userMangas, libraryMuIds, scoreMap);
-    return this.buildDtoFromScoreMap(
+    const result = await this.buildDtoFromScoreMap(
       scoreMap,
       effectiveLimit,
       effectiveOffset,
       genreFilter,
     );
+    this.recoCache.set(userId, variant, result);
+    return result;
   }
 
   /**
@@ -451,6 +467,14 @@ export class RecommendationService {
     topGenres = 5,
     perGenre = 10,
   ): Promise<Record<string, MangaQuickViewDto[]>> {
+    // Cache user-level (hotfix-v0-10-1 US-4) — même politique que la liste
+    // plate : TTL 1h, invalidation sur mutation bibliothèque.
+    const variant = `byGenre:${topGenres}:${perGenre}`;
+    const cachedResult = this.recoCache.get<
+      Record<string, MangaQuickViewDto[]>
+    >(userId, variant);
+    if (cachedResult) return cachedResult;
+
     const scoreMap = await this.computeScoreMap(userId);
     if (scoreMap.size === 0) return {};
 
@@ -579,6 +603,7 @@ export class RecommendationService {
         .filter((dto): dto is MangaQuickViewDto => dto !== null);
     }
 
+    this.recoCache.set(userId, variant, result);
     return result;
   }
 

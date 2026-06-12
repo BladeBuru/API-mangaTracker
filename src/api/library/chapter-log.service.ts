@@ -4,10 +4,7 @@ import { Repository } from 'typeorm';
 import { UserMangaChapterLog } from './user-manga-chapter-log.entity';
 import { Manga } from '@/api/mangas/manga.entity';
 import User from '@/api/user/user.entity';
-import {
-  ChapterLogEntryDto,
-  RecordChapterLogDto,
-} from './dto/chapter-log.dto';
+import { ChapterLogEntryDto, RecordChapterLogDto } from './dto/chapter-log.dto';
 
 /**
  * Service du log additif de chapitres (Phase 5).
