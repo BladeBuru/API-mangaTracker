@@ -57,7 +57,7 @@ export class MangaQuickViewDto {
   @IsOptional()
   @ApiPropertyOptional({
     description:
-      "Titres des mangas de la bibliothèque qui ont conduit à cette recommandation (top 3 contributeurs au score). Présent uniquement dans les réponses de /recommendations.",
+      'Titres des mangas de la bibliothèque qui ont conduit à cette recommandation (top 3 contributeurs au score). Présent uniquement dans les réponses de /recommendations.',
     type: [String],
   })
   recommendedBecauseOf?: string[];
@@ -82,7 +82,7 @@ export class MangaQuickViewDto {
   @IsOptional()
   @ApiPropertyOptional({
     description:
-      "Note agrégée Bayesian combinant la note globale MangaUpdates (rating) et la note communautaire locale (communityRating), pondérée par le nombre de votants. Plus stable pour les mangas peu notés.",
+      'Note agrégée Bayesian combinant la note globale MangaUpdates (rating) et la note communautaire locale (communityRating), pondérée par le nombre de votants. Plus stable pour les mangas peu notés.',
   })
   aggregatedRating?: number;
 

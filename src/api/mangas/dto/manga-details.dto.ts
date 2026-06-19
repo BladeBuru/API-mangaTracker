@@ -85,8 +85,8 @@ export class MangaDetailsDto {
     description:
       'Recommandations MangaUpdates (séries similaires avec poids 1-100). ' +
       'Inclut les URLs de cover (small/medium) quand MU les fournit dans ' +
-      '`series_image`, ce qui permet d\'éviter une cover vide sur la fiche ' +
-      'détail des recos tant que le manga recommandé n\'a pas été ouvert.',
+      "`series_image`, ce qui permet d'éviter une cover vide sur la fiche " +
+      "détail des recos tant que le manga recommandé n'a pas été ouvert.",
   })
   @IsOptional()
   muRecommendations?: {
@@ -133,8 +133,7 @@ export class MangaDetailsDto {
   community_rating?: number;
 
   @ApiPropertyOptional({
-    description:
-      "Nombre d'utilisateurs Manga Tracker ayant noté ce manga",
+    description: "Nombre d'utilisateurs Manga Tracker ayant noté ce manga",
   })
   @IsOptional()
   @IsNumber()
@@ -380,8 +379,8 @@ export class MangaDetailsDto {
             ? Number(r.series_id.series_id)
             : Number(r.series_id),
           series_name: isNested
-            ? (r.series_id.title ?? r.series_id.series_name ?? '')
-            : (r.series_name ?? ''),
+            ? r.series_id.title ?? r.series_id.series_name ?? ''
+            : r.series_name ?? '',
           weight: Number(r.weight),
           // Pre-cache des covers : si MU les fournit on les stocke avec le
           // stub, sinon `null` et le background refresh ira chercher le

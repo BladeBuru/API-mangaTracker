@@ -28,7 +28,12 @@ export class CreateSharing1746231400000 implements MigrationInterface {
             { name: 'sender_id', type: 'int', isNullable: false },
             { name: 'addressee_id', type: 'int', isNullable: false },
             { name: 'manga_id', type: 'bigint', isNullable: false },
-            { name: 'message', type: 'varchar', length: '280', isNullable: true },
+            {
+              name: 'message',
+              type: 'varchar',
+              length: '280',
+              isNullable: true,
+            },
             {
               name: 'createdAt',
               type: 'timestamp',

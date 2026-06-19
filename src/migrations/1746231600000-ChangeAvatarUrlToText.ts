@@ -19,9 +19,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * existent, ils seront tronqués → données perdues. Ne descend que si la
  * table est connue safe (dev).
  */
-export class ChangeAvatarUrlToText1746231600000
-  implements MigrationInterface
-{
+export class ChangeAvatarUrlToText1746231600000 implements MigrationInterface {
   name = 'ChangeAvatarUrlToText1746231600000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

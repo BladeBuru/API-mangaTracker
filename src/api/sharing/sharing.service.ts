@@ -68,11 +68,14 @@ export class SharingService {
     });
     const acceptedIds = new Set<number>();
     for (const f of friendships) {
-      const other = f.requester.id === senderId ? f.addressee.id : f.requester.id;
+      const other =
+        f.requester.id === senderId ? f.addressee.id : f.requester.id;
       acceptedIds.add(other);
     }
 
-    const validAddresseeIds = body.friendIds.filter((id) => acceptedIds.has(id));
+    const validAddresseeIds = body.friendIds.filter((id) =>
+      acceptedIds.has(id),
+    );
     if (validAddresseeIds.length === 0) {
       throw new ForbiddenException(
         'Aucun des destinataires ne fait partie de vos amis acceptés',

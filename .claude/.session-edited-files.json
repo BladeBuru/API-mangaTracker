@@ -68,6 +68,13 @@
     "docs/specs/hotfix-v0-10-1/spec-technique.md",
     ".claude/memory-bank/progress.md",
     "src/api/sharing/dto/reading-group.dto.ts",
-    "src/api/sharing/dto/share.dto.ts"
+    "src/api/sharing/dto/share.dto.ts",
+    "C:/Users/User/Documents/Travail/Perso/Crea-entrprise/manga_tracker/.claude/memory-bank/next-session-todo.md",
+    "src/api/user/stats/stats.dto.ts",
+    "src/api/user/stats/stats.module.ts",
+    "src/api/user/stats/stats.service.ts",
+    "src/api/friends/friends.module.ts",
+    "src/api/friends/friends.service.ts",
+    "src/api/friends/friends.controller.ts"
   ]
 }

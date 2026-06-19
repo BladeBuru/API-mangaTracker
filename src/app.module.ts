@@ -25,9 +25,6 @@ const envFilePath: string = getEnvPath(`${__dirname}/common/envs`);
     HealthModule,
   ],
   controllers: [AppController],
-  providers: [
-    AppService,
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
-  ],
+  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

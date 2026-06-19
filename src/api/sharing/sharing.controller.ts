@@ -30,7 +30,7 @@ import { MangaShareDto, ShareMangaDto } from './dto/share.dto';
 export class SharingController {
   constructor(private readonly service: SharingService) {}
 
-  @ApiOperation({ summary: "Partager un manga avec un ou plusieurs amis" })
+  @ApiOperation({ summary: 'Partager un manga avec un ou plusieurs amis' })
   @ApiResponse({ status: 201, type: [MangaShareDto] })
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @Post('manga/:muId')
@@ -42,7 +42,7 @@ export class SharingController {
     return this.service.shareWithFriends(user.id, muId, body);
   }
 
-  @ApiOperation({ summary: "Inbox : shares reçus (non-vus en premier)" })
+  @ApiOperation({ summary: 'Inbox : shares reçus (non-vus en premier)' })
   @ApiResponse({ status: 200, type: [MangaShareDto] })
   @Get('inbox')
   async inbox(@UserDecorator() user: any): Promise<MangaShareDto[]> {
@@ -51,18 +51,14 @@ export class SharingController {
 
   @ApiOperation({ summary: 'Marquer toutes les shares comme vues' })
   @Post('inbox/mark-seen')
-  async markSeen(
-    @UserDecorator() user: any,
-  ): Promise<{ updated: number }> {
+  async markSeen(@UserDecorator() user: any): Promise<{ updated: number }> {
     return this.service.markAllSeen(user.id);
   }
 
   @ApiOperation({ summary: 'Compteur shares non-vues (pour badge UI)' })
   @ApiResponse({ status: 200 })
   @Get('inbox/unseen-count')
-  async unseenCount(
-    @UserDecorator() user: any,
-  ): Promise<{ count: number }> {
+  async unseenCount(@UserDecorator() user: any): Promise<{ count: number }> {
     return { count: await this.service.unseenCount(user.id) };
   }
 }

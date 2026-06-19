@@ -457,7 +457,9 @@ export class MangasService {
 
     if (stubsSansCover.length > 0) {
       this.logger.log(
-        `Background refresh covers pour ${stubsSansCover.length} reco stubs : ${stubsSansCover.join(', ')}`,
+        `Background refresh covers pour ${
+          stubsSansCover.length
+        } reco stubs : ${stubsSansCover.join(', ')}`,
       );
       // Pas de await — fire-and-forget, on n'attend pas la réponse MU.
       Promise.allSettled(

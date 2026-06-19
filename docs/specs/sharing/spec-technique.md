@@ -3,9 +3,9 @@
 | Champ         | Valeur              |
 |---------------|---------------------|
 | Module        | sharing             |
-| Version       | 0.1.0               |
-| Date          | 2026-06-04          |
-| Source        | Rétro-ingénierie    |
+| Version       | 0.2.0               |
+| Date          | 2026-06-19          |
+| Source        | Rétro-ingénierie + sprint RGPD username |
 
 ---
 
@@ -46,8 +46,8 @@ La dépendance sur `UserFriendship` est directe (import de l'entité depuis `src
 | `src/api/sharing/reading-groups.service.ts` | Logique métier groupes : création, invitation, progression, ownership | ~397 |
 | `src/api/sharing/manga-share.entity.ts` | Entité TypeORM `manga_share` | ~48 |
 | `src/api/sharing/reading-group.entity.ts` | Entités TypeORM `reading_group` + `reading_group_member` | ~69 |
-| `src/api/sharing/dto/share.dto.ts` | DTO entrée/sortie partage manga | ~75 |
-| `src/api/sharing/dto/reading-group.dto.ts` | DTO entrée/sortie groupes de lecture | ~144 |
+| `src/api/sharing/dto/share.dto.ts` | DTO entrée/sortie partage manga — `stripEmailFormat` sur `senderUsername` dans `fromEntity` | ~78 |
+| `src/api/sharing/dto/reading-group.dto.ts` | DTO entrée/sortie groupes de lecture — `stripEmailFormat` sur `username` et `displayName` des membres dans `fromEntity` | ~148 |
 
 ---
 
@@ -122,6 +122,7 @@ Contrainte unique : `UQ_reading_group_member_group_user` sur `(group_id, user_id
 
 ## Patterns identifiés
 
+- **Defense-in-depth RGPD — `stripEmailFormat` sur les DTOs de sortie** : `MangaShareDto.fromEntity` et `ReadingGroupMemberDto.fromEntity` passent systématiquement les champs `username` et `displayName` par `stripEmailFormat(username.helper.ts)` avant de les exposer. Cette couche de protection complémentaire garantit qu'aucun username au format email (`user@domain.com`) n'est exposé dans les réponses API du module sharing, même si la migration `SanitizeEmailUsernames` n'a pas encore traité un compte donné. Cohérent avec le pattern appliqué dans `comments` et `friends` (même sprint RGPD).
 - **Service layer strict** : aucune logique métier dans les controllers. Les controllers délèguent intégralement aux services correspondants.
 - **Repository pattern via TypeORM** : tous les accès BDD passent par des `Repository<T>` injectés.
 - **Idempotence côté service** : `SharingService.shareWithFriends` et `ReadingGroupsService.createGroup` implémentent chacun leur propre logique d'idempotence sans compter sur des contraintes BDD uniques (à l'exception de `UQ_reading_group_member_group_user`).

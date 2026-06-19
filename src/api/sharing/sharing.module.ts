@@ -3,10 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Manga } from '@/api/mangas/manga.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { MangaShare } from './manga-share.entity';
-import {
-  ReadingGroup,
-  ReadingGroupMember,
-} from './reading-group.entity';
+import { ReadingGroup, ReadingGroupMember } from './reading-group.entity';
 import { UserFriendship } from '../friends/user-friendship.entity';
 import { SharingService } from './sharing.service';
 import { SharingController } from './sharing.controller';

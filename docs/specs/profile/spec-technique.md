@@ -3,9 +3,9 @@
 | Champ         | Valeur              |
 |---------------|---------------------|
 | Module        | profile             |
-| Version       | 0.1.0               |
-| Date          | 2026-06-04          |
-| Source        | Rétro-ingénierie    |
+| Version       | 0.2.0               |
+| Date          | 2026-06-19          |
+| Source        | Rétro-ingénierie + sprint change-password |
 
 ## Architecture du module
 
@@ -43,7 +43,7 @@ UserModule
 | `src/api/user/dto/public-profile.dto.ts` | Projection publique de l'entité User (sans données sensibles) | ~42 |
 | `src/api/user/dto/user-information.dto.ts` | Projection complète pour l'utilisateur connecté | ~67 |
 | `src/api/user/dto/update-name.dto.ts` | DTO changement de username | ~9 |
-| `src/api/user/dto/update-password.dto.ts` | DTO changement de mot de passe | ~8 |
+| `src/api/user/dto/update-password.dto.ts` | DTO changement de mot de passe — `currentPassword` + `newPassword` (8-128 chars, complexité) | ~30 |
 
 ## Schéma BDD
 
@@ -67,14 +67,14 @@ Table `user` — colonnes liées au profil (extrait) :
 
 ## API / Endpoints
 
-| Méthode | Route | Description | Auth | DTO réponse |
-|---------|-------|-------------|------|-------------|
-| `GET` | `/user/information` | Infos du compte connecté | JWT | `UserInformationDto` |
-| `PUT` | `/user/name` | Modifier le username | JWT | `UserInformationDto` |
-| `PUT` | `/user/password` | Modifier le mot de passe | JWT | `UserInformationDto` |
-| `DELETE` | `/user/delete` | Supprimer le compte | JWT | `UserInformationDto` |
-| `PATCH` | `/user/profile` | MAJ profil étendu (partielle) | JWT | `UserInformationDto` |
-| `GET` | `/user/profile/:id` | Profil public d'un autre user | JWT | `PublicProfileDto` |
+| Méthode | Route | Description | Auth | Throttle | DTO réponse |
+|---------|-------|-------------|------|----------|-------------|
+| `GET` | `/user/information` | Infos du compte connecté | JWT | global | `UserInformationDto` |
+| `PUT` | `/user/name` | Modifier le username | JWT | global | `UserInformationDto` |
+| `PUT` | `/user/password` | Modifier le mot de passe (currentPassword requis) | JWT | 5 req/min | `TokenDto` |
+| `DELETE` | `/user/delete` | Supprimer le compte | JWT | global | `UserInformationDto` |
+| `PATCH` | `/user/profile` | MAJ profil étendu (partielle) | JWT | global | `UserInformationDto` |
+| `GET` | `/user/profile/:id` | Profil public d'un autre user | JWT | global | `PublicProfileDto` |
 
 ### Codes HTTP par endpoint
 
@@ -82,10 +82,27 @@ Table `user` — colonnes liées au profil (extrait) :
 |----------|-----|-----|-----|-----|-----|
 | GET /user/information | OK | — | JWT invalide | — | — |
 | PUT /user/name | OK | Validation | JWT invalide | — | — |
-| PUT /user/password | OK | Validation | JWT invalide | — | — |
+| PUT /user/password | `TokenDto` | `CURRENT_PASSWORD_INVALID` / `SOCIAL_ACCOUNT_NO_PASSWORD` / validation DTO | JWT invalide | — | — |
 | DELETE /user/delete | OK | — | JWT invalide | — | — |
 | PATCH /user/profile | OK | Validation DTO | JWT invalide | — | — |
 | GET /user/profile/:id | OK | id non entier | JWT invalide | Profil privé | User inexistant |
+
+### PUT /user/password — comportement durci (sprint change-password)
+
+**DTO `UpdatePasswordDto`** :
+- `currentPassword: string` — requis, vérifié via `bcrypt.compare` contre le hash stocké en base
+- `newPassword: string` — 8-128 caractères, doit contenir au moins 1 chiffre OU 1 caractère spécial (`@Matches` regex)
+
+**Cas d'erreur 400** :
+- `SOCIAL_ACCOUNT_NO_PASSWORD` — le compte a été créé via Google OAuth et n'a pas de mot de passe local (champ `password` null en base). Lever avant même de tenter `bcrypt.compare`.
+- `CURRENT_PASSWORD_INVALID` — `bcrypt.compare(currentPassword, user.password)` retourne `false`.
+
+**Comportement post-validation** :
+1. Le service `UserService.updatePassword` hash le nouveau mot de passe et met à jour `user.password`.
+2. Le controller appelle `AuthService.revokeAllSessionsForUser(userId)` — révocation de **toutes** les sessions actives (table `user_session`), y compris la session courante.
+3. Le controller réémet une paire `{ accessToken, refreshToken }` via `AuthService.generateToken` et retourne un `TokenDto` — l'appareil courant est automatiquement re-connecté avec la nouvelle session.
+
+**Throttle** : `@Throttle({ default: { ttl: 60_000, limit: 5 } })` — 5 requêtes par minute par utilisateur (anti-bruteforce du mot de passe actuel).
 
 ### Validation DTO — UpdateProfileDto
 

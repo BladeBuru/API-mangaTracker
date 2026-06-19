@@ -41,8 +41,7 @@ export class WellKnownController {
    * Si non configurées → renvoie un tableau vide (App Links non actif).
    */
   @ApiOperation({
-    summary:
-      'Android App Links — Google Digital Asset Links statement',
+    summary: 'Android App Links — Google Digital Asset Links statement',
   })
   @Get('assetlinks.json')
   @Header('Content-Type', 'application/json')

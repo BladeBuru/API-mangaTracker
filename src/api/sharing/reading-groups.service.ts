@@ -7,10 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import {
-  ReadingGroup,
-  ReadingGroupMember,
-} from './reading-group.entity';
+import { ReadingGroup, ReadingGroupMember } from './reading-group.entity';
 import { Manga } from '@/api/mangas/manga.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import User from '@/api/user/user.entity';
@@ -78,11 +75,16 @@ export class ReadingGroupsService {
       throw new BadRequestException('Au moins un ami doit être invité');
     }
 
-    const manga = await this.mangaRepo.findOneBy({ mu_id: body.muId.toString() });
+    const manga = await this.mangaRepo.findOneBy({
+      mu_id: body.muId.toString(),
+    });
     if (!manga) throw new NotFoundException('Manga not found');
 
     // Vérifie l'amitié pour chaque invité.
-    const validInviteIds = await this.filterAcceptedFriendIds(ownerId, inviteIds);
+    const validInviteIds = await this.filterAcceptedFriendIds(
+      ownerId,
+      inviteIds,
+    );
     if (validInviteIds.length !== inviteIds.length) {
       throw new ForbiddenException(
         'Certains des invités ne sont pas vos amis acceptés',
@@ -99,9 +101,7 @@ export class ReadingGroupsService {
     });
     if (existing) {
       // Ajoute uniquement les nouveaux amis (skip ceux déjà membres).
-      const currentMemberIds = new Set(
-        existing.members.map((m) => m.user.id),
-      );
+      const currentMemberIds = new Set(existing.members.map((m) => m.user.id));
       const newMemberIds = validInviteIds.filter(
         (id) => !currentMemberIds.has(id),
       );
@@ -154,7 +154,10 @@ export class ReadingGroupsService {
    * Détail d'un groupe avec progression de chaque membre. L'utilisateur
    * doit en être membre pour le voir.
    */
-  async getGroup(currentUserId: number, groupId: number): Promise<ReadingGroupDto> {
+  async getGroup(
+    currentUserId: number,
+    groupId: number,
+  ): Promise<ReadingGroupDto> {
     const group = await this.groupRepo.findOne({
       where: { id: groupId },
       relations: ['owner', 'manga', 'members', 'members.user'],
@@ -166,11 +169,7 @@ export class ReadingGroupsService {
     }
 
     const { progress, customLinks } = await this.fetchProgressForGroup(group);
-    return ReadingGroupDto.fromEntityWithProgress(
-      group,
-      progress,
-      customLinks,
-    );
+    return ReadingGroupDto.fromEntityWithProgress(group, progress, customLinks);
   }
 
   /** Liste les groupes dont l'utilisateur courant est membre. */
@@ -320,9 +319,7 @@ export class ReadingGroupsService {
    * Le client substitue le numéro de chapitre dans cette URL via
    * `ChapterLinkResolver.buildUrlForChapter`.
    */
-  private async fetchProgressForGroup(
-    group: ReadingGroup,
-  ): Promise<{
+  private async fetchProgressForGroup(group: ReadingGroup): Promise<{
     progress: Record<number, number | null>;
     customLinks: Record<number, string | null>;
   }> {
@@ -388,8 +385,7 @@ export class ReadingGroupsService {
 
     const acceptedIds = new Set<number>();
     for (const f of friendships) {
-      const other =
-        f.requester.id === userId ? f.addressee.id : f.requester.id;
+      const other = f.requester.id === userId ? f.addressee.id : f.requester.id;
       acceptedIds.add(other);
     }
     return candidateIds.filter((id) => acceptedIds.has(id));

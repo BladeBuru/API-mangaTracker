@@ -17,9 +17,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * en BDD avant de réessayer. C'est volontaire — on n'a pas envie de
  * supprimer automatiquement des comptes utilisateurs.
  */
-export class AddUsernameUniqueIndex1746231500000
-  implements MigrationInterface
-{
+export class AddUsernameUniqueIndex1746231500000 implements MigrationInterface {
   name = 'AddUsernameUniqueIndex1746231500000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

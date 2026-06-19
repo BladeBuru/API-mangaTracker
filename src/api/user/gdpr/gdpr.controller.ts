@@ -80,10 +80,7 @@ export class GdprController {
     const data = await this.gdprService.exportUserData(user.id);
     const filename = `manga-tracker-export-${user.id}-${Date.now()}.json`;
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${filename}"`,
-    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(JSON.stringify(data, null, 2));
   }
 
@@ -118,7 +115,7 @@ export class GdprController {
 
   @ApiOperation({
     summary:
-      'Retourne les versions courantes des documents légaux (CGU + Politique de confidentialité). Public — pas besoin d\'être authentifié.',
+      "Retourne les versions courantes des documents légaux (CGU + Politique de confidentialité). Public — pas besoin d'être authentifié.",
   })
   @Get('legal-versions')
   getLegalVersions() {

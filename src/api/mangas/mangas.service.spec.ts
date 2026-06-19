@@ -36,7 +36,10 @@ describe('MangasService', () => {
         MangasService,
         HelperService,
         { provide: getRepositoryToken(Manga), useValue: mockRepo() },
-        { provide: getRepositoryToken(MangaRecommendation), useValue: mockRepo() },
+        {
+          provide: getRepositoryToken(MangaRecommendation),
+          useValue: mockRepo(),
+        },
         { provide: getRepositoryToken(UserManga), useValue: mockRepo() },
       ],
       imports: [HttpModule],

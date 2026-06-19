@@ -104,7 +104,7 @@ export class Manga {
     manga.genres = Array.isArray(rawGenres)
       ? rawGenres
           .map((g: any) =>
-            typeof g === 'string' ? g : (g?.genre ?? g?.name ?? ''),
+            typeof g === 'string' ? g : g?.genre ?? g?.name ?? '',
           )
           .filter((g: string) => g.length > 0)
       : null;

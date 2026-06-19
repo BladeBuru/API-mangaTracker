@@ -11,9 +11,7 @@ import { CommentsController } from './comments.controller';
  * signalements pour la modération future.
  */
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Manga, MangaComment, CommentReport]),
-  ],
+  imports: [TypeOrmModule.forFeature([Manga, MangaComment, CommentReport])],
   controllers: [CommentsController],
   providers: [CommentsService],
   exports: [CommentsService],

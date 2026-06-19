@@ -21,7 +21,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 - `MAX_RECOS_PER_SOURCE` 30 → 40, `ADAPTIVE_FALLBACK_CAP` 60 → 80 (volume de recos insuffisant)
 - `RegisterDto.name` : validation stricte (3-32 chars, `@` interdit → exclut le format email)
 - Google OAuth : username dérivé du displayName/part locale email (jamais l'email complet), `displayName` rempli
-- DTOs publics (comments, friends, public-profile) : `stripEmailFormat` en defense-in-depth
+- DTOs publics (comments, friends, public-profile, sharing) : `stripEmailFormat` en defense-in-depth
 
 ### Fixed
 - 🚨 RGPD : des usernames contenaient l'adresse email de l'utilisateur, exposée publiquement (commentaires, profil, recherche d'amis)

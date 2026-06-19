@@ -3,15 +3,15 @@
 | Champ         | Valeur              |
 |---------------|---------------------|
 | Module        | friends             |
-| Version       | 0.1.0               |
-| Date          | 2026-06-04          |
-| Source        | Rétro-ingénierie    |
+| Version       | 0.2.0               |
+| Date          | 2026-06-19          |
+| Source        | Rétro-ingénierie + sprint social/stats |
 
 ## Architecture du module
 
 Le module suit l'architecture NestJS standard : un `FriendsController` délègue intégralement à `FriendsService`. Aucune logique métier dans le controller.
 
-Le service gère deux repositories TypeORM : `UserFriendship` (la table principale) et `User` (pour la résolution username→entité et la constitution des DTOs de résultat de recherche).
+Le service gère trois repositories TypeORM : `UserFriendship` (la table principale), `User` (pour la résolution username→entité et la constitution des DTOs de résultat de recherche) et `UserManga` (pour l'exposition de la bibliothèque d'un ami via `getFriendLibrary`).
 
 La relation d'amitié est modélisée comme **directionnelle en base** (`requester → addressee`) mais **traitée comme bidirectionnelle en application** : toutes les requêtes de lecture (`listAccepted`, `searchUsers`, la détection de doublons) interrogent les deux colonnes `requester_id` et `addressee_id`. La sémantique de direction est portée par le champ `direction` du `FriendshipDto` côté lecture.
 
@@ -22,10 +22,10 @@ Le module exporte `FriendsService`, ce qui permet à d'autres modules NestJS d'i
 | Fichier | Rôle | Lignes |
 |---------|------|--------|
 | `src/api/friends/friends.controller.ts` | Routes HTTP, throttle, guards JWT, mappage user decorator | ~99 |
-| `src/api/friends/friends.service.ts` | Logique métier complète : envoi, acceptation, blocage, suppression, liste, recherche | ~242 |
+| `src/api/friends/friends.service.ts` | Logique métier complète : envoi, acceptation, blocage, suppression, liste, recherche, bibliothèque ami | ~275 |
 | `src/api/friends/user-friendship.entity.ts` | Entité TypeORM `user_friendship`, enum `FriendshipStatus`, contraintes | ~65 |
 | `src/api/friends/dto/friend.dto.ts` | DTOs d'entrée/sortie + méthodes `fromEntity` statiques | ~116 |
-| `src/api/friends/friends.module.ts` | Déclaration NestJS du module, exports | ~18 |
+| `src/api/friends/friends.module.ts` | Déclaration NestJS du module, exports — importe `UserManga` depuis `TypeOrmModule.forFeature` | ~20 |
 | `src/migrations/1746231200000-CreateUserFriendship.ts` | Migration Phase 6 : création table `user_friendship` | ~88 |
 
 ## Schéma BDD
@@ -58,8 +58,25 @@ Le module exporte `FriendsService`, ce qui permet à d'autres modules NestJS d'i
 | `GET` | `/friends` | Lister les amis acceptés | JWT | global |
 | `GET` | `/friends/pending` | Lister les demandes reçues en attente | JWT | global |
 | `GET` | `/friends/search?q=` | Recherche d'utilisateurs pour autocomplete | JWT | global |
+| `GET` | `/friends/:id/library` | Bibliothèque d'un ami — 403 si amitié non acceptée | JWT | global |
 | `PATCH` | `/friends/:id` | Accepter / rejeter / bloquer (addressee uniquement) | JWT | global |
 | `DELETE` | `/friends/:id` | Supprimer une relation (les deux parties) | JWT | global |
+
+### GET /friends/:id/library — détail
+
+**Paramètre** : `:id` — identifiant numérique de l'ami (ParseIntPipe).
+
+**Logique d'autorisation** : `getFriendLibrary` recherche une ligne `user_friendship` avec `status = accepted` dans les deux orientations possibles (requester=current+addressee=friend OU requester=friend+addressee=current). Si aucune ligne n'est trouvée, lève `ForbiddenException` (403). L'acceptation d'amitié vaut consentement de partage de bibliothèque entre amis (RETRO-014 `sharing-friend-only`). La condition `isProfilePublic` n'est pas vérifiée ici — seule l'amitié acceptée compte.
+
+**Réponse 200** : tableau `MangaQuickViewDto[]`, trié par `lastUpdated` descendant (les plus récemment mis à jour en premier).
+
+**Codes d'erreur**
+
+| Code | Condition |
+|------|-----------|
+| 401 | Token absent ou invalide |
+| 403 | Pas d'amitié acceptée entre les deux utilisateurs |
+| 404 | L'entier `:id` ne correspond à aucun utilisateur (via `ParseIntPipe` ou `ForbiddenException`) |
 
 ### DTOs
 
