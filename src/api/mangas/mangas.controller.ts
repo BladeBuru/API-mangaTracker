@@ -20,6 +20,7 @@ import {
 import { MangaDetailsDto } from './dto/manga-details.dto';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 import { SearchMangaDto } from './dto/search-manga.dto';
+import { SearchMangaResponseDto } from './dto/search-manga-response.dto';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { LibraryService } from '@/api/library/library.service';
 
@@ -173,22 +174,36 @@ export class MangasController {
     };
   }
 
-  @ApiOperation({ summary: 'Search for mangas matching the given pattern' })
+  @ApiOperation({
+    summary: 'Search for mangas matching the given pattern',
+    description:
+      'Résultats triés par pertinence (classement MangaUpdates, identique au ' +
+      'site). Avec `page`, renvoie une enveloppe paginée ' +
+      '{results, totalHits, page, perPage, hasMore} ; sans `page`, renvoie ' +
+      'un tableau nu (rétrocompat clients ≤ 0.11.0).',
+  })
   @ApiResponse({
     status: 200,
-    description: 'Return an array of mangas matching the given pattern',
-    type: MangaQuickViewDto,
+    description:
+      'Enveloppe paginée si `page` est fourni, sinon tableau de MangaQuickViewDto',
+    type: SearchMangaResponseDto,
   })
   @ApiResponse({ status: 403, description: 'Forbidden Access' })
   @Post('search')
   @UseGuards(JwtAuthGuard)
   async searchManga(
     @Body() searchMangaDto: SearchMangaDto,
-  ): Promise<MangaQuickViewDto[]> {
-    return await this.mangasService.searchManga(
+  ): Promise<MangaQuickViewDto[] | SearchMangaResponseDto> {
+    const response = await this.mangasService.searchManga(
       searchMangaDto.search_pattern,
       searchMangaDto.limit,
-      searchMangaDto.offset,
+      searchMangaDto.page,
     );
+    // Rétrocompat : les clients publiés (≤ 0.11.0) n'envoient pas `page`
+    // et parsent un tableau nu.
+    if (searchMangaDto.page == null) {
+      return response.results;
+    }
+    return response;
   }
 }

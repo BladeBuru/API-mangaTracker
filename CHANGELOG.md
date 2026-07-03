@@ -17,6 +17,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 - Volume Docker `manga-tracker-covers` dans le déploiement
 
 ### Changed
+- `POST /mangas/search` : tri par **pertinence** MangaUpdates (suppression de `orderby: 'rating'` et du re-tri local qui faisaient disparaître les titres de niche, ex. « Shadow System ») ; `perpage` aligné sur `limit` (borné 1-100) ; nouveau param `page` → réponse enveloppe `{results, totalHits, page, perPage, hasMore}` (tableau nu sans `page`, rétrocompat clients ≤ 0.11.0) + 8 tests unitaires `searchManga`
 - `JWT_REFRESH_SECRET_EXPIRES_IN` : 7d → 90d en production (standard apps de tracking média)
 - `MAX_RECOS_PER_SOURCE` 30 → 40, `ADAPTIVE_FALLBACK_CAP` 60 → 80 (volume de recos insuffisant)
 - `RegisterDto.name` : validation stricte (3-32 chars, `@` interdit → exclut le format email)
