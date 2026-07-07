@@ -77,7 +77,24 @@
 
 ## ✅ Problèmes Résolus
 
-_(Documenter les problèmes résolus pour éviter les régressions)_
+### Recherche : `orderby: 'rating'` écrasait la pertinence MangaUpdates
+- **Module** : mangas
+- **Résolu le** : 2026-07-03
+- **Symptôme** : « Shadow System: Harnessing… » (1er sur mangaupdates.com)
+  introuvable via `POST /mangas/search` ; « Naruto » mal classé ; 20 résultats
+  max sans pagination exploitable.
+- **Cause** : le payload MU envoyait `orderby: 'rating'` → MU triait les
+  milliers de matches flous par note globale au lieu de la pertinence (son
+  défaut `score` = classement du site). Les titres de niche sortaient du
+  top-60 téléchargé et le re-tri local (`bonus startsWith/exact`) ne pouvait
+  pas repêcher un titre absent de l'échantillon. `page`/`perpage` avaient de
+  plus une sémantique cassée (`perpage = limit*3`, re-tri + `slice(0,20)` par
+  page → 40 résultats sur 60 jamais servables).
+- **Solution** : pas d'`orderby` (défaut MU = pertinence, vérifié le 2026-07-03 :
+  les deux cas sortent en #1), pas de re-tri local, `perpage = limit` (borné
+  1-100, max MU), `page` 1-indexée. Réponse = enveloppe `{results, totalHits,
+  page, perPage, hasMore}` si `page` fourni, tableau nu sinon (rétrocompat
+  clients ≤ 0.11.0). Tests : `mangas.service.spec.ts` (8 cas searchManga).
 
 ---
 

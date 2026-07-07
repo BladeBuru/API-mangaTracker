@@ -1,5 +1,6 @@
 import { HttpService } from '@nestjs/axios';
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
@@ -11,6 +12,7 @@ import { AxiosError } from 'axios';
 import { MU_DETAIL_URL, MU_TRENDS_URL, NSFW_GENRES } from './constants';
 import { HelperService } from './helper.service';
 import { MangaDetailsDto } from './dto/manga-details.dto';
+import { SearchMangaResponseDto } from './dto/search-manga-response.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Manga } from './manga.entity';
 import { MangaRecommendation } from './manga-recommendation.entity';
@@ -489,37 +491,33 @@ export class MangasService {
       .filter((dto) => dto.title);
   }
 
-  async searchManga(searchPattern: string, limit?: number, offset?: number) {
-    // Pertinence de recherche MU (testé empiriquement 2026-05-07 sur "one",
-    // "naruto", "one pie") — la combinaison gagnante est :
-    //   - stype: "title" → cherche dans titres + aliases (pas description)
-    //   - orderby: "rating" → MU retourne les mangas qui matchent triés
-    //     par bayesian_rating décroissant. Sans ça, "one" ne ramène que
-    //     des mangas obscurs (One/2000, One+One...) car MU ne sait pas
-    //     prioriser One Piece/One Punch-Man par défaut.
-    //   - perpage: safeLimit*3 → échantillon plus large pour le re-tri.
-    //   - re-tri custom ci-dessous → seul le rating ne suffit pas
-    //     ("How to Win My Husband Over" a 8.22 et matche "naruto" via
-    //     un alias → passerait devant Naruto). Le bonus pour
-    //     "title startsWith query" remonte les vrais matches.
-    //   - exclude_filtered_genres: true → applique filtre user MU global.
-    //
-    // **2026-05-17** : MU a durci leur validation — `perpage` doit être un
-    // entier > 0, sans ça MU retourne 400 "Field Validation Error". Avant
-    // c'était laxiste. D'où les fallbacks ci-dessous.
-    const safeLimit = limit != null && limit > 0 ? limit : 20;
-    const safeOffset = offset != null && offset > 0 ? offset : 1;
+  async searchManga(
+    searchPattern: string,
+    limit?: number,
+    page?: number,
+  ): Promise<SearchMangaResponseDto> {
+    // Pertinence : on N'ENVOIE PAS d'orderby — le défaut MU (`score`) est le
+    // classement par pertinence du site mangaupdates.com. Un orderby explicite
+    // (rating/title) trie GLOBALEMENT les milliers de matches flous et éjecte
+    // les titres de niche du top (vérifié 2026-07-03 : « Shadow System » et
+    // « Naruto » sortent en #1 avec le défaut, disparaissent avec
+    // orderby=rating). Pas de re-tri local non plus : il ne peut pas repêcher
+    // un titre tronqué en amont et ne fait que casser l'ordre de MU.
+    //   - stype: "title" → titres + titres alternatifs (hit_title).
+    //   - perpage: max MU = 100 (au-delà, MU retombe silencieusement à 25).
+    //   - page/perpage doivent être des entiers > 0 (MU 400 sinon,
+    //     durci le 2026-05-17).
+    const safeLimit = Math.min(Math.max(Math.trunc(limit ?? 20), 1), 100);
+    const safePage = Math.max(Math.trunc(page ?? 1), 1);
     const payload: Record<string, unknown> = {
       search: searchPattern,
       stype: 'title',
-      orderby: 'rating',
-      perpage: safeLimit * 3,
-      page: safeOffset,
+      page: safePage,
+      perpage: safeLimit,
       exclude_genre: NSFW_GENRES,
-      exclude_filtered_genres: true,
     };
     const { data } = await firstValueFrom(
-      this.httpService.post<MangaQuickViewDto[]>(MU_TRENDS_URL, payload).pipe(
+      this.httpService.post(MU_TRENDS_URL, payload).pipe(
         catchError((error: AxiosError) => {
           // Logging détaillé pour diagnostiquer les MU API errors (400, 422…)
           // — sans ça on ne voyait que `ERR_BAD_REQUEST` opaque.
@@ -528,48 +526,36 @@ export class MangasService {
               `body=${JSON.stringify(error.response?.data)} ` +
               `payload=${JSON.stringify(payload)}`,
           );
+          // MU 400 = paramètres rejetés (ex. page > 400) → 400 client,
+          // pas un 500 : la requête est fautive, pas le service.
+          if (error.response?.status === 400) {
+            throw new BadRequestException(
+              'Invalid search parameters for external service',
+            );
+          }
           throw `Impossible to retrieve mangas with search pattern ${searchPattern} from external service`;
         }),
       ),
     );
 
-    const results: any[] = (data as any)?.results ?? [];
-    if (results.length === 0) return [];
+    const body = data as any;
+    const results: any[] = body?.results ?? [];
+    const totalHits = Number(body?.total_hits ?? results.length) || 0;
 
-    // Re-tri custom par pertinence
-    const q = (searchPattern ?? '').toLowerCase().trim();
-    const scored = results.map((r) => {
-      const title = String(r?.record?.title ?? '').toLowerCase();
-      const aliases: string[] = (r?.record?.associated ?? [])
-        .map((a: any) => String(a?.title ?? '').toLowerCase())
-        .filter((s: string) => s.length > 0);
-      const rating = Number(r?.record?.bayesian_rating ?? 0) || 0;
+    // L'enveloppe est construite depuis l'ÉCHO de MU, pas les valeurs
+    // demandées : MU coerce silencieusement perpage vers ses valeurs
+    // acceptées (ex. 20 → 25, vérifié 2026-07-03). Baser hasMore sur la
+    // demande désynchroniserait la pagination (pages vides en fin de liste).
+    const effectivePerPage = Number(body?.per_page) || safeLimit;
+    const effectivePage = Number(body?.page) || safePage;
 
-      // Boost de pertinence (echelle ~10 000) au-dessus du rating (max 10).
-      let bonus = 0;
-      if (title === q) {
-        bonus = 100_000; // match exact titre
-      } else if (title.startsWith(q + ' ') || title.startsWith(q + ':')) {
-        bonus = 50_000; // titre commence par "<query> ..." (ex: "Naruto: Shippuden")
-      } else if (title.startsWith(q)) {
-        bonus = 30_000; // titre commence par la query
-      } else if (title.includes(' ' + q)) {
-        bonus = 10_000; // query est un mot du titre
-      } else if (title.includes(q)) {
-        bonus = 5_000; // query apparaît dans le titre
-      } else if (aliases.some((a) => a === q)) {
-        bonus = 8_000; // match exact alias
-      } else if (aliases.some((a) => a.startsWith(q))) {
-        bonus = 3_000; // alias commence par la query
-      } else if (aliases.some((a) => a.includes(q))) {
-        bonus = 1_000; // alias contient la query
-      }
-
-      return { record: r, score: bonus + rating };
-    });
-
-    scored.sort((a, b) => b.score - a.score);
-    const topN = scored.slice(0, safeLimit).map((s) => s.record);
-    return MangaQuickViewDto.arrayFromMu(topN);
+    return {
+      results: MangaQuickViewDto.arrayFromMu(results),
+      totalHits,
+      page: effectivePage,
+      perPage: effectivePerPage,
+      hasMore:
+        results.length > 0 && effectivePage * effectivePerPage < totalHits,
+    };
   }
 }
