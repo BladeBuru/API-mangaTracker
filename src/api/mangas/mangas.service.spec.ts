@@ -8,6 +8,7 @@ import { Manga } from './manga.entity';
 import { MangaRecommendation } from './manga-recommendation.entity';
 import { UserManga } from './user-manga.entity';
 import { MU_TRENDS_URL, NSFW_GENRES } from './constants';
+import { MuRateLimitException } from './exceptions/mu-rate-limit.exception';
 
 const mockRepo = () => ({
   find: jest.fn(),
@@ -52,6 +53,28 @@ describe('MangasService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('getRecommendationsForManga — 429 MU gracieux', () => {
+    it('retombe sur [] quand fetchAndCacheRecommendations lève MuRateLimitException (pas de 429 client)', async () => {
+      jest.spyOn(service, 'getCachedRecommendations').mockResolvedValue([]);
+      jest
+        .spyOn(service, 'fetchAndCacheRecommendations')
+        .mockRejectedValue(new MuRateLimitException(1));
+
+      await expect(service.getRecommendationsForManga(1)).resolves.toEqual([]);
+    });
+
+    it('propage les autres erreurs (le 429 est le SEUL cas avalé ici)', async () => {
+      jest.spyOn(service, 'getCachedRecommendations').mockResolvedValue([]);
+      jest
+        .spyOn(service, 'fetchAndCacheRecommendations')
+        .mockRejectedValue(new Error('boom'));
+
+      await expect(service.getRecommendationsForManga(1)).rejects.toThrow(
+        'boom',
+      );
+    });
   });
 });
 

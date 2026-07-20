@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { MangaDetailsDto } from './dto/manga-details.dto';
 import { UserManga } from './user-manga.entity';
+import { normalizeGenres } from './genre.utils';
 
 @Entity()
 export class Manga {
@@ -99,15 +100,8 @@ export class Manga {
     manga.completed = mangaDetailsDto.completed;
     manga.associated = mangaDetailsDto.associated ?? [];
     // genres : MU les renvoie sous forme `[{genre: "Action"}, {genre: "Romance"}]`
-    // ou parfois directement `["Action", ...]`. On normalise.
-    const rawGenres = (mangaDetailsDto as any).genres ?? [];
-    manga.genres = Array.isArray(rawGenres)
-      ? rawGenres
-          .map((g: any) =>
-            typeof g === 'string' ? g : g?.genre ?? g?.name ?? '',
-          )
-          .filter((g: string) => g.length > 0)
-      : null;
+    // ou parfois directement `["Action", ...]`. Normalisation partagée.
+    manga.genres = normalizeGenres((mangaDetailsDto as any).genres);
     return manga;
   }
 }

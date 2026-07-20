@@ -10,6 +10,8 @@ import { MangaQuickViewDto } from './dto/manga-quick-view.dto';
 import { catchError, firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
 import { MU_DETAIL_URL, MU_TRENDS_URL, NSFW_GENRES } from './constants';
+import { normalizeGenres } from './genre.utils';
+import { MuRateLimitException } from './exceptions/mu-rate-limit.exception';
 import { HelperService } from './helper.service';
 import { MangaDetailsDto } from './dto/manga-details.dto';
 import { SearchMangaResponseDto } from './dto/search-manga-response.dto';
@@ -138,30 +140,30 @@ export class MangasService {
     const details = MangaDetailsDto.fromMU(data);
 
     // Normalise les genres MU (forme `[{genre: "Action"}]` ou `["Action"]`)
-    // avant stockage en BDD pour requêtage uniforme.
-    const rawGenres = (details as any).genres ?? [];
-    const normalizedGenres = Array.isArray(rawGenres)
-      ? rawGenres
-          .map((g: any) =>
-            typeof g === 'string' ? g : g?.genre ?? g?.name ?? '',
-          )
-          .filter((g: string) => g.length > 0)
-      : null;
+    // avant stockage en BDD pour requêtage uniforme (helper partagé).
+    const normalizedGenres = normalizeGenres((details as any).genres);
 
-    await this.mangaRepository.update(
-      { mu_id: muId.toString() },
-      {
+    // A-5 : GREATEST inconditionnel sur total_chapters — un refresh MU ne
+    // fait JAMAIS régresser le total (regex status MU peu fiable, un user à
+    // 90 chapitres lus prouve total ≥ 90 — cf. decisions.md). Les autres
+    // champs restent écrasés (overwrite).
+    await this.mangaRepository
+      .createQueryBuilder()
+      .update(Manga)
+      .set({
         title: details.title,
         year: details.year,
         small_cover_url: details.smallCoverUrl,
         medium_cover_url: details.mediumCoverUrl,
         rating: details.rating,
-        total_chapters: details.totalChapters,
+        total_chapters: () => 'GREATEST(total_chapters, :newTotal)',
         completed: details.completed,
         associated: details.associated,
         genres: normalizedGenres,
-      },
-    );
+      })
+      .setParameter('newTotal', Number(details.totalChapters) || 0)
+      .where('mu_id = :muId', { muId: muId.toString() })
+      .execute();
 
     // Sauvegarde des recommandations en arrière-plan (fire-and-forget)
     if (details.muRecommendations?.length) {
@@ -325,8 +327,9 @@ export class MangasService {
 
   /**
    * Récupère les recommandations depuis MangaUpdates pour un muId,
-   * les sauvegarde et les retourne.
-   * Utilisé quand le cache est absent ou périmé.
+   * les sauvegarde et les retourne. Utilisé quand le cache est absent.
+   * @throws {MuRateLimitException} sur 429 MU (le caller doit temporiser) ;
+   *   tout autre échec est avalé (`[]`) comme avant.
    */
   async fetchAndCacheRecommendations(
     muId: number,
@@ -371,7 +374,10 @@ export class MangasService {
         await this.saveRecommendations(muId, recos);
       }
       return this.getCachedRecommendations(muId);
-    } catch {
+    } catch (err) {
+      if ((err as AxiosError)?.response?.status === 429) {
+        throw new MuRateLimitException(muId);
+      }
       return [];
     }
   }
@@ -384,7 +390,22 @@ export class MangasService {
   ): Promise<MangaRecommendation[]> {
     const cached = await this.getCachedRecommendations(muId);
     if (cached.length === 0) {
-      return this.fetchAndCacheRecommendations(muId);
+      try {
+        return await this.fetchAndCacheRecommendations(muId);
+      } catch (err) {
+        // 429 MU : NE PAS propager au client. `GET /mangas/:id/recommendations`
+        // doit renvoyer une liste (vide ici — les recos communautaires sont
+        // ajoutées par `getRecommendationsAsQuickView`), pas un 429. Le rethrow
+        // typé `MuRateLimitException` ne sert QUE les boucles de fetch du
+        // `RecommendationService` (qui, elles, temporisent 5 s puis reprennent).
+        if (err instanceof MuRateLimitException) {
+          this.logger.warn(
+            `Recos manga ${muId} indisponibles (MU 429) — dégradation gracieuse (liste communautaire seule)`,
+          );
+          return [];
+        }
+        throw err;
+      }
     }
     // Rafraîchir si le cache est plus vieux que 7 jours (en background)
     const oldest = cached.reduce((prev, cur) =>

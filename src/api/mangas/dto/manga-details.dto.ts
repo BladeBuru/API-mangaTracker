@@ -147,6 +147,17 @@ export class MangaDetailsDto {
   @IsNumber()
   aggregated_rating?: number;
 
+  @ApiPropertyOptional({
+    description:
+      'Description traduite dans la langue du header Accept-Language. ' +
+      'Absent si la langue est en/absente/non supportée ou si la ' +
+      'traduction a échoué — `description` reste TOUJOURS l’original ' +
+      'anglais (champ additif, non-breaking).',
+  })
+  @IsOptional()
+  @IsString()
+  translated_description?: string;
+
   private static parseLatestChapter(status: string, fallback: number): number {
     if (!status) return fallback;
     const match = status.match(/(\d+)\s*Chapters/);

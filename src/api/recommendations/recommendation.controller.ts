@@ -32,7 +32,7 @@ export class RecommendationController {
     name: 'limit',
     required: false,
     type: Number,
-    description: 'Nombre max de recommandations (défaut : 50, max : 100)',
+    description: 'Nombre max de recommandations (défaut : 50, max : 500)',
   })
   @ApiQuery({
     name: 'offset',
@@ -107,7 +107,7 @@ export class RecommendationController {
     name: 'limit',
     required: false,
     type: Number,
-    description: 'Nombre max de pépites (défaut : 20, max : 100)',
+    description: 'Nombre max de pépites (défaut : 20, max : 500)',
   })
   @ApiResponse({
     status: 200,
