@@ -6,8 +6,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UserService } from 'src/api/user/user.service';
-import { Repository } from 'typeorm';
-import { InjectRepository } from '@nestjs/typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import User from 'src/api/user/user.entity';
 import { Manga } from 'src/api/mangas/manga.entity';
 import { UserManga } from 'src/api/mangas/user-manga.entity';
@@ -23,6 +23,8 @@ import {
   ReadingStatus,
 } from './reading-status.enum';
 import { RecoCacheService } from '@/api/recommendations/reco-cache.service';
+import { ChapterLogService } from './chapter-log.service';
+import { ChapterReportService } from './chapter-report.service';
 
 @Injectable()
 export class LibraryService {
@@ -33,6 +35,10 @@ export class LibraryService {
     private readonly mangasService: MangasService,
     private readonly updateMangaService: UpdateMangaService,
     private readonly recoCache: RecoCacheService,
+    private readonly chapterLogService: ChapterLogService,
+    private readonly chapterReportService: ChapterReportService,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(Manga)
@@ -82,13 +88,20 @@ export class LibraryService {
         this.logger.warn(`Background manga array update failed: ${err}`),
       );
 
+    // Chantier A : reports « plus de chapitres » de l'user (1 requête IN,
+    // pas de N+1) — exposés via totalChapters effectif dans le DTO.
+    const reports = await this.chapterReportService.getUserReportsByMangaIds(
+      userId,
+      mangaIds,
+    );
+
     return user.user_mangas
       .slice()
       .sort(
         (a, b) =>
           new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime(),
       )
-      .map((a) => MangaQuickViewDto.fromLibrary(a));
+      .map((a) => MangaQuickViewDto.fromLibrary(a, reports.get(a.manga.mu_id)));
   }
 
   async deleteManga(userId: number, muId: number): Promise<boolean> {
@@ -136,33 +149,116 @@ export class LibraryService {
 
     const mangaEntity = await this.checkManga(muId);
 
-    if (readChapters > mangaEntity.total_chapters)
+    // Chantier A : cap 406 sur le total EFFECTIF = max(officiel, report).
+    const effectiveTotal = await this.chapterReportService.getEffectiveTotal(
+      userId,
+      muId,
+      mangaEntity.total_chapters,
+    );
+
+    if (readChapters > effectiveTotal)
       throw new ChapterException(
-        `${readChapters} (new value) is above ${mangaEntity.total_chapters} (total number of chapters)`,
+        `${readChapters} (new value) is above ${effectiveTotal} (effective total number of chapters)`,
       );
 
-    const allAvailableChaptersReadStatus = mangaEntity.completed
-      ? ReadingStatus.Completed
-      : ReadingStatus.CaughtUp;
+    const readingStatus =
+      readChapters < effectiveTotal
+        ? ReadingStatus.Reading
+        : mangaEntity.completed
+        ? ReadingStatus.Completed
+        : ReadingStatus.CaughtUp;
 
-    await this.userMangaRepository
-      .createQueryBuilder()
+    const oldReadChapters = mangaToUpdate[0].user_read_chapters;
+    await this.persistChapterProgress(
+      userId,
+      muId,
+      readChapters,
+      readingStatus,
+      oldReadChapters,
+    );
+
+    // La progression influe sur le scoring des recos (statut/récence).
+    this.recoCache.invalidateUser(userId);
+    return true;
+  }
+
+  /**
+   * Chantier B : écrit le pointeur et, si la progression AVANCE, backfill
+   * le journal (oldRead+1..readChapters) dans la même transaction.
+   * Décrément/no-op (B-4) : journal additif, seul le pointeur bouge.
+   * Fallback séquentiel : si la transaction échoue, le pointeur prime —
+   * UPDATE seul puis backfill best-effort (logger.warn).
+   */
+  private async persistChapterProgress(
+    userId: number,
+    muId: number,
+    readChapters: number,
+    readingStatus: ReadingStatus,
+    oldReadChapters: number,
+  ): Promise<void> {
+    if (readChapters <= oldReadChapters) {
+      await this.applyChapterPointer(userId, muId, readChapters, readingStatus);
+      return;
+    }
+
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        await this.applyChapterPointer(
+          userId,
+          muId,
+          readChapters,
+          readingStatus,
+          manager,
+        );
+        await this.chapterLogService.recordBackfill(
+          userId,
+          muId,
+          oldReadChapters,
+          readChapters,
+          manager,
+        );
+      });
+    } catch (err) {
+      this.logger.warn(
+        `updateChapter transaction failed for user ${userId} manga ${muId} — sequential fallback: ${err}`,
+      );
+      await this.applyChapterPointer(userId, muId, readChapters, readingStatus);
+      try {
+        await this.chapterLogService.recordBackfill(
+          userId,
+          muId,
+          oldReadChapters,
+          readChapters,
+        );
+      } catch (backfillErr) {
+        this.logger.warn(
+          `Chapter log backfill failed for user ${userId} manga ${muId}: ${backfillErr}`,
+        );
+      }
+    }
+  }
+
+  /** UPDATE du pointeur de progression (transactionnel si manager fourni). */
+  private async applyChapterPointer(
+    userId: number,
+    muId: number,
+    readChapters: number,
+    readingStatus: ReadingStatus,
+    manager?: EntityManager,
+  ): Promise<void> {
+    const queryBuilder = manager
+      ? manager.createQueryBuilder()
+      : this.userMangaRepository.createQueryBuilder();
+    await queryBuilder
       .update(UserManga)
       .set({
         user_read_chapters: readChapters,
-        readingStatus:
-          readChapters < mangaEntity.total_chapters
-            ? ReadingStatus.Reading
-            : allAvailableChaptersReadStatus,
+        readingStatus,
         lastUpdated: new Date(),
       })
       .where('user_id = :id', { id: userId })
       .andWhere('manga_id = :muId', { muId: muId.toString() })
       .execute();
-
-    // La progression influe sur le scoring des recos (statut/récence).
-    this.recoCache.invalidateUser(userId);
-    return true;
   }
 
   async updateReadingStatus(
@@ -231,13 +327,16 @@ export class LibraryService {
         await this.mangasService.getMangaDetails(muId),
       );
 
+      // A-5 : GREATEST inconditionnel — total_chapters ne régresse jamais
+      // (regex status MU peu fiable, cf. decisions.md). completed écrasé.
       await this.mangaRepository
         .createQueryBuilder()
         .update(Manga)
         .set({
           completed: mangaDetails.completed,
-          total_chapters: mangaDetails.total_chapters,
+          total_chapters: () => 'GREATEST(total_chapters, :newTotal)',
         })
+        .setParameter('newTotal', Number(mangaDetails.total_chapters) || 0)
         .where('mu_id = :muId', { muId: muId.toString() })
         .execute();
     }
@@ -252,35 +351,33 @@ export class LibraryService {
     });
   }
 
-  async updateCustomLink(
+  /** Charge l'entrée bibliothèque (user, manga) ou throw 404. */
+  private async findUserMangaOrThrow(
     userId: number,
     muId: number,
-    customLink: string,
-  ): Promise<boolean> {
-    const userManga = await this.userMangaRepository.findOne({
-      where: { user: { id: userId }, manga: { mu_id: muId.toString() } },
-      relations: ['user', 'manga'],
-    });
+  ): Promise<UserManga> {
+    const userManga = await this.getUserManga(userId, muId);
     if (!userManga) {
       throw new NotFoundException(
         `No manga found in user library for userId: ${userId} and muId: ${muId}`,
       );
     }
+    return userManga;
+  }
+
+  async updateCustomLink(
+    userId: number,
+    muId: number,
+    customLink: string,
+  ): Promise<boolean> {
+    const userManga = await this.findUserMangaOrThrow(userId, muId);
     userManga.custom_link = customLink;
     await this.userMangaRepository.save(userManga);
     return true;
   }
 
   async deleteCustomLink(userId: number, muId: number): Promise<boolean> {
-    const userManga = await this.userMangaRepository.findOne({
-      where: { user: { id: userId }, manga: { mu_id: muId.toString() } },
-      relations: ['user', 'manga'],
-    });
-    if (!userManga) {
-      throw new NotFoundException(
-        `No manga found in user library for userId: ${userId} and muId: ${muId}`,
-      );
-    }
+    const userManga = await this.findUserMangaOrThrow(userId, muId);
     userManga.custom_link = null;
     await this.userMangaRepository.save(userManga);
     return true;
@@ -291,15 +388,7 @@ export class LibraryService {
     muId: number,
     rating: number,
   ): Promise<boolean> {
-    const userManga = await this.userMangaRepository.findOne({
-      where: { user: { id: userId }, manga: { mu_id: muId.toString() } },
-      relations: ['user', 'manga'],
-    });
-    if (!userManga) {
-      throw new NotFoundException(
-        `No manga found in user library for userId: ${userId} and muId: ${muId}`,
-      );
-    }
+    const userManga = await this.findUserMangaOrThrow(userId, muId);
     userManga.user_rating = rating;
     userManga.lastUpdated = new Date();
     await this.userMangaRepository.save(userManga);

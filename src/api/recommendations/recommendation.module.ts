@@ -6,6 +6,7 @@ import { Manga } from '@/api/mangas/manga.entity';
 import { MangasModule } from '@/api/mangas/mangas.module';
 import { RecommendationService } from './recommendation.service';
 import { RecommendationController } from './recommendation.controller';
+import { CatalogCandidateService } from './catalog-candidate.service';
 import { RecoCacheModule } from './reco-cache.module';
 
 @Module({
@@ -17,7 +18,7 @@ import { RecoCacheModule } from './reco-cache.module';
     RecoCacheModule,
   ],
   controllers: [RecommendationController],
-  providers: [RecommendationService],
+  providers: [RecommendationService, CatalogCandidateService],
   exports: [RecommendationService],
 })
 export class RecommendationModule {}

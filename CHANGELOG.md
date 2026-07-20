@@ -5,6 +5,22 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ---
 
+## [Unreleased] — feat/recos-chapitres-traductions
+
+### Added
+- **library** : `POST /library/:muId/report-chapters` — signalement « plus de chapitres » par user (Chantier A) : upsert `manga_chapter_report`, total effectif = `max(total officiel, reported_total)`, consolidation communautaire ≥ 2 users distincts (MIN des concordants, écriture GREATEST sur `manga.total_chapters`)
+
+### Changed
+- **library** : `PUT /library/chapter` — cap 406 s'applique au total effectif `max(total_chapters, report user)` et non plus au total officiel seul ; backfill transactionnel du journal `user_manga_chapter_log` (chapitres oldRead+1..newRead, cap 500 derniers, dédup 10 min du chapitre terminal, décrément = no-op) dans la même transaction que le pointeur (fallback séquentiel best-effort)
+- **library** : `GET /library/all` — `totalChapters` expose le total effectif + nouveau champ optionnel `userReportedTotalChapters` dans `MangaQuickViewDto`
+- **library / mangas** : écriture GREATEST inconditionnelle sur `manga.total_chapters` dans `checkManga` (refresh 6 h) ET `getMangaDetails` (invariant A-5 : monotone croissant, la regex MU sous-estime le vrai total — voir memory-bank/decisions.md)
+- **library** : `POST /library/:muId/chapter-log` — fenêtre d'idempotence 10 min : une lecture identique (user, manga, chapitre, non-skippée) < 10 min réutilise la ligne existante
+
+### BDD
+- Migration `1753100000000-CreateMangaChapterReport` : nouvelle table `manga_chapter_report` (FK user CASCADE + manga CASCADE, index unique `(user_id, manga_id)`, index `manga_id`)
+
+---
+
 ## [Unreleased] — sprint hotfix-v0-10-1
 
 ### Added

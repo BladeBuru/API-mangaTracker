@@ -11,6 +11,9 @@ import { HttpModule } from '@nestjs/axios';
 import { UpdateMangaService } from '../mangas/update-manga.service';
 import { UserMangaChapterLog } from './user-manga-chapter-log.entity';
 import { ChapterLogService } from './chapter-log.service';
+import { MangaChapterReport } from './manga-chapter-report.entity';
+import { ChapterReportService } from './chapter-report.service';
+import { ChapterReportController } from './chapter-report.controller';
 import { RecoCacheModule } from '../recommendations/reco-cache.module';
 
 @Module({
@@ -21,15 +24,22 @@ import { RecoCacheModule } from '../recommendations/reco-cache.module';
     // sans dépendance → pas de cycle library → recommendations.
     RecoCacheModule,
     HttpModule,
-    TypeOrmModule.forFeature([Manga, User, UserManga, UserMangaChapterLog]),
+    TypeOrmModule.forFeature([
+      Manga,
+      User,
+      UserManga,
+      UserMangaChapterLog,
+      MangaChapterReport,
+    ]),
   ],
-  controllers: [LibraryController],
+  controllers: [LibraryController, ChapterReportController],
   providers: [
     UserService,
     LibraryService,
     UpdateMangaService,
     ChapterLogService,
+    ChapterReportService,
   ],
-  exports: [LibraryService, ChapterLogService],
+  exports: [LibraryService, ChapterLogService, ChapterReportService],
 })
 export class LibraryModule {}
