@@ -14,6 +14,7 @@ import { ChapterLogService } from './chapter-log.service';
 import { MangaChapterReport } from './manga-chapter-report.entity';
 import { ChapterReportService } from './chapter-report.service';
 import { ChapterReportController } from './chapter-report.controller';
+import { UserThrottlerGuard } from './user-throttler.guard';
 import { RecoCacheModule } from '../recommendations/reco-cache.module';
 
 @Module({
@@ -39,6 +40,9 @@ import { RecoCacheModule } from '../recommendations/reco-cache.module';
     UpdateMangaService,
     ChapterLogService,
     ChapterReportService,
+    // Garde de rate-limit par utilisateur pour la route report-chapters
+    // (provider pour bénéficier de l'injection throttler + onModuleInit).
+    UserThrottlerGuard,
   ],
   exports: [LibraryService, ChapterLogService, ChapterReportService],
 })

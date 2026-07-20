@@ -133,8 +133,8 @@ describe('DescriptionTranslationService', () => {
     });
   });
 
-  describe('cache miss (hash différent) → provider + upsert', () => {
-    it('should re-translate and upsert when the source hash changed', async () => {
+  describe('cache périmé (hash différent) → stale-while-revalidate', () => {
+    it('should serve the STALE translation immediately and re-translate in background on hash mismatch', async () => {
       repo.findOneBy.mockResolvedValue({
         mu_id: '42',
         language: 'fr',
@@ -149,7 +149,12 @@ describe('DescriptionTranslationService', () => {
         'fr',
       );
 
-      expect(result).toBe('Nouvelle traduction.');
+      // SWR : le user reçoit tout de suite la traduction périmée (jamais
+      // l'anglais transitoire pendant la re-traduction).
+      expect(result).toBe('Traduction périmée.');
+
+      // La re-traduction se fait en arrière-plan et upserte pour le hit suivant.
+      await new Promise((r) => setTimeout(r, 0));
       expect(gtx.translate).toHaveBeenCalledWith(DESCRIPTION, 'fr');
       expect(insertQb.values).toHaveBeenCalledWith({
         mu_id: '42',
@@ -163,7 +168,9 @@ describe('DescriptionTranslationService', () => {
       );
       expect(insertQb.execute).toHaveBeenCalled();
     });
+  });
 
+  describe('cache miss (aucune traduction) → provider + upsert', () => {
     it('should try DeepL first when enabled, then fall back to gtx', async () => {
       deepl.isEnabled.mockReturnValue(true);
       deepl.translate.mockResolvedValue(null);
@@ -220,6 +227,52 @@ describe('DescriptionTranslationService', () => {
 
       expect(result).toBeNull();
       expect(repo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('negative-cache (échecs providers)', () => {
+    it('ne rappelle pas les providers pendant ~5 min après un échec total', async () => {
+      // Aucun cache existant ; gtx échoue → null.
+      gtx.translate.mockResolvedValue(null);
+
+      const first = await service.getTranslatedDescription(42, DESCRIPTION, 'fr');
+      expect(first).toBeNull();
+      expect(gtx.translate).toHaveBeenCalledTimes(1);
+
+      // 2e appel immédiat : negative-cache actif → aucun nouvel appel provider
+      // (on ne repaie pas le timeout de 4 s).
+      const second = await service.getTranslatedDescription(
+        42,
+        DESCRIPTION,
+        'fr',
+      );
+      expect(second).toBeNull();
+      expect(gtx.translate).toHaveBeenCalledTimes(1);
+    });
+
+    it('sert le stale sans rappeler les providers quand un échec est en cache', async () => {
+      repo.findOneBy.mockResolvedValue({
+        mu_id: '42',
+        language: 'fr',
+        source_hash: sha256('old description'),
+        translated_description: 'Périmée.',
+      });
+      gtx.translate.mockResolvedValue(null); // le refresh de fond échoue
+
+      // 1er appel : SWR sert le stale et lance un refresh de fond qui échoue.
+      const first = await service.getTranslatedDescription(42, DESCRIPTION, 'fr');
+      expect(first).toBe('Périmée.');
+      await new Promise((r) => setTimeout(r, 0)); // laisse le refresh échouer
+      expect(gtx.translate).toHaveBeenCalledTimes(1);
+
+      // 2e appel : negative-cache actif → sert le stale sans rappeler gtx.
+      const second = await service.getTranslatedDescription(
+        42,
+        DESCRIPTION,
+        'fr',
+      );
+      expect(second).toBe('Périmée.');
+      expect(gtx.translate).toHaveBeenCalledTimes(1);
     });
   });
 

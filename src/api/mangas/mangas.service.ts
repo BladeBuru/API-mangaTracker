@@ -390,7 +390,22 @@ export class MangasService {
   ): Promise<MangaRecommendation[]> {
     const cached = await this.getCachedRecommendations(muId);
     if (cached.length === 0) {
-      return this.fetchAndCacheRecommendations(muId);
+      try {
+        return await this.fetchAndCacheRecommendations(muId);
+      } catch (err) {
+        // 429 MU : NE PAS propager au client. `GET /mangas/:id/recommendations`
+        // doit renvoyer une liste (vide ici — les recos communautaires sont
+        // ajoutées par `getRecommendationsAsQuickView`), pas un 429. Le rethrow
+        // typé `MuRateLimitException` ne sert QUE les boucles de fetch du
+        // `RecommendationService` (qui, elles, temporisent 5 s puis reprennent).
+        if (err instanceof MuRateLimitException) {
+          this.logger.warn(
+            `Recos manga ${muId} indisponibles (MU 429) — dégradation gracieuse (liste communautaire seule)`,
+          );
+          return [];
+        }
+        throw err;
+      }
     }
     // Rafraîchir si le cache est plus vieux que 7 jours (en background)
     const oldest = cached.reduce((prev, cur) =>

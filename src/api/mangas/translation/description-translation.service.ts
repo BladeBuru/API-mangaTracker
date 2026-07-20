@@ -26,6 +26,13 @@ export const SUPPORTED_TARGET_LANGS: readonly string[] = [
 export const DEFAULT_TRANSLATION_TIMEOUT_MS = 4000;
 
 /**
+ * Durée du negative-cache : après un échec total des providers pour un couple
+ * (manga, langue), on ne retente pas (et on ne repaie donc pas le timeout de
+ * {@link DEFAULT_TRANSLATION_TIMEOUT_MS}) pendant cette fenêtre.
+ */
+export const NEGATIVE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
  * Traduction des descriptions manga côté serveur (Chantier A).
  *
  * Service dédié — ne PAS fusionner dans `MangasService` (déjà au-dessus de
@@ -34,11 +41,16 @@ export const DEFAULT_TRANSLATION_TIMEOUT_MS = 4000;
  * Stratégie :
  * 1. Cache Postgres `manga_translation` clé (mu_id, language), invalidé par
  *    `source_hash` (sha256 de la description MU live).
- * 2. Miss → cascade providers (DeepL si clé, sinon gtx) bornée par un
+ * 2. Cache PÉRIMÉ (hash différent) → stale-while-revalidate : on sert la
+ *    traduction périmée IMMÉDIATEMENT et on re-traduit en arrière-plan (le
+ *    visiteur ne retombe pas sur l'anglais pendant la re-traduction).
+ * 3. Aucun cache → cascade providers (DeepL si clé, sinon gtx) bornée par un
  *    timeout dur (`TRANSLATION_TIMEOUT_MS`, défaut 4 s). Timeout/échec →
  *    `null` (le controller renvoie l'original) mais la promesse continue en
  *    arrière-plan et upserte pour le visiteur suivant.
- * 3. Dédup in-flight : une seule traduction simultanée par (manga, langue).
+ * 4. Negative-cache court ({@link NEGATIVE_CACHE_TTL_MS}) : après un échec
+ *    total, on ne repaie pas le timeout à chaque requête (skip ~5 min).
+ * 5. Dédup in-flight : une seule traduction simultanée par (manga, langue).
  */
 @Injectable()
 export class DescriptionTranslationService {
@@ -47,6 +59,13 @@ export class DescriptionTranslationService {
 
   /** Dédup in-flight : "<muId>:<lang>" → promesse de traduction en cours */
   private readonly inFlight = new Map<string, Promise<string | null>>();
+
+  /**
+   * Negative-cache : "<muId>:<lang>" → timestamp (ms) du dernier échec total.
+   * Une entrée plus récente que {@link NEGATIVE_CACHE_TTL_MS} court-circuite
+   * la traduction (évite de repayer le timeout providers à chaque requête).
+   */
+  private readonly negativeCache = new Map<string, number>();
 
   constructor(
     @InjectRepository(MangaTranslation)
@@ -79,10 +98,12 @@ export class DescriptionTranslationService {
   /**
    * Retourne la description traduite pour (`muId`, `lang`), ou `null` si :
    * - `lang` est absent, `en`, ou hors langues supportées (passthrough) ;
-   * - la traduction échoue ou dépasse le timeout (elle continue alors en
-   *   arrière-plan et sera servie depuis le cache au hit suivant).
+   * - la traduction échoue ou dépasse le timeout ET aucune traduction (même
+   *   périmée) n'est disponible.
    *
-   * Ne rejette jamais — une traduction ratée ne produit pas de 5xx.
+   * Stale-while-revalidate : une traduction périmée est servie immédiatement
+   * et re-traduite en arrière-plan. Ne rejette jamais — une traduction ratée
+   * ne produit pas de 5xx.
    */
   async getTranslatedDescription(
     muId: number,
@@ -107,20 +128,50 @@ export class DescriptionTranslationService {
     }
 
     const key = `${muId}:${normalized}`;
+
+    // Negative-cache : un échec récent → on ne repaie pas le timeout. On sert
+    // le stale s'il existe, sinon null (→ description originale côté controller).
+    if (this.isNegativelyCached(key)) {
+      return existing?.translated_description ?? null;
+    }
+
+    // Lance (ou réutilise) la traduction. Le résultat alimente le
+    // negative-cache (échec) ou le purge (succès).
     let job = this.inFlight.get(key);
     if (!job) {
-      job = this.translateAndPersist(
-        muId,
-        normalized,
-        sourceDescription,
-        hash,
-      ).finally(() => this.inFlight.delete(key));
+      job = this.translateAndPersist(muId, normalized, sourceDescription, hash)
+        .then((result) => {
+          if (result === null) this.negativeCache.set(key, Date.now());
+          else this.negativeCache.delete(key);
+          return result;
+        })
+        .finally(() => this.inFlight.delete(key));
       this.inFlight.set(key, job);
     }
 
-    // Timeout dur : au-delà, on renvoie null (→ description originale) mais
-    // `job` continue et upserte en arrière-plan pour le visiteur suivant.
+    // Stale-while-revalidate : on a une traduction PÉRIMÉE → on la sert tout
+    // de suite (pas d'anglais transitoire), la re-traduction se fait en fond.
+    if (existing) {
+      return existing.translated_description;
+    }
+
+    // Aucun cache : traduction synchrone bornée par le timeout. Au-delà, null
+    // (→ description originale) mais `job` continue et upserte pour le suivant.
     return this.raceWithTimeout(job, this.timeoutMs);
+  }
+
+  /**
+   * `true` si un échec de traduction pour cette clé est en cache depuis moins
+   * de {@link NEGATIVE_CACHE_TTL_MS}. Purge l'entrée expirée au passage.
+   */
+  private isNegativelyCached(key: string): boolean {
+    const failedAt = this.negativeCache.get(key);
+    if (failedAt === undefined) return false;
+    if (Date.now() - failedAt > NEGATIVE_CACHE_TTL_MS) {
+      this.negativeCache.delete(key);
+      return false;
+    }
+    return true;
   }
 
   /**

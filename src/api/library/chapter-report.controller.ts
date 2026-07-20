@@ -12,7 +12,6 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { ChapterReportService } from './chapter-report.service';
@@ -20,6 +19,7 @@ import {
   ReportChaptersDto,
   ReportChaptersResultDto,
 } from './dto/report-chapters.dto';
+import { UserThrottlerGuard } from './user-throttler.guard';
 
 /**
  * Sous-controller du module Library dédié au signalement « plus de
@@ -55,10 +55,16 @@ export class ChapterReportController {
     status: 404,
     description: "Manga inconnu ou absent de la bibliothèque de l'utilisateur",
   })
-  @ApiResponse({ status: 429, description: 'Trop de signalements (10/heure)' })
-  @Throttle({ default: { ttl: 3_600_000, limit: 10 } })
+  @ApiResponse({
+    status: 429,
+    description: 'Trop de signalements (10/heure et par utilisateur)',
+  })
+  // Rate-limit strict 10/h PAR UTILISATEUR (et non par IP) : cf.
+  // `UserThrottlerGuard`. Le tracking par IP serait un budget global partagé
+  // derrière le reverse proxy NPMplus. Le garde DOIT suivre `JwtAuthGuard`
+  // (ordre des gardes de route) pour disposer de `req.user`.
   @Post(':muId/report-chapters')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, UserThrottlerGuard)
   async reportChapters(
     @Param('muId', ParseIntPipe) muId: number,
     @Body() body: ReportChaptersDto,

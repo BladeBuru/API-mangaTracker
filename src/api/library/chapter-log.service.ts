@@ -61,11 +61,19 @@ export class ChapterLogService {
     // B-5 : fenêtre d'idempotence — si la même lecture (user, manga,
     // chapitre, non-skippée) a déjà été journalisée il y a moins de
     // DEDUP_WINDOW_MINUTES (double-écriture reader + backfill updateChapter),
-    // on réutilise la ligne existante. Les replays plus vieux que la
-    // fenêtre restent journalisés normalement.
+    // on RÉUTILISE la ligne existante (pas de NOUVELLE ligne). Les replays
+    // plus vieux que la fenêtre restent journalisés normalement.
     const recent = await this.findRecentRead(userId, muId, body.chapterNumber);
     if (recent) {
-      return ChapterLogEntryDto.fromEntity(recent);
+      // ...mais on garde les données FRAÎCHES : sans ça, un scrollPosition
+      // qui avance et le passage isBonus=true seraient avalés pendant toute
+      // la fenêtre (reprise de lecture au mauvais endroit, chapitre jamais
+      // marqué terminé). On met à jour la ligne au lieu de la renvoyer telle
+      // quelle. Un body sans le champ (undefined) ne l'écrase pas.
+      recent.scrollPosition = body.scrollPosition ?? recent.scrollPosition;
+      recent.isBonus = body.isBonus ?? recent.isBonus;
+      const refreshed = await this.logRepo.save(recent);
+      return ChapterLogEntryDto.fromEntity(refreshed);
     }
 
     const log = new UserMangaChapterLog();

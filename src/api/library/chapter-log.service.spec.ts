@@ -62,16 +62,28 @@ describe('ChapterLogService', () => {
   });
 
   describe('recordChapterRead — fenêtre de dédup (B-5)', () => {
-    it('should reuse the existing row when the same read was logged less than 10 minutes ago', async () => {
+    it('should reuse the existing row (no new insert) but REFRESH scroll/bonus when logged less than 10 minutes ago', async () => {
       const qb = createQb(existingLog(42));
       logRepo.createQueryBuilder.mockReturnValue(qb);
+      logRepo.save.mockImplementation(async (log: UserMangaChapterLog) => log);
 
       const dto = await service.recordChapterRead(1, 42, {
         chapterNumber: 42,
+        scrollPosition: 5000,
+        isBonus: true,
       });
 
+      // Dédup : on réutilise la MÊME ligne (id 5), pas de nouvelle ligne.
       expect(dto.id).toBe(5);
-      expect(logRepo.save).not.toHaveBeenCalled();
+      // ...mais on persiste les données fraîches (scroll + bonus) au lieu
+      // de renvoyer la ligne inchangée.
+      expect(logRepo.save).toHaveBeenCalledTimes(1);
+      const saved: UserMangaChapterLog = logRepo.save.mock.calls[0][0];
+      expect(saved.id).toBe(5);
+      expect(saved.scrollPosition).toBe(5000);
+      expect(saved.isBonus).toBe(true);
+      expect(dto.scrollPosition).toBe(5000);
+      expect(dto.isBonus).toBe(true);
       // Le filtre temporel est bien borné à now - DEDUP_WINDOW_MINUTES.
       const readAtCall = qb.andWhere.mock.calls.find(
         (call) => call[0] === 'log.readAt >= :windowStart',
@@ -80,6 +92,25 @@ describe('ChapterLogService', () => {
       const windowStart: Date = readAtCall[1].windowStart;
       const expectedMs = Date.now() - DEDUP_WINDOW_MINUTES * 60 * 1000;
       expect(Math.abs(windowStart.getTime() - expectedMs)).toBeLessThan(5000);
+    });
+
+    it('should NOT overwrite scroll/bonus when the body omits them (undefined = préserve)', async () => {
+      const existing = existingLog(42);
+      existing.scrollPosition = 1234;
+      existing.isBonus = true;
+      logRepo.createQueryBuilder.mockReturnValue(createQb(existing));
+      logRepo.save.mockImplementation(async (log: UserMangaChapterLog) => log);
+
+      const dto = await service.recordChapterRead(1, 42, {
+        chapterNumber: 42,
+      });
+
+      // Body sans scrollPosition/isBonus → les valeurs existantes restent.
+      const saved: UserMangaChapterLog = logRepo.save.mock.calls[0][0];
+      expect(saved.scrollPosition).toBe(1234);
+      expect(saved.isBonus).toBe(true);
+      expect(dto.scrollPosition).toBe(1234);
+      expect(dto.isBonus).toBe(true);
     });
 
     it('should insert a new row when the last read of this chapter is older than the window', async () => {

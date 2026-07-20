@@ -340,6 +340,75 @@ describe('CatalogSyncService', () => {
       expect(insertCalls[0].orUpdateCols).not.toContain('genres');
       expect(insertCalls[0].values).toHaveLength(3);
     });
+
+    it("n'écrase JAMAIS rating/year/covers par null (record search sans bayesian_rating)", async () => {
+      stateRepo.findOneBy.mockResolvedValue(
+        makeState({ last_completed_page: 0, total_pages: 1 }),
+      );
+      // Record MU minimal : pas de year, pas de bayesian_rating, pas d'image.
+      const page = {
+        data: {
+          total_hits: 1,
+          results: [
+            {
+              record: {
+                series_id: 5000,
+                title: 'Sleeper Hit',
+                genres: [{ genre: 'Action' }],
+              },
+            },
+          ],
+        },
+      };
+      postMock.mockReturnValue(of(page));
+
+      await service.runOnce('catalog:rating');
+
+      expect(insertCalls).toHaveLength(1);
+      const cols = insertCalls[0].orUpdateCols;
+      // title + genres (non-null) restent écrasables ; rating/year/covers sont
+      // OMIS → une note/année/cover déjà hydratée en base n'est pas remise à
+      // null par ce record search incomplet.
+      expect(cols).toContain('title');
+      expect(cols).toContain('genres');
+      expect(cols).not.toContain('rating');
+      expect(cols).not.toContain('year');
+      expect(cols).not.toContain('small_cover_url');
+      expect(cols).not.toContain('medium_cover_url');
+      // L'INSERT initial garde bien null (colonnes nullable).
+      expect(insertCalls[0].values[0].rating).toBeNull();
+      expect(insertCalls[0].values[0].year).toBeNull();
+    });
+  });
+
+  describe('erreur DB (arrêt propre)', () => {
+    it("une erreur d'upsert → statut partial, failures++, curseur conservé, PAS de propagation", async () => {
+      stateRepo.findOneBy.mockResolvedValue(
+        makeState({
+          last_completed_page: 0,
+          total_pages: 2,
+          consecutive_failures: 0,
+        }),
+      );
+      postMock.mockImplementation((_url: string, payload: { page: number }) =>
+        of(muPage(payload.page * 1000, 100, 200)),
+      );
+      // L'upsert (QB sans alias) rejette ; le select (QB avec alias) reste ok.
+      mangaRepo.createQueryBuilder.mockImplementation((alias?: string) => {
+        if (alias) return selectQb;
+        const qb = makeInsertQb();
+        qb.execute = jest.fn().mockRejectedValue(new Error('DB down'));
+        return qb;
+      });
+
+      // Ne doit pas rejeter (sinon les passes suivantes du run sauteraient).
+      await expect(service.runOnce('catalog:rating')).resolves.toBeUndefined();
+
+      const final = savedStates[savedStates.length - 1];
+      expect(final.last_run_status).toBe('partial');
+      expect(final.consecutive_failures).toBe(1);
+      expect(final.last_completed_page).toBe(0); // curseur conservé
+    });
   });
 
   describe('hydrateMissingGenres', () => {

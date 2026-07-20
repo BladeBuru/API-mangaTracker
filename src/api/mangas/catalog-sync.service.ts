@@ -11,7 +11,7 @@ import {
   CatalogSyncState,
 } from './catalog-sync-state.entity';
 import {
-  buildCatalogUpsertRows,
+  buildCatalogUpsertBatches,
   CatalogPage,
   intFromConfig,
   MuSearchBody,
@@ -165,35 +165,26 @@ export class CatalogSyncService {
       if (page >= this.effectiveLastPage(totalPages, pagesCap)) break;
       const nextPage = page + 1;
 
-      let result: CatalogPage;
       try {
-        result = await this.fetchPageWithBackoff(orderby, nextPage);
-      } catch (err) {
-        // Backoff épuisé ou erreur non-retryable : arrêt PROPRE.
+        // fetch + upsert + persistance du curseur dans le MÊME try : une
+        // erreur DB ne doit pas sortir sans mettre à jour le statut.
+        const result = await this.fetchPageWithBackoff(orderby, nextPage);
+        await this.upsertPage(result.records);
+        pagesFetched += 1;
+        page = nextPage;
+        totalPages = Math.max(
+          1,
+          Math.ceil(result.totalHits / CatalogSyncService.PER_PAGE),
+        );
         state.last_completed_page = page;
         state.total_pages = totalPages;
-        state.last_run_at = new Date();
-        state.last_run_status = 'partial';
-        state.consecutive_failures += 1;
         await this.stateRepository.save(state);
-        this.logger.warn(
-          `[${jobName}] arrêt partiel sur la page ${nextPage} : ${
-            (err as Error)?.message ?? err
-          } — reprise à la page ${page + 1} au prochain run`,
-        );
+      } catch (err) {
+        // Backoff épuisé, erreur non-retryable, OU erreur DB : arrêt PROPRE
+        // (curseur conservé, upsert idempotent → reprise sans doublon).
+        await this.persistPartial(state, page, totalPages, jobName, nextPage, err);
         return;
       }
-
-      await this.upsertPage(result.records);
-      pagesFetched += 1;
-      page = nextPage;
-      totalPages = Math.max(
-        1,
-        Math.ceil(result.totalHits / CatalogSyncService.PER_PAGE),
-      );
-      state.last_completed_page = page;
-      state.total_pages = totalPages;
-      await this.stateRepository.save(state);
 
       // 1 requête / delayMs (30 req/min à 2000 ms = 50 % du plafond MU).
       await this.sleep(this.delayMs);
@@ -205,7 +196,16 @@ export class CatalogSyncService {
     state.last_run_at = new Date();
     state.last_run_status = done ? 'completed' : 'partial';
     if (done) state.consecutive_failures = 0;
-    await this.stateRepository.save(state);
+    try {
+      await this.stateRepository.save(state);
+    } catch (err) {
+      this.logger.error(
+        `[${jobName}] échec de persistance du statut final : ${
+          (err as Error)?.message ?? err
+        }`,
+      );
+      return;
+    }
     this.logger.log(
       `[${jobName}] ${pagesFetched} page(s) ingérée(s) — ${
         done
@@ -213,6 +213,42 @@ export class CatalogSyncService {
           : `budget épuisé, reprise à la page ${page + 1}`
       }`,
     );
+  }
+
+  /**
+   * Persiste un arrêt PARTIEL d'une passe (échec réseau ou DB) : curseur
+   * conservé, statut `partial`, `consecutive_failures++`, log warn. La
+   * persistance du statut est best-effort — si la DB est la cause de l'échec,
+   * on ne peut que logger. L'exception n'est PAS propagée, pour ne pas sauter
+   * les passes suivantes du run (rating → week_pos → hydration).
+   */
+  private async persistPartial(
+    state: CatalogSyncState,
+    page: number,
+    totalPages: number | null,
+    jobName: CatalogSyncJobName,
+    failedPage: number,
+    err: unknown,
+  ): Promise<void> {
+    state.last_completed_page = page;
+    state.total_pages = totalPages;
+    state.last_run_at = new Date();
+    state.last_run_status = 'partial';
+    state.consecutive_failures += 1;
+    this.logger.warn(
+      `[${jobName}] arrêt partiel sur la page ${failedPage} : ${
+        (err as Error)?.message ?? err
+      } — reprise à la page ${page + 1} au prochain run`,
+    );
+    try {
+      await this.stateRepository.save(state);
+    } catch (saveErr) {
+      this.logger.error(
+        `[${jobName}] échec de persistance du statut partiel : ${
+          (saveErr as Error)?.message ?? saveErr
+        }`,
+      );
+    }
   }
 
   /** Dernière page de la passe : min(total_pages, cap job, cap MU 400). */
@@ -272,48 +308,32 @@ export class CatalogSyncService {
   }
 
   /**
-   * Upsert d'une page en DEUX lots pour ne JAMAIS écraser des genres
-   * existants par null : le lot « sans genres » omet la colonne `genres`
-   * du `orUpdate`. `total_chapters` / `completed` / `associated` ne sont
-   * jamais listés → intouchés (préserve GREATEST et les données détail).
+   * Upsert d'une page en lots regroupés par colonnes NON-NULL : chaque lot ne
+   * liste dans son `orUpdate` que les colonnes réellement renseignées, donc
+   * une colonne absente du payload MU (rating/year/covers/genres) n'écrase
+   * JAMAIS la valeur existante par null (préserve l'hydratation détail).
+   * `total_chapters` / `completed` / `associated` ne sont jamais listés →
+   * intouchés (préserve GREATEST et les données détail).
    */
   private async upsertPage(records: MuSearchResult[]): Promise<void> {
-    const { withGenres, withoutGenres } = buildCatalogUpsertRows(records);
+    const batches = buildCatalogUpsertBatches(records);
 
-    if (
-      records.length > 0 &&
-      withGenres.length === 0 &&
-      !this.genresMissingWarned
-    ) {
+    const hasAnyGenres = batches.some((b) => b.overwrite.includes('genres'));
+    if (records.length > 0 && !hasAnyGenres && !this.genresMissingWarned) {
       this.genresMissingWarned = true;
       this.logger.warn(
         'Payload search MU sans `record.genres` — hydratation différée via hydrateMissingGenres/getMangaDetails',
       );
     }
 
-    const baseColumns = [
-      'title',
-      'year',
-      'rating',
-      'small_cover_url',
-      'medium_cover_url',
-    ];
-    if (withGenres.length > 0) {
+    for (const batch of batches) {
+      if (batch.rows.length === 0) continue;
       await this.mangaRepository
         .createQueryBuilder()
         .insert()
         .into(Manga)
-        .values(withGenres)
-        .orUpdate([...baseColumns, 'genres'], ['mu_id'])
-        .execute();
-    }
-    if (withoutGenres.length > 0) {
-      await this.mangaRepository
-        .createQueryBuilder()
-        .insert()
-        .into(Manga)
-        .values(withoutGenres)
-        .orUpdate(baseColumns, ['mu_id'])
+        .values(batch.rows)
+        .orUpdate(batch.overwrite, ['mu_id'])
         .execute();
     }
   }

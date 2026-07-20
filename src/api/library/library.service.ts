@@ -168,6 +168,14 @@ export class LibraryService {
         ? ReadingStatus.Completed
         : ReadingStatus.CaughtUp;
 
+    // Edge connu (NON corrigé — sur-ingénierie pour le volume actuel) : deux
+    // PUT /library/chapter concurrents pour le même (user, manga) lisent le
+    // MÊME `oldReadChapters` sans SELECT ... FOR UPDATE. Le pointeur converge
+    // (dernier write gagne, applyChapterPointer est monotone), mais le
+    // backfill du journal peut alors journaliser deux fois un intervalle qui
+    // se chevauche (quelques lignes de log dupliquées, jamais de perte de
+    // progression). Un verrou de ligne (FOR UPDATE) sur `oldReadChapters`
+    // serait la vraie parade si le trafic concurrent le justifie un jour.
     const oldReadChapters = mangaToUpdate[0].user_read_chapters;
     await this.persistChapterProgress(
       userId,

@@ -27,29 +27,52 @@ export interface CatalogPage {
   totalHits: number;
 }
 
-export interface CatalogUpsertRows {
-  /** Lignes dont le payload MU contient des genres exploitables. */
-  withGenres: Array<QueryDeepPartialEntity<Manga>>;
-  /** Lignes sans genres — upsertées SANS la colonne `genres`. */
-  withoutGenres: Array<QueryDeepPartialEntity<Manga>>;
+export interface CatalogUpsertBatch {
+  /**
+   * Colonnes du `ON CONFLICT DO UPDATE SET` — jamais une colonne à null, pour
+   * ne pas écraser une valeur déjà hydratée en base par un null MU.
+   */
+  overwrite: string[];
+  /** Lignes partageant exactement ce jeu de colonnes non-null. */
+  rows: Array<QueryDeepPartialEntity<Manga>>;
 }
 
+/** Toujours écrasée : MU search fournit toujours un titre. */
+const ALWAYS_OVERWRITE_COLUMNS = ['title'] as const;
+
 /**
- * Mappe les records d'une page search MU vers des lignes d'upsert `manga`,
- * séparées en deux lots (avec / sans genres) pour que le lot sans genres
- * n'écrase jamais des genres existants par null. Les records sans
- * `series_id` exploitable sont ignorés.
+ * Colonnes nullable protégées : elles ne sont écrasées QUE si le record MU
+ * fournit une valeur non-null. Un record search sans `bayesian_rating`
+ * (fréquent en `week_pos`) ne doit pas remettre à null une note déjà hydratée
+ * (le manga sortirait de `CatalogCandidateService` rating>=7 / `findSleeperHits`).
+ * Idem pour l'année et les covers (et les genres, historiquement protégés).
  */
-export function buildCatalogUpsertRows(
+const PROTECTED_NULLABLE_COLUMNS = [
+  'year',
+  'rating',
+  'small_cover_url',
+  'medium_cover_url',
+  'genres',
+] as const;
+
+/**
+ * Mappe les records d'une page search MU vers des lots d'upsert `manga`,
+ * regroupés par jeu de colonnes NON-NULL. Chaque lot ne liste dans son
+ * `overwrite` que les colonnes réellement renseignées → une colonne absente
+ * du payload n'écrase jamais la valeur existante par null (protection
+ * généralisée à rating/year/covers, pas seulement aux genres). Les records
+ * sans `series_id` exploitable sont ignorés.
+ */
+export function buildCatalogUpsertBatches(
   records: MuSearchResult[],
-): CatalogUpsertRows {
-  const withGenres: Array<QueryDeepPartialEntity<Manga>> = [];
-  const withoutGenres: Array<QueryDeepPartialEntity<Manga>> = [];
+): CatalogUpsertBatch[] {
+  const batches = new Map<string, CatalogUpsertBatch>();
 
   for (const item of records) {
     const record = item?.record;
     const seriesId = Number(record?.series_id);
     if (!record || !Number.isFinite(seriesId) || seriesId <= 0) continue;
+
     const genres = normalizeGenres(record.genres);
     const yearNum = Number.parseInt(String(record.year ?? ''), 10);
     const row: QueryDeepPartialEntity<Manga> = {
@@ -63,11 +86,22 @@ export function buildCatalogUpsertRows(
       small_cover_url: record.image?.url?.thumb ?? null,
       medium_cover_url: record.image?.url?.original ?? null,
     };
-    if (genres && genres.length > 0) withGenres.push({ ...row, genres });
-    else withoutGenres.push(row);
+    if (genres && genres.length > 0) row.genres = genres;
+
+    // Overwrite = colonnes toujours écrasées + colonnes protégées non-null.
+    const rowFields = row as Record<string, unknown>;
+    const overwrite = [
+      ...ALWAYS_OVERWRITE_COLUMNS,
+      ...PROTECTED_NULLABLE_COLUMNS.filter((col) => rowFields[col] != null),
+    ];
+
+    const key = overwrite.join(',');
+    const batch = batches.get(key);
+    if (batch) batch.rows.push(row);
+    else batches.set(key, { overwrite, rows: [row] });
   }
 
-  return { withGenres, withoutGenres };
+  return [...batches.values()];
 }
 
 /** Lit un entier > 0 depuis la config, sinon retourne le défaut. */
