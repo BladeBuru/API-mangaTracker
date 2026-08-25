@@ -12,16 +12,8 @@ import {
   CatalogCandidate,
   CatalogCandidateService,
 } from './catalog-candidate.service';
-
-/**
- * Entrée scorée pour un manga candidat.
- * `sources` : map muId source → contribution au score (utilisé pour expliquer
- * « parce que vous avez aimé X, Y »).
- */
-interface ScoredEntry {
-  score: number;
-  sources: Map<string, number>;
-}
+import { GenreSectionService } from './genre-section.service';
+import { ScoredEntry } from './scored-entry.interface';
 
 @Injectable()
 export class RecommendationService {
@@ -115,6 +107,7 @@ export class RecommendationService {
     private readonly mangasService: MangasService,
     private readonly recoCache: RecoCacheService,
     private readonly catalogCandidates: CatalogCandidateService,
+    private readonly genreSections: GenreSectionService,
   ) {}
 
   /**
@@ -341,21 +334,24 @@ export class RecommendationService {
   }
 
   /**
-   * Calcule le scoreMap utilisateur (commun à `buildUserRecommendations` et
-   * `buildUserRecommendationsByGenre`).
+   * Calcule le scoreMap utilisateur (utilisé par
+   * `buildUserRecommendationsByGenre`). Retourne aussi la bibliothèque
+   * chargée pour éviter une seconde requête côté `GenreSectionService`
+   * (classement des genres favoris + exclusion biblio).
    *
    * Note : duplique partiellement la logique de `buildUserRecommendations`
    * pour éviter de la rappeler récursivement et limiter l'over-engineering.
    * Si une 3ème variante apparaît, factoriser proprement.
    */
-  private async computeScoreMap(
-    userId: number,
-  ): Promise<Map<string, ScoredEntry>> {
+  private async computeScoreMap(userId: number): Promise<{
+    scoreMap: Map<string, ScoredEntry>;
+    userMangas: UserManga[];
+  }> {
     const userMangas = await this.userMangaRepository.find({
       where: { user: { id: userId } },
       relations: ['manga'],
     });
-    if (userMangas.length === 0) return new Map();
+    if (userMangas.length === 0) return { scoreMap: new Map(), userMangas };
 
     const libraryMuIds = new Set(userMangas.map((um) => um.manga.mu_id));
     const scoreMap = new Map<string, ScoredEntry>();
@@ -382,13 +378,13 @@ export class RecommendationService {
     if (scoreMap.size > 0) {
       if (uncachedIds.length > 0) this.fetchUncachedInBackground(uncachedIds);
       await this.augmentWithCatalog(userMangas, libraryMuIds, scoreMap);
-      return scoreMap;
+      return { scoreMap, userMangas };
     }
 
     // Cache vide : fetch bloquant batché
     await this.fetchAndScoreBlocking(userMangas, libraryMuIds, scoreMap);
     await this.augmentWithCatalog(userMangas, libraryMuIds, scoreMap);
-    return scoreMap;
+    return { scoreMap, userMangas };
   }
 
   /**
@@ -499,17 +495,21 @@ export class RecommendationService {
   }
 
   /**
-   * Variante segmentée : retourne les recommandations groupées par genre.
+   * Variante segmentée : retourne les recommandations groupées par genre
+   * pour la home. La construction des sections est déléguée à
+   * `GenreSectionService`.
    *
-   * @param topGenres Nombre max de genres à remonter (les plus représentés
-   *   dans les recos triées par score).
+   * **Fix 2026-08-25** (« mêmes titres dans toutes les sections ») : dédup
+   * par mu_id, exclusivité inter-sections (un manga n'apparaît que dans la
+   * section de son genre le mieux classé) et complément des sections sous
+   * `perGenre` par le catalogue local — voir
+   * `GenreSectionService.buildSections`.
+   *
+   * @param topGenres Nombre max de genres remontés (genres favoris de la
+   *   biblio, fallback sur la représentation dans le pool).
    * @param perGenre Nombre max de mangas remontés par genre.
    *
-   * Format de retour : `{ Action: [...], Romance: [...], ... }`.
-   *
-   * Filtre les genres NSFW (réutilise la liste `NSFW_GENRES` côté constants).
-   * Un manga apparaît dans plusieurs sections s'il a plusieurs genres — c'est
-   * voulu (UX home).
+   * Format de retour inchangé : `{ Action: [...], Romance: [...], ... }`.
    */
   async buildUserRecommendationsByGenre(
     userId: number,
@@ -524,134 +524,15 @@ export class RecommendationService {
     >(userId, variant);
     if (cachedResult) return cachedResult;
 
-    const scoreMap = await this.computeScoreMap(userId);
+    const { scoreMap, userMangas } = await this.computeScoreMap(userId);
     if (scoreMap.size === 0) return {};
 
-    // Tri initial par score
-    const sorted = Array.from(scoreMap.entries())
-      .map(([mu_id, entry]) => ({
-        mu_id,
-        score: entry.score,
-        sources: entry.sources,
-      }))
-      .sort((a, b) => b.score - a.score);
-
-    // Fetch tous les mangas pour récupérer leurs genres
-    const muIds = sorted.map((s) => s.mu_id);
-    const mangas = await this.mangaRepository.find({
-      where: { mu_id: In(muIds) },
-    });
-    const mangaMap = new Map(mangas.map((m) => [m.mu_id, m]));
-
-    // Liste NSFW à exclure (import au top du fichier ferait une dépendance
-    // cyclique potentielle ; on garde la simple comparaison ici)
-    const nsfwGenres = new Set([
-      'Adult',
-      'Mature',
-      'Hentai',
-      'Smut',
-      'Yaoi',
-      'Yuri',
-      'Ecchi',
-    ]);
-
-    // Group by genre — score = max score d'un manga dans ce genre
-    const genreGroups = new Map<
-      string,
-      Array<{ mu_id: string; score: number; sources: Map<string, number> }>
-    >();
-    for (const scored of sorted) {
-      const m = mangaMap.get(scored.mu_id);
-      if (!m?.genres || m.genres.length === 0) continue;
-      for (const rawGenre of m.genres) {
-        const genre = rawGenre.trim();
-        if (!genre || nsfwGenres.has(genre)) continue;
-        if (!genreGroups.has(genre)) genreGroups.set(genre, []);
-        genreGroups.get(genre)!.push(scored);
-      }
-    }
-
-    // Sélectionner les `topGenres` genres avec le plus de candidats
-    const sortedGenres = Array.from(genreGroups.entries())
-      .sort(([, a], [, b]) => b.length - a.length)
-      .slice(0, topGenres);
-
-    if (sortedGenres.length === 0) return {};
-
-    // Enrichir tous les mangas top-N par genre (1 query par batch)
-    const allTopMuIds = new Set<string>();
-    const truncatedByGenre = new Map<
-      string,
-      Array<{ mu_id: string; score: number; sources: Map<string, number> }>
-    >();
-    for (const [genre, list] of sortedGenres) {
-      const top = list.slice(0, perGenre);
-      truncatedByGenre.set(genre, top);
-      top.forEach((s) => allTopMuIds.add(s.mu_id));
-    }
-
-    const muRatings = new Map(
-      mangas
-        .filter((m) => allTopMuIds.has(m.mu_id))
-        .map((m) => [m.mu_id, Number(m.rating) || 0]),
+    const result = await this.genreSections.buildSections(
+      scoreMap,
+      userMangas,
+      topGenres,
+      perGenre,
     );
-    const community = await this.mangasService.getCommunityRatings(
-      Array.from(allTopMuIds),
-      muRatings,
-    );
-
-    // Construire les sources titles map
-    const allSourceMuIds = new Set<string>();
-    for (const list of truncatedByGenre.values()) {
-      for (const s of list) {
-        for (const sourceId of s.sources.keys()) allSourceMuIds.add(sourceId);
-      }
-    }
-    const sourceMangas =
-      allSourceMuIds.size > 0
-        ? await this.mangaRepository.find({
-            where: { mu_id: In(Array.from(allSourceMuIds)) },
-          })
-        : [];
-    const sourceTitleMap = new Map(sourceMangas.map((m) => [m.mu_id, m.title]));
-
-    // Build result
-    // NB : les stubs (issus de saveRecommendations) n'ont pas de genres tant
-    // que getMangaDetails n'a pas tourné — ils sont donc filtrés à l'étape
-    // de regroupement par genre plus haut. La null-safety ci-dessous est de
-    // la défense en profondeur (au cas où un manga existant aurait des
-    // covers null).
-    const result: Record<string, MangaQuickViewDto[]> = {};
-    for (const [genre, list] of truncatedByGenre) {
-      result[genre] = list
-        .map((scored) => {
-          const m = mangaMap.get(scored.mu_id);
-          if (!m) return null;
-          const dto = new MangaQuickViewDto();
-          dto.muId = Number(scored.mu_id);
-          dto.title = m.title;
-          dto.year = m.year ?? 0;
-          dto.mediumCoverUrl = m.medium_cover_url ?? '';
-          dto.largeCoverUrl = m.medium_cover_url ?? '';
-          dto.rating = m.rating !== null ? Number(m.rating) : 0;
-          const topSources = Array.from(scored.sources.entries())
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 3)
-            .map(([id]) => sourceTitleMap.get(id))
-            .filter((t): t is string => Boolean(t));
-          if (topSources.length > 0) dto.recommendedBecauseOf = topSources;
-          const c = community.get(scored.mu_id);
-          if (c) {
-            if (c.communityRating !== null)
-              dto.communityRating = c.communityRating;
-            dto.communityRatingCount = c.communityRatingCount;
-            dto.aggregatedRating = c.aggregatedRating;
-          }
-          return dto;
-        })
-        .filter((dto): dto is MangaQuickViewDto => dto !== null);
-    }
-
     this.recoCache.set(userId, variant, result);
     return result;
   }

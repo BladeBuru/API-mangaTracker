@@ -16,6 +16,9 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 - **library / mangas** : écriture GREATEST inconditionnelle sur `manga.total_chapters` dans `checkManga` (refresh 6 h) ET `getMangaDetails` (invariant A-5 : monotone croissant, la regex MU sous-estime le vrai total — voir memory-bank/decisions.md)
 - **library** : `POST /library/:muId/chapter-log` — fenêtre d'idempotence 10 min : une lecture identique (user, manga, chapitre, non-skippée) < 10 min réutilise la ligne existante
 
+### Fixed
+- **recommendations** : `GET /recommendations/by-genre` — toutes les sections affichaient les mêmes titres (certains en triple) car chaque manga du pool était poussé dans TOUTES les sections de ses genres, sans dédup ni complément. Fix : dédup par `mu_id`, exclusivité inter-sections (un manga n'apparaît que dans la section de son genre le mieux classé — genres favoris de la biblio, fallback représentation pool), complément des sections sous `perGenre` par le catalogue local (rating ≥ 7, NSFW exclus, hors biblio, hors titres déjà affichés — 1 requête max par section, pas de N+1). Logique extraite dans `GenreSectionService` (contrat de réponse `Map<genre, MangaQuickViewDto[]>` inchangé) + 10 tests unitaires dédiés
+
 ### BDD
 - Migration `1753100000000-CreateMangaChapterReport` : nouvelle table `manga_chapter_report` (FK user CASCADE + manga CASCADE, index unique `(user_id, manga_id)`, index `manga_id`)
 
