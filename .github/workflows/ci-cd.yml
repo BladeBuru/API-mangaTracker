@@ -144,13 +144,15 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
           ANDROID_SHA256_FINGERPRINT: ${{ secrets.PROD_ANDROID_SHA256_FINGERPRINT }}
+          # Optionnel : sans clé, la traduction retombe sur le provider gratuit (gtx).
+          DEEPL_API_KEY: ${{ secrets.PROD_DEEPL_API_KEY }}
           CORS_ORIGINS: "https://api.bladeburu.com,https://app.bladeburu.com"
         with:
           host: ${{ secrets.NAS_HOST }}
           port: ${{ secrets.NAS_PORT }}
           username: ${{ secrets.NAS_USER }}
           key: ${{ secrets.NAS_SSH_KEY }}
-          envs: TAG,DATABASE_HOST,DATABASE_NAME,DATABASE_USER,DATABASE_PASSWORD,DATABASE_SCHEMA,JWT_KEY,JWT_REFRESH_SECRET,SMTP_USER,SMTP_PASSWORD,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,ANDROID_SHA256_FINGERPRINT,CORS_ORIGINS
+          envs: TAG,DATABASE_HOST,DATABASE_NAME,DATABASE_USER,DATABASE_PASSWORD,DATABASE_SCHEMA,JWT_KEY,JWT_REFRESH_SECRET,SMTP_USER,SMTP_PASSWORD,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,ANDROID_SHA256_FINGERPRINT,DEEPL_API_KEY,CORS_ORIGINS
           script: |
             set -euo pipefail
 
@@ -177,6 +179,7 @@ jobs:
             GOOGLE_CLIENT_ID       = os.environ.get('GOOGLE_CLIENT_ID', '')
             GOOGLE_CLIENT_SECRET   = os.environ.get('GOOGLE_CLIENT_SECRET', '')
             ANDROID_SHA256         = os.environ.get('ANDROID_SHA256_FINGERPRINT', '')
+            DEEPL_API_KEY          = os.environ.get('DEEPL_API_KEY', '')
             CORS_ORIGINS           = os.environ.get('CORS_ORIGINS', 'https://api.bladeburu.com')
 
             compose = f"""services:
@@ -217,6 +220,8 @@ jobs:
                   GOOGLE_CLIENT_SECRET: "{GOOGLE_CLIENT_SECRET}"
                   ANDROID_PACKAGE_NAME: "com.example.manga_tracker"
                   ANDROID_SHA256_FINGERPRINT: "{ANDROID_SHA256}"
+                  # Vide = fallback provider gratuit (gtx) — voir DescriptionTranslationService.
+                  DEEPL_API_KEY: "{DEEPL_API_KEY}"
                   # Cache disque des covers (mode stream, hotfix-v0-10-1 US-2).
                   COVERS_CACHE_DIR: "/uploads/covers"
                 volumes:

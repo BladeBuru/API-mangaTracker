@@ -6,6 +6,7 @@ import {
   CatalogCandidate,
   CatalogCandidateService,
 } from './catalog-candidate.service';
+import { GenreSectionService } from './genre-section.service';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { MangaRecommendation } from '@/api/mangas/manga-recommendation.entity';
 import { Manga } from '@/api/mangas/manga.entity';
@@ -96,6 +97,8 @@ describe('RecommendationService', () => {
         // Instance réelle (in-memory pur) — recréée à chaque test par le
         // beforeEach, donc pas de fuite de cache entre les cas.
         RecoCacheService,
+        // Instance réelle — consomme les mêmes mocks repo/MangasService.
+        GenreSectionService,
         { provide: getRepositoryToken(UserManga), useValue: userMangaRepo },
         {
           provide: getRepositoryToken(MangaRecommendation),
@@ -538,10 +541,26 @@ describe('RecommendationService', () => {
       });
     }
 
-    it('groupe les recommandations par genre, top N par section', async () => {
+    /**
+     * QB catalogue (complément des sections déficitaires) — vide par défaut.
+     * Le complément lui-même est testé en détail dans
+     * `genre-section.service.spec.ts`.
+     */
+    function mockEmptyCatalogQb() {
+      mangaRepo.createQueryBuilder = jest.fn(() => ({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      })) as any;
+    }
+
+    it('groupe par genre avec exclusivité : un manga ne sort que dans la section de son genre le mieux classé', async () => {
       userMangaRepo.find.mockResolvedValue([
         makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
       ]);
+      mockEmptyCatalogQb();
       mangasService.getCachedRecommendations.mockResolvedValue([
         makeReco('1000', '2000', 10),
         makeReco('1000', '2001', 9),
@@ -570,14 +589,20 @@ describe('RecommendationService', () => {
 
       const result = await service.buildUserRecommendationsByGenre(42, 5, 10);
       expect(Object.keys(result).sort()).toEqual(['Action', 'Romance']);
-      expect(result['Action'].length).toBe(3); // 2000, 2001, 2003
-      expect(result['Romance'].length).toBe(2); // 2002, 2003
+      // 2003 (Action + Romance) n'apparaît QUE dans Action (genre le mieux
+      // classé) — avant le fix il était dupliqué dans les deux sections.
+      expect(result['Action'].map((d) => d.muId)).toEqual([2000, 2001, 2003]);
+      expect(result['Romance'].map((d) => d.muId)).toEqual([2002]);
+      // Aucun muId ne doit apparaître dans plus d'une section.
+      const all = Object.values(result).flatMap((l) => l.map((d) => d.muId));
+      expect(new Set(all).size).toBe(all.length);
     });
 
     it('filtre les genres NSFW (Adult, Hentai, etc.)', async () => {
       userMangaRepo.find.mockResolvedValue([
         makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
       ]);
+      mockEmptyCatalogQb();
       mangasService.getCachedRecommendations.mockResolvedValue([
         makeReco('1000', '2000', 10),
       ]);
@@ -834,6 +859,15 @@ describe('RecommendationService', () => {
       userMangaRepo.find.mockResolvedValue([
         makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
       ]);
+      // QB du complément par section (GenreSectionService) — vide ici, le
+      // complément dédié est couvert par genre-section.service.spec.ts.
+      mangaRepo.createQueryBuilder = jest.fn(() => ({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      })) as any;
       mangasService.getCachedRecommendations.mockResolvedValue([
         makeReco('1000', '2000', 10),
       ]);

@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { MangaRecommendation } from '@/api/mangas/manga-recommendation.entity';
@@ -7,6 +7,7 @@ import { MangasModule } from '@/api/mangas/mangas.module';
 import { RecommendationService } from './recommendation.service';
 import { RecommendationController } from './recommendation.controller';
 import { CatalogCandidateService } from './catalog-candidate.service';
+import { GenreSectionService } from './genre-section.service';
 import { RecoCacheModule } from './reco-cache.module';
 
 @Module({
@@ -18,7 +19,11 @@ import { RecoCacheModule } from './reco-cache.module';
     RecoCacheModule,
   ],
   controllers: [RecommendationController],
-  providers: [RecommendationService, CatalogCandidateService],
+  providers: [
+    RecommendationService,
+    CatalogCandidateService,
+    GenreSectionService,
+  ],
   exports: [RecommendationService],
 })
 export class RecommendationModule {}

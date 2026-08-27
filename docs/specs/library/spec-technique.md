@@ -1,11 +1,11 @@
 # Spec Technique — Library
 
-| Champ         | Valeur                            |
-|---------------|-----------------------------------|
-| Module        | library                           |
-| Version       | 0.2.0                             |
-| Date          | 2026-07-20                        |
-| Source        | Rétro-ingénierie + Chantier A     |
+| Champ         | Valeur                                                        |
+|---------------|---------------------------------------------------------------|
+| Module        | library                                                       |
+| Version       | 0.3.0                                                         |
+| Date          | 2026-08-26                                                    |
+| Source        | Rétro-ingénierie + Chantier A + fix/recos-by-genre-dedup (corrections revue adversariale) |
 
 ## Architecture du module
 
@@ -25,8 +25,9 @@ Une dépendance circulaire avec `MangasModule` est résolue par `forwardRef(() =
 |---------|------|--------|
 | `src/api/library/library.controller.ts` | Routes HTTP (10 endpoints) | ~254 |
 | `src/api/library/chapter-report.controller.ts` | Route HTTP signalement chapitres (Chantier A) | ~73 |
-| `src/api/library/library.service.ts` | Logique métier collection (CRUD UserManga, backfill transactionnel) | ~399 |
-| `src/api/library/chapter-log.service.ts` | Log additif de lecture — backfill capé 500, dédup 10 min | ~228 |
+| `src/api/library/library.service.ts` | Logique métier collection (CRUD UserManga, backfill transactionnel) — commentaire race backfill (FOR UPDATE documenté, non implémenté) | ~399 |
+| `src/api/library/chapter-log.service.ts` | Log additif de lecture — backfill capé 500, dédup 10 min (mise à jour de la ligne récente : scrollPosition + isBonus) | ~228 |
+| `src/api/library/user-throttler.guard.ts` | Guard throttle par userId (10 req/h) sur POST report-chapters — remplace le throttle global par IP (inefficace derrière NPMplus) | ~38 |
 | `src/api/library/chapter-report.service.ts` | Signalement chapitres + consolidation communautaire (Chantier A) | ~228 |
 | `src/api/library/manga-chapter-report.entity.ts` | Entité TypeORM table `manga_chapter_report` (Chantier A) | ~54 |
 | `src/api/library/library.module.ts` | Déclaration du module NestJS | ~26 |
@@ -113,7 +114,7 @@ Index supplémentaire : `IDX_chapter_report_manga (manga_id)` — couvre la requ
 | `POST` | `/library/:muId/chapter-log` | Enregistrer une session de lecture | JWT | 201 `ChapterLogEntryDto` |
 | `GET` | `/library/:muId/chapter-log` | Historique des sessions de lecture | JWT | 200 `ChapterLogEntryDto[]` |
 | `PUT` | `/library/:muId/chapter/:chapterNumber/skip` | Toggle skip/unskip d'un chapitre | JWT | 200 `ChapterLogEntryDto` |
-| `POST` | `/library/:muId/report-chapters` | Signaler un total de chapitres plus élevé que le total officiel (Chantier A, throttle 10/h) | JWT | 201 `ReportChaptersResultDto` |
+| `POST` | `/library/:muId/report-chapters` | Signaler un total de chapitres plus élevé que le total officiel (Chantier A) | JWT + `UserThrottlerGuard` 10/h par userId | 201 `ReportChaptersResultDto` |
 
 ### Codes d'erreur spécifiques
 
@@ -147,6 +148,8 @@ Note : un statut `dropped` (abandonné) est mentionné dans le contexte discover
 - **Fire-and-forget pour les rafraîchissements** : `checkIfMangaArrayInfoIsOutdated` est appelé sans `await` dans `getMangas`, avec capture des erreurs via `.catch()`.
 - **Upsert manuel pour le toggle skip** : `ChapterLogService.toggleSkip` implémente un upsert manuellement (find + update ou create) car TypeORM ne propose pas d'upsert conditionnel natif adapté.
 - **Upsert `ON CONFLICT DO UPDATE` pour les reports** : `ChapterReportService.reportMoreChapters` utilise `createQueryBuilder().insert().orUpdate()` sur les colonnes `['reported_total', 'updated_at']` conflitant sur `['user_id', 'manga_id']` (index unique `UQ_chapter_report_user_manga`).
+- **Throttle par userId sur report-chapters** : `UserThrottlerGuard` (10 req/h) appliqué sur `POST /library/:muId/report-chapters` à la place du throttle global par IP — nécessaire car l'API est derrière le reverse proxy NPMplus qui masque les IPs clients. Le guard lit `req.user.userId` pour la clé de rate-limit.
+- **Race condition backfill documentée** : `LibraryService.persistChapterProgress` contient un commentaire explicitant le risque de race condition sur le backfill transactionnel (deux requêtes simultanées pourraient insérer des doublons dans `user_manga_chapter_log`). Un `SELECT FOR UPDATE` sur la ligne `user_manga` résoudrait le problème mais n'est pas encore implémenté — la fenêtre de dédup 10 min de `ChapterLogService` constitue le filet de sécurité actuel.
 - **Création à la volée des entités Manga** : dans `checkManga`, si un manga n'est pas en base, il est créé par appel à l'API MangaUpdates. Ce side-effect est encapsulé dans la méthode privée `checkManga`.
 - **`NotFoundInterceptor`** : `POST /library/save` utilise un intercepteur global pour transformer les `NotFoundException` en réponses propres.
 - **Deux sources de vérité intentionnellement distinctes** : `user_manga.user_read_chapters` (pointeur de progression) et `user_manga_chapter_log` (historique additif) coexistent sans synchronisation. Le log ne met jamais à jour le compteur — c'est une séparation de responsabilité explicite documentée dans les commentaires du code.
@@ -160,7 +163,7 @@ Note : un statut `dropped` (abandonné) est mentionné dans le contexte discover
 - **Plafond de pagination du log** : 500 entrées codé en dur dans `ChapterLogService.listForManga` (commentaire "pagination future si besoin").
 - **`forwardRef`** : dépendance circulaire entre `LibraryModule` et `MangasModule` résolue par `forwardRef`.
 - **`BACKFILL_CAP = 500`** (constante `ChapterLogService`) : au-delà de 500 chapitres de delta en un seul PUT, seuls les 500 derniers sont journalisés. Le pointeur `user_read_chapters`, lui, n'est pas capé.
-- **`DEDUP_WINDOW_MINUTES = 10`** (constante `ChapterLogService`) : fenêtre d'idempotence — une lecture non-skippée du même chapitre plus récente que 10 min n'est pas dupliquée dans le backfill (évite le doublon reader + backfill `updateChapter`).
+- **`DEDUP_WINDOW_MINUTES = 10`** (constante `ChapterLogService`) : fenêtre d'idempotence — une lecture non-skippée du même chapitre plus récente que 10 min met à jour la ligne existante (`scrollPosition`, `isBonus`) au lieu d'en créer une nouvelle. Correction adversariale (d8641f4) : l'ancien comportement ignorait silencieusement la mise à jour.
 - **`MAX_REPORT_DELTA = 200`** (constante `ChapterReportService`) : garde-fou anti-typo sur les reports — le total signalé ne peut pas dépasser le total officiel + 200.
 - **`MIN_REPORTERS = 2`** (constante `ChapterReportService`) : nombre minimum d'utilisateurs distincts concordants pour déclencher une consolidation communautaire du total officiel.
 

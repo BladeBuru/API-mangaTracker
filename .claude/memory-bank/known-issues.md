@@ -1,6 +1,6 @@
 # Problèmes Connus — Manga Tracker API
 
-**Dernière mise à jour :** Mai 2026
+**Dernière mise à jour :** Août 2026
 
 ---
 
@@ -76,6 +76,28 @@
 ---
 
 ## ✅ Problèmes Résolus
+
+### Recos by-genre : mêmes titres dans toutes les sections + doublons
+- **Module** : recommendations
+- **Résolu le** : 2026-08-25 (branche `fix/recos-by-genre-dedup`)
+- **Symptôme** : `GET /recommendations/by-genre` (home segmentée, top 5
+  genres × 10) — l'utilisateur avec ~5 recos au total voyait LES MÊMES
+  titres dans chaque section (Action, Shounen…), certains en triple.
+- **Cause** : les sections n'étaient que des vues filtrées d'un pool global
+  unique ; chaque manga était poussé dans TOUTES les sections de ses genres
+  (multi-appartenance assumée « UX home »), les « top genres » étaient
+  dérivés du pool lui-même, et aucune section n'était complétée. Avec un
+  pool maigre (cache MU peu rempli), sections identiques + titres en Nx.
+- **Solution** : logique extraite dans `GenreSectionService` — dédup par
+  `mu_id` (pool Map + Set par section, genres trimés), exclusivité
+  inter-sections (affectation au genre le mieux classé — genres favoris de
+  la biblio, fallback pool — avec bascule sur le genre suivant si section
+  pleine), complément des sections sous `perGenre` par le catalogue local
+  (rating ≥ 7, NSFW exclus, hors biblio, hors affichés, 1 requête max par
+  section). Contrat `Map<genre, MangaQuickViewDto[]>` inchangé. Tests :
+  `genre-section.service.spec.ts` (10 cas) + spec service adaptée.
+
+---
 
 ### Recherche : `orderby: 'rating'` écrasait la pertinence MangaUpdates
 - **Module** : mangas

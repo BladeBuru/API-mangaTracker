@@ -1,17 +1,17 @@
 # Spec Technique — Mangas
 
-| Champ         | Valeur              |
-|---------------|---------------------|
-| Module        | mangas              |
-| Version       | 0.1.0               |
-| Date          | 2026-06-04          |
-| Source        | Rétro-ingénierie    |
+| Champ         | Valeur                                                                      |
+|---------------|-----------------------------------------------------------------------------|
+| Module        | mangas                                                                      |
+| Version       | 0.2.0                                                                       |
+| Date          | 2026-08-26                                                                  |
+| Source        | Rétro-ingénierie + feat/recos-chapitres-traductions + fix/recos-by-genre-dedup (corrections revue adversariale) |
 
 ---
 
 ## Architecture du module
 
-Le module `mangas` regroupe deux controllers, cinq services, deux entités et plusieurs DTOs. Il est découpé selon les responsabilités suivantes :
+Le module `mangas` regroupe deux controllers, sept services, quatre entités et plusieurs DTOs. Il est découpé selon les responsabilités suivantes :
 
 - **MangasController** : endpoints catalogue (tendances, recherche, détail, recommandations)
 - **MangaCoversController** : endpoints covers (proxy redirect, refresh, sync admin)
@@ -20,6 +20,8 @@ Le module `mangas` regroupe deux controllers, cinq services, deux entités et pl
 - **MangaSyncService** : synchronisation complète de toute la table `manga`
 - **CoverProxyService** : résolution de l'URL upstream pour le proxy 302
 - **HelperService** : utilitaires de formatage des requêtes MU
+- **DescriptionTranslationService** : cache Postgres des descriptions traduites + cascade providers (DeepL / gtx) + dédup in-flight + SWR sur hash mismatch + negative-cache 5 min
+- **CatalogSyncService** : synchronisation nightly paginée du catalogue MU vers la table `manga` (cron 03:30, curseur de reprise, backoff 429, statut `partial` sur erreur DB + `consecutive_failures++`)
 
 La dépendance circulaire avec `LibraryModule` est gérée via `forwardRef()` dans `MangasModule`.
 
@@ -38,6 +40,16 @@ La dépendance circulaire avec `LibraryModule` est gérée via `forwardRef()` da
 | `src/api/mangas/rating-aggregator.ts` | Formule Bayesienne pure (fonction standalone) | ~76 |
 | `src/api/mangas/manga.entity.ts` | Entité TypeORM `manga` avec factory `fromMU` | ~113 |
 | `src/api/mangas/manga-recommendation.entity.ts` | Entité TypeORM `manga_recommendation` | ~33 |
+| `src/api/mangas/manga-translation.entity.ts` | Entité TypeORM `manga_translation` (cache traductions) | ~48 |
+| `src/api/mangas/catalog-sync-state.entity.ts` | Entité TypeORM `catalog_sync_state` (curseur de reprise cron) | ~66 |
+| `src/api/mangas/catalog-sync.service.ts` | Sync nightly catalogue MU — cron, pagination, backoff, curseur, statut partial sur erreur DB | ~380 |
+| `src/api/mangas/catalog-sync.mapper.ts` | Mapping records MU → lots upsert `manga` (lots séparés genre/non-genre, rating/year/covers null-safe) | ~82 |
+| `src/api/mangas/genre.utils.ts` | Normalisation des formats genres MU hétérogènes (`string` / `{genre}`) | ~24 |
+| `src/api/mangas/exceptions/mu-rate-limit.exception.ts` | Exception typée HTTP 429 MU — distingue rate-limit d'un échec quelconque | ~18 |
+| `src/api/mangas/translation/translation-provider.interface.ts` | Interface commune des providers de traduction | ~27 |
+| `src/api/mangas/translation/deepl.provider.ts` | Provider DeepL API Free (actif si `DEEPL_API_KEY` configuré) | ~83 |
+| `src/api/mangas/translation/gtx.provider.ts` | Provider Google gtx fallback (sans clé, toujours disponible) | ~120 |
+| `src/api/mangas/translation/description-translation.service.ts` | Orchestration cache + SWR hash mismatch + negative-cache 5 min + cascade providers + dédup in-flight + timeout | ~217 |
 | `src/api/mangas/dto/manga-details.dto.ts` | DTO détail manga — parsing MU + enrichissement user | ~399 |
 | `src/api/mangas/dto/manga-quick-view.dto.ts` | DTO liste manga — factories fromMu/fromLibrary | ~130 |
 | `src/api/mangas/dto/search-manga.dto.ts` | DTO corps de requête recherche | ~(petit) |
@@ -84,6 +96,37 @@ La dépendance circulaire avec `LibraryModule` est gérée via `forwardRef()` da
 
 **Stratégie upsert** : `orUpdate(['weight', 'recommended_title', 'updated_at'], ['source_mu_id', 'recommended_mu_id'])` — le poids et le titre sont mis à jour si la paire existe déjà.
 
+### Table `manga_translation`
+
+| Colonne | Type | Contrainte | Notes |
+|---------|------|-----------|-------|
+| `id` | integer | PK, auto-increment | |
+| `mu_id` | bigint | NOT NULL | ID MU du manga |
+| `language` | varchar(5) | NOT NULL | Code primaire 2 lettres : `fr`, `de`, `es`, `pt`, `ja`, `ko` |
+| `source_hash` | varchar(64) | NOT NULL | sha256 hex de la description source — pilote l'invalidation |
+| `translated_description` | text | NOT NULL | Description traduite |
+| `updated_at` | timestamp | auto-updated | |
+
+**Index unique** : `(mu_id, language)`. **Migration** : `1753200000000-CreateMangaTranslationTable`.
+
+**Invariant SWR** : en cas de hash mismatch (description MU modifiée), la ligne existante est renvoyée immédiatement (stale) pendant que la retraduction s'exécute en arrière-plan et met à jour le cache. Un negative-cache 5 min est maintenu en mémoire pour les langues dont la traduction a échoué, afin d'éviter de re-solliciter les providers sur chaque requête.
+
+### Table `catalog_sync_state`
+
+| Colonne | Type | Contrainte | Notes |
+|---------|------|-----------|-------|
+| `id` | integer | PK, auto-increment | |
+| `job_name` | varchar | UNIQUE NOT NULL | `catalog:rating`, `catalog:week_pos`, `hydration` |
+| `last_completed_page` | integer | DEFAULT 0 | Curseur de reprise |
+| `total_pages` | integer | nullable | Connu après la 1re réponse MU |
+| `last_run_at` | timestamptz | nullable | Date du dernier run |
+| `last_run_status` | varchar | nullable | `completed`, `partial`, `failed` |
+| `consecutive_failures` | integer | DEFAULT 0 | Remis à 0 sur passe complétée ; incrémenté sur erreur DB (sans sauter la passe) |
+| `created_at` | timestamp | auto | |
+| `updated_at` | timestamp | auto | |
+
+**3 lignes max** (une par `job_name`). **Migration** : `1753300000000-CreateCatalogSyncState`.
+
 ---
 
 ## API / Endpoints
@@ -96,8 +139,10 @@ La dépendance circulaire avec `LibraryModule` est gérée via `forwardRef()` da
 | GET | `/mangas/new` | Nouveautés par année | JWT |
 | GET | `/mangas/trending` | Tendances hebdomadaires (week_pos) | JWT |
 | GET | `/mangas/recommendations/:muId` | Recommandations fusionnées MU + communauté | JWT |
-| GET | `/mangas/:id` | Fiche détail enrichie (library + community rating) | JWT |
+| GET | `/mangas/:id` | Fiche détail enrichie (library + community rating + traduction optionnelle) | JWT |
 | POST | `/mangas/search` | Recherche textuelle (body SearchMangaDto) | JWT |
+
+**`GET /mangas/:id` — comportement traduction** : lit le header `Accept-Language`. Si la langue primaire est supportée (`fr`, `de`, `es`, `pt`, `ja`, `ko`), la réponse inclut `translated_description` (string). Si la langue est `en` ou absente, le champ est omis. La traduction ne bloque jamais : timeout dépassé ou échec → champ absent, réponse 200 renvoyée normalement. Hash mismatch → stale renvoyé, retraduction en background (SWR).
 
 ### MangaCoversController (`/mangas`)
 
@@ -108,6 +153,20 @@ La dépendance circulaire avec `LibraryModule` est gérée via `forwardRef()` da
 | POST | `/mangas/admin/sync-all` | Sync complète table manga | Secret query param | Aucun |
 
 **Note** : `/mangas/:muId/cover` retourne `Cache-Control: public, max-age=300` (5 minutes).
+
+---
+
+## Variables d'environnement (feat/recos-chapitres-traductions)
+
+| Variable | Défaut | Description |
+|----------|--------|-------------|
+| `DEEPL_API_KEY` | _(absent)_ | Clé API DeepL Free — si absent, fallback automatique sur Google gtx |
+| `TRANSLATION_TIMEOUT_MS` | `4000` | Timeout dur (ms) de la traduction synchrone au 1er visiteur |
+| `CATALOG_SYNC_ENABLED` | `true` (`false` si `NODE_ENV=test`) | Active/désactive le cron catalogue |
+| `CATALOG_SYNC_MAX_PAGES` | `50` | Pages max de la passe `catalog:rating` (100 titres/page ≈ 5000 titres) |
+| `CATALOG_SYNC_PAGES_PER_RUN` | `60` | Budget de pages par nuit (toutes passes confondues) |
+| `CATALOG_SYNC_DELAY_MS` | `2000` | Délai entre 2 appels MU (30 req/min = 50 % du plafond MU anonyme) |
+| `CATALOG_SYNC_HYDRATION_BUDGET` | `200` | Appels `getMangaDetails` max/nuit pour hydrater les `genres IS NULL` |
 
 ---
 
@@ -175,6 +234,29 @@ Le bonus est additionné au `bayesian_rating` (max 10) pour le tri final.
 
 Pas de `user_id` exposé dans la réponse (conformité RGPD documentée dans le code).
 
+### Pattern traduction côté serveur (DescriptionTranslationService)
+
+Stratégie à 5 couches :
+1. **Cache Postgres `manga_translation`** clé `(mu_id, language)`. Hit avec hash identique → zéro appel externe.
+2. **Stale-While-Revalidate sur hash mismatch** : si `source_hash` diffère (description MU mise à jour), la traduction existante est retournée immédiatement (`stale`) pendant qu'une retraduction s'exécute en arrière-plan et met à jour le cache (correction adversariale d8641f4).
+3. **Negative-cache 5 min** en mémoire : les langues dont la traduction a échoué (quota, réseau) sont ignorées pendant 5 min, évitant de spammer les providers sur chaque requête (correction adversariale d8641f4).
+4. **Cascade providers** : DeepL (si `DEEPL_API_KEY`) puis Google gtx fallback. Le premier résultat non-null gagne.
+5. **Timeout dur** `TRANSLATION_TIMEOUT_MS` (4 s) + **dédup in-flight** : une seule promesse en vol par clé `"<muId>:<lang>"`.
+
+Invariant : une traduction ratée ne produit jamais de 5xx.
+
+### Pattern catalogue nightly avec curseur de reprise (CatalogSyncService)
+
+Cron `03:30` + jitter aléatoire 0-15 min. Politique réseau : 1 appel / `CATALOG_SYNC_DELAY_MS` (2 s). Backoff 5/10/20/40 s sur 429/5xx (4 retries).
+
+Trois jobs (`catalog:rating`, `catalog:week_pos`, `hydration`), 1 ligne `catalog_sync_state` par job. Reprise automatique via `last_completed_page`. Sur erreur DB dans `runCatalogPass` : statut `partial` écrit + `consecutive_failures` incrémenté, la passe ne saute pas (correction adversariale d8641f4) — l'ancien comportement loggait l'erreur mais poursuivait sans mettre à jour l'état.
+
+**Stratégie upsert catalogue** (`catalog-sync.mapper.ts`) : lots séparés pour les records avec/sans genres — le lot sans genres n'inclut pas `genres` dans `orUpdate` (les genres existants ne sont jamais écrasés par null). Les colonnes `rating`, `year`, `small_cover_url`, `medium_cover_url` ne sont jamais écrasées par null : seules les valeurs non-null du record MU sont incluses dans `orUpdate` (correction adversariale d8641f4).
+
+### Dégradation gracieuse sur rate-limit MU (MangasService)
+
+`getRecommendationsForManga` intercepte `MuRateLimitException` (429 MU) et retourne `[]` au lieu de propager l'exception (correction adversariale d8641f4). L'appelant (`RecommendationService`) reçoit un tableau vide et continue — plus de 429 propagé au client.
+
 ---
 
 ## Décisions techniques documentées en spec (candidats ADR rejetés)
@@ -205,3 +287,5 @@ La constante `RATING_CONFIDENCE_WEIGHT = 50` signifie qu'il faut 50 votes locaux
 |---------|---------------|--------|
 | `src/api/mangas/mangas.service.spec.ts` | Tests unitaires MangasService | Existant |
 | `src/api/mangas/rating-aggregator.spec.ts` | Tests unitaires formule Bayesienne (comportements aux limites) | Existant |
+| `src/api/mangas/catalog-sync.service.spec.ts` | Tests unitaires CatalogSyncService (cron, backoff, curseur, statut partial) | À créer |
+| `src/api/mangas/translation/description-translation.service.spec.ts` | Tests unitaires DescriptionTranslationService (cache hit, SWR, negative-cache, cascade providers) | À créer |
