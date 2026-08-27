@@ -55,6 +55,16 @@ export class CatalogSyncService {
   /** Backoff sur 429/5xx (4 tentatives après l'appel initial). */
   private static readonly BACKOFF_DELAYS_MS = [5_000, 10_000, 20_000, 40_000];
 
+  /** Garde anti-boucle : délai avant de re-tenter une ligne déjà tentée. */
+  private static readonly HYDRATION_RETRY_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+
+  /**
+   * Budget d'hydratation par défaut (2026-08-28 : 200 → 800). 800 × 2 s
+   * ≈ 27 min à 30 req/min, moitié du plafond MU anonyme. À 200/nuit, le
+   * critère élargi mettait plusieurs semaines à rattraper le stock.
+   */
+  private static readonly DEFAULT_HYDRATION_BUDGET = 800;
+
   private readonly enabled: boolean;
   private readonly maxPages: number;
   private readonly pagesPerRun: number;
@@ -92,7 +102,7 @@ export class CatalogSyncService {
     this.hydrationBudget = intFromConfig(
       config,
       'CATALOG_SYNC_HYDRATION_BUDGET',
-      200,
+      CatalogSyncService.DEFAULT_HYDRATION_BUDGET,
     );
   }
 
@@ -112,7 +122,7 @@ export class CatalogSyncService {
 
   /**
    * Point d'entrée testable. Sans argument : passe `rating`, puis passe
-   * hebdo `week_pos` le dimanche, puis hydratation des genres manquants.
+   * hebdo `week_pos` le dimanche, puis hydratation des lignes incomplètes.
    * Avec `jobName` : ce job uniquement. No-op (warn) si un run est déjà en
    * cours (anti-réentrance).
    */
@@ -135,11 +145,11 @@ export class CatalogSyncService {
       } else if (jobName === 'catalog:week_pos') {
         await this.runCatalogPass(...weekly);
       } else if (jobName === 'hydration') {
-        await this.hydrateMissingGenres();
+        await this.hydrateIncompleteRows();
       } else {
         await this.runCatalogPass('catalog:rating', 'rating', this.maxPages);
         if (new Date().getDay() === 0) await this.runCatalogPass(...weekly);
-        await this.hydrateMissingGenres();
+        await this.hydrateIncompleteRows();
       }
     } finally {
       this.running = false;
@@ -182,7 +192,14 @@ export class CatalogSyncService {
       } catch (err) {
         // Backoff épuisé, erreur non-retryable, OU erreur DB : arrêt PROPRE
         // (curseur conservé, upsert idempotent → reprise sans doublon).
-        await this.persistPartial(state, page, totalPages, jobName, nextPage, err);
+        await this.persistPartial(
+          state,
+          page,
+          totalPages,
+          jobName,
+          nextPage,
+          err,
+        );
         return;
       }
 
@@ -322,7 +339,7 @@ export class CatalogSyncService {
     if (records.length > 0 && !hasAnyGenres && !this.genresMissingWarned) {
       this.genresMissingWarned = true;
       this.logger.warn(
-        'Payload search MU sans `record.genres` — hydratation différée via hydrateMissingGenres/getMangaDetails',
+        'Payload search MU sans `record.genres` — hydratation différée via hydrateIncompleteRows/getMangaDetails',
       );
     }
 
@@ -339,34 +356,66 @@ export class CatalogSyncService {
   }
 
   /**
-   * Hydrate les mangas sans genres (catalogue ingéré sans `record.genres`
-   * + stubs de `saveRecommendations`) via `getMangaDetails` (UPDATE
-   * complet), les mieux notés d'abord, au rythme d'1 appel / delayMs.
+   * Hydrate les lignes `manga` INCOMPLÈTES via `getMangaDetails`, au rythme
+   * d'1 appel / delayMs.
+   *
+   * **2026-08-28 — généralisation de `hydrateMissingGenres`** (rationale
+   * complète : `docs/specs/mangas/spec-technique.md`) :
+   *  - **critère élargi** : `genres`, `rating`, `year` OU `medium_cover_url`
+   *    NULL — tout ce qui manque à une carte, plus seulement les genres ;
+   *  - **priorisation par usage réel** : d'abord les `mu_id` présents dans
+   *    `manga_recommendation`. L'ancien `ORDER BY rating DESC NULLS LAST`
+   *    est supprimé : un stub a `rating` NULL par construction, il passait
+   *    donc derrière les ~5000 lignes du catalogue et n'était jamais repris ;
+   *  - **garde anti-boucle** : `hydration_attempted_at` horodatée après
+   *    CHAQUE tentative (succès comme échec) → une ligne que MU ne peut pas
+   *    compléter sort du lot 30 jours au lieu de brûler le budget en boucle.
+   *
    * @returns nombre de mangas hydratés avec succès.
    */
-  async hydrateMissingGenres(
+  async hydrateIncompleteRows(
     budget: number = this.hydrationBudget,
   ): Promise<number> {
-    const stubs = await this.mangaRepository
+    const retryBefore = new Date(
+      Date.now() - CatalogSyncService.HYDRATION_RETRY_AFTER_MS,
+    );
+
+    const rows = await this.mangaRepository
       .createQueryBuilder('m')
-      .where('m.genres IS NULL')
-      .orderBy('m.rating', 'DESC', 'NULLS LAST')
+      .where(
+        '(m.genres IS NULL OR m.rating IS NULL OR m.year IS NULL OR m.medium_cover_url IS NULL)',
+      )
+      .andWhere(
+        '(m.hydration_attempted_at IS NULL OR m.hydration_attempted_at < :retryBefore)',
+        { retryBefore },
+      )
+      // Priorité 0 : le titre est recommandé quelque part → il est affiché sur
+      // des cartes. Priorité 1 : le reste du catalogue.
+      .orderBy(
+        'CASE WHEN EXISTS (SELECT 1 FROM manga_recommendation mr WHERE mr.recommended_mu_id = m.mu_id) THEN 0 ELSE 1 END',
+        'ASC',
+      )
+      .addOrderBy('m.hydration_attempted_at', 'ASC', 'NULLS FIRST')
+      .addOrderBy('m.id', 'ASC')
       .limit(budget)
       .getMany();
-    if (stubs.length === 0) return 0;
+    if (rows.length === 0) return 0;
 
     let hydrated = 0;
-    for (const manga of stubs) {
+    for (const manga of rows) {
       try {
         await this.mangasService.getMangaDetails(Number(manga.mu_id));
         hydrated += 1;
       } catch (err) {
         this.logger.warn(
-          `Hydratation genres mu_id=${manga.mu_id} en échec : ${
+          `Hydratation mu_id=${manga.mu_id} en échec : ${
             (err as Error)?.message ?? err
           }`,
         );
       }
+      // Marquage APRÈS tentative, succès ou échec : c'est ce qui garantit la
+      // progression du job d'une nuit à l'autre.
+      await this.markHydrationAttempt(manga.mu_id);
       await this.sleep(this.delayMs);
     }
 
@@ -375,9 +424,29 @@ export class CatalogSyncService {
     state.last_run_status = 'completed';
     await this.stateRepository.save(state);
     this.logger.log(
-      `Hydratation genres : ${hydrated}/${stubs.length} manga(s) complétés`,
+      `Hydratation : ${hydrated}/${rows.length} manga(s) complétés`,
     );
     return hydrated;
+  }
+
+  /**
+   * Horodate la tentative d'hydratation d'une ligne. Best-effort : un échec
+   * d'écriture est loggé mais n'interrompt pas la boucle (au pire la ligne
+   * sera re-tentée au prochain run).
+   */
+  private async markHydrationAttempt(muId: string): Promise<void> {
+    try {
+      await this.mangaRepository.update(
+        { mu_id: muId },
+        { hydration_attempted_at: new Date() },
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Marquage hydration_attempted_at mu_id=${muId} en échec : ${
+          (err as Error)?.message ?? err
+        }`,
+      );
+    }
   }
 
   private async getOrCreateState(

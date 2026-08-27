@@ -215,6 +215,22 @@ Le module ne gère pas lui-même le cache des recommandations MU — il délègu
 
 Un cache in-memory user-level (TTL 1h) est géré par `RecoCacheService` — invalidé sur toute mutation de la bibliothèque.
 
+### Hydratation à la demande des cartes incomplètes (fix 2026-08-28)
+
+**Problème** : les stubs créés par `saveRecommendations` n'ont ni `year` ni `rating` (l'endpoint MU « recommendations » ne les renvoie pas). Les DTO exposent alors le repli `0`, que l'app traduit en « donnée absente » — la carte s'affiche avec son image mais sans année ni étoiles. Le job nightly seul mettait plusieurs nuits à rattraper le stock.
+
+**Mécanisme** : `RecommendationService.buildDtoFromScoreMap` et `GenreSectionService.buildSections` repèrent les DTO renvoyés avec `year == 0 || rating == 0` et déclenchent `MangasService.getMangaDetails` dessus via `hydrateIncompleteDtosInBackground` (`manga-completeness.util.ts`). Calqué sur le background refresh des covers de `getRecommendationsAsQuickView`.
+
+| Garantie | Détail |
+|----------|--------|
+| **Plafond** | `ON_DEMAND_HYDRATION_CAP` = 8 mangas par requête, dédupliqués (toutes sections confondues pour by-genre) |
+| **Non bloquant** | Fire-and-forget strict : aucun `await`, la requête principale répond avec les données actuelles |
+| **Non fatal** | Aucune exception ne remonte ; un 429 `MuRateLimitException` est loggé puis avalé |
+
+⚠️ **Visibilité** : `RecoCacheService` (TTL 1 h) sert les réponses en cache. L'amélioration n'est donc perceptible qu'au **prochain miss de cache** de l'utilisateur, pas sur la requête qui a déclenché l'hydratation. Résultat visible sous 24 h au lieu de plusieurs nuits.
+
+Le filet de sécurité reste le job nightly `hydration` (`CatalogSyncService.hydrateIncompleteRows`, voir `docs/specs/mangas/spec-technique.md`), qui priorise justement les `mu_id` présents dans `manga_recommendation`.
+
 ---
 
 ## Patterns identifiés

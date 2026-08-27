@@ -78,6 +78,134 @@ describe('MangasService', () => {
   });
 });
 
+describe('MangasService — getMangaDetails : UPDATE null-safe', () => {
+  let service: MangasService;
+  let getMock: jest.Mock;
+  /** Payloads capturés des `.set()` de l'UPDATE `manga`. */
+  let setPayloads: Record<string, unknown>[];
+
+  /** Détail MU complet, surchargeable champ par champ. */
+  const muDetail = (overrides: Record<string, unknown> = {}) => ({
+    series_id: 123,
+    title: 'Titre MU',
+    description: 'desc',
+    status: '',
+    image: {
+      url: { thumb: 'https://cdn/t.jpg', original: 'https://cdn/o.jpg' },
+    },
+    year: '2019',
+    bayesian_rating: 8.42,
+    completed: false,
+    associated: [],
+    genres: [{ genre: 'Action' }],
+    latest_chapter: 10,
+    ...overrides,
+  });
+
+  function makeUpdateQb() {
+    const qb = {
+      update: jest.fn(() => qb),
+      set: jest.fn((payload: Record<string, unknown>) => {
+        setPayloads.push(payload);
+        return qb;
+      }),
+      setParameter: jest.fn(() => qb),
+      where: jest.fn(() => qb),
+      execute: jest.fn().mockResolvedValue({}),
+    };
+    return qb;
+  }
+
+  beforeEach(async () => {
+    setPayloads = [];
+    getMock = jest.fn();
+    const mangaRepo = {
+      ...mockRepo(),
+      createQueryBuilder: jest.fn(() => makeUpdateQb()),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MangasService,
+        { provide: HttpService, useValue: { get: getMock } },
+        { provide: HelperService, useValue: {} },
+        { provide: getRepositoryToken(Manga), useValue: mangaRepo },
+        {
+          provide: getRepositoryToken(MangaRecommendation),
+          useValue: mockRepo(),
+        },
+        { provide: getRepositoryToken(UserManga), useValue: mockRepo() },
+      ],
+    }).compile();
+
+    service = module.get<MangasService>(MangasService);
+  });
+
+  it('écrase year/rating/covers quand MU renvoie de vraies valeurs', async () => {
+    getMock.mockReturnValue(of({ data: muDetail() }));
+
+    await service.getMangaDetails(123);
+
+    const payload = setPayloads[0];
+    expect(payload).toHaveProperty('year', '2019');
+    expect(payload).toHaveProperty('rating', 8.42);
+    expect(payload).toHaveProperty('small_cover_url', 'https://cdn/t.jpg');
+    expect(payload).toHaveProperty('medium_cover_url', 'https://cdn/o.jpg');
+    expect(payload).toHaveProperty('genres', ['Action']);
+  });
+
+  it("n'écrase PAS une valeur existante quand MU renvoie null", async () => {
+    // Cas prod : titre peu voté → `bayesian_rating: null` et pas d'année.
+    // L'UPDATE était inconditionnel et remettait à NULL une valeur déjà
+    // hydratée par la synchro nocturne → l'année et les étoiles
+    // disparaissaient des cartes de recommandations.
+    getMock.mockReturnValue(
+      of({
+        data: muDetail({
+          year: null,
+          bayesian_rating: null,
+          image: { url: { thumb: null, original: null } },
+        }),
+      }),
+    );
+
+    await service.getMangaDetails(123);
+
+    const payload = setPayloads[0];
+    expect(payload).not.toHaveProperty('year');
+    expect(payload).not.toHaveProperty('rating');
+    expect(payload).not.toHaveProperty('small_cover_url');
+    expect(payload).not.toHaveProperty('medium_cover_url');
+  });
+
+  it('protège colonne par colonne (rating null, année conservée par MU)', async () => {
+    getMock.mockReturnValue(
+      of({ data: muDetail({ bayesian_rating: null, year: '2005' }) }),
+    );
+
+    await service.getMangaDetails(123);
+
+    const payload = setPayloads[0];
+    expect(payload).toHaveProperty('year', '2005');
+    expect(payload).not.toHaveProperty('rating');
+  });
+
+  it("continue d'écraser title/completed et de faire croître total_chapters", async () => {
+    getMock.mockReturnValue(
+      of({ data: muDetail({ bayesian_rating: null, year: null }) }),
+    );
+
+    await service.getMangaDetails(123);
+
+    const payload = setPayloads[0];
+    // La protection ne concerne QUE les colonnes nullable protégées.
+    expect(payload).toHaveProperty('title', 'Titre MU');
+    expect(payload).toHaveProperty('completed', false);
+    expect(payload).toHaveProperty('total_chapters');
+    expect(typeof payload.total_chapters).toBe('function'); // GREATEST(...)
+  });
+});
+
 describe('MangasService — searchManga', () => {
   let service: MangasService;
   let postMock: jest.Mock;

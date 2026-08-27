@@ -5,6 +5,30 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ---
 
+## [Unreleased] — fix/manga-data-completeness
+
+### Fixed
+- **mangas** : cartes de recommandations sans année ni note en étoiles. L'app masque volontairement la ligne meta quand année ET note manquent — le problème était côté données API, sur trois causes cumulées, corrigées par ordre de priorité :
+  1. **Écrasement par NULL (cause latente, corrigée en premier)** : `getMangaDetails` et `MangaSyncService.syncAllMangasWithApi` faisaient un `SET` **inconditionnel** sur `year` / `rating` / covers depuis `MangaDetailsDto.fromMU`. Quand MU renvoie `bayesian_rating: null` (titre peu voté) ou pas d'année, une valeur correctement remplie par la synchro nocturne était remise à NULL — l'inverse exact de la protection déjà appliquée à l'upsert catalogue. Ces deux chemins passent désormais par `buildProtectedColumnsUpdate` (`manga-completeness.util.ts`) : une colonne protégée absente du payload MU n'entre pas dans le `SET`, une vraie valeur continue d'écraser normalement
+  2. **Stubs jamais rattrapés (cause dominante)** : `saveRecommendations` crée des stubs `mu_id + title + covers` (l'endpoint MU « recommendations » ne renvoie NI année NI note) qui restaient à NULL jusqu'au premier clic utilisateur
+  3. **Job de rattrapage biaisé (cause aggravante)** : `hydrateMissingGenres` ne sélectionnait que `genres IS NULL` et triait `rating DESC NULLS LAST` — les stubs (rating NULL par construction) passaient systématiquement derrière les ~5000 lignes du catalogue, et une ligne « genres OK / rating NULL » n'était JAMAIS reprise
+
+### Changed
+- **mangas** : `hydrateMissingGenres` → `hydrateIncompleteRows` (`catalog-sync.service.ts`) — critère élargi à `genres OR rating OR year OR medium_cover_url IS NULL` ; tri par rating supprimé (il enterrait les lignes à réparer) au profit d'une priorisation par usage réel (`mu_id` présent dans `manga_recommendation` d'abord, via un `EXISTS`), puis `hydration_attempted_at ASC NULLS FIRST`
+- **mangas** : garde anti-boucle du job d'hydratation — `manga.hydration_attempted_at` horodatée après CHAQUE tentative (succès **ou** échec), ligne réessayée après 30 jours seulement. Sans elle, les titres pour lesquels MU n'a réellement ni note ni année seraient re-sélectionnés chaque nuit et brûleraient tout le budget en boucle sur les mêmes lignes. Colonne dédiée plutôt que `updated_at < now() - 30 j` : un stub fraîchement créé a un `updated_at` récent et serait exclu 30 jours alors que c'est la ligne à réparer en priorité
+- **mangas** : `CATALOG_SYNC_HYDRATION_BUDGET` défaut 200 → **800** (800 × 2 s ≈ 27 min à 30 req/min, moitié du plafond MU anonyme) — avec le critère élargi, 200/nuit mettait plusieurs semaines à rattraper le stock. Documenté dans `template.env` et la spec technique
+- **recommendations** : hydratation **à la demande** sur le chemin des recos — `RecommendationService.buildDtoFromScoreMap` et `GenreSectionService.buildSections` repèrent les DTO à `year == 0 || rating == 0` et déclenchent `getMangaDetails` en fire-and-forget (`hydrateIncompleteDtosInBackground`), plafonné à **8 mangas par requête**, jamais bloquant, jamais fatal, `MuRateLimitException` (429) avalée. Résultat visible sous 24 h au lieu de plusieurs nuits — au prochain miss du cache `RecoCacheService` (TTL 1 h), pas sur la requête courante
+- **mangas** : `PROTECTED_NULLABLE_COLUMNS` déplacée dans `manga-completeness.util.ts` — source de vérité unique de la doctrine null-safe, partagée par `catalog-sync.mapper.ts`, `getMangaDetails` et `MangaSyncService`
+- **mangas** : `MangaSyncService` — `console.error` / `console.log` remplacés par le `Logger` NestJS (règle repo)
+
+### BDD
+- Migration `1787875200000-AddHydrationAttemptedAtToManga` : colonne `manga.hydration_attempted_at` (timestamptz nullable) + index `idx_manga_recommendation_recommended_mu_id` (l'index unique existant a `source_mu_id` en tête et ne peut pas servir l'`EXISTS` de priorisation). Additive et idempotente (`hasColumn` / `IF NOT EXISTS`)
+
+### Tests
+- +29 tests unitaires (153 → 182) : UPDATE null-safe (MU null → valeur préservée ; MU valeur → écrasement normal ; protection colonne par colonne ; `title`/`completed`/`total_chapters` toujours écrasés), nouvelle sélection d'hydratation (critère élargi, absence de tri par rating, priorisation `manga_recommendation`, fenêtre 30 j, horodatage sur échec, échec d'horodatage non bloquant), hydratation à la demande (plafond 8, dédup, fire-and-forget, échec silencieux, 429 non propagé, rejet synchrone)
+
+---
+
 ## [Unreleased] — fix/recos-by-genre-dedup
 
 ### Fixed

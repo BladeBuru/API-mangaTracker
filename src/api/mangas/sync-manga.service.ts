@@ -1,11 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Manga } from './manga.entity';
 import { Repository } from 'typeorm';
 import { MangasService } from './mangas.service';
+import { buildProtectedColumnsUpdate } from './manga-completeness.util';
 
 @Injectable()
 export class MangaSyncService {
+  private readonly logger = new Logger(MangaSyncService.name);
+
   constructor(
     @InjectRepository(Manga)
     private readonly mangaRepository: Repository<Manga>,
@@ -24,27 +27,31 @@ export class MangaSyncService {
           details.totalChapters,
           manga.total_chapters,
         );
+        // 2026-08-28 (complétude des données) : `year`, `rating` et les covers
+        // passent par `buildProtectedColumnsUpdate` — un détail MU sans note
+        // (titre peu voté) ou sans année ne remet plus la colonne à NULL.
+        // Même doctrine que `getMangaDetails` et l'upsert catalogue.
         await this.mangaRepository.update(
           { id: manga.id },
           {
             title: details.title,
-            year: details.year,
-            small_cover_url: details.smallCoverUrl,
-            medium_cover_url: details.mediumCoverUrl,
-            rating: details.rating,
             total_chapters: newTotalChapters,
             completed: details.completed,
             associated: details.associated,
+            ...buildProtectedColumnsUpdate(details),
           },
         );
       } catch (err) {
         // Log l'erreur mais continue la synchro
-        console.error(
-          `Erreur lors de la synchro du manga mu_id=${manga.mu_id} :`,
-          err,
+        this.logger.warn(
+          `Erreur lors de la synchro du manga mu_id=${manga.mu_id} : ${
+            (err as Error)?.message ?? err
+          }`,
         );
       }
     }
-    console.log('Synchronisation des mangas terminée !');
+    this.logger.log(
+      `Synchronisation des mangas terminée (${allMangas.length} titre(s) traité(s))`,
+    );
   }
 }

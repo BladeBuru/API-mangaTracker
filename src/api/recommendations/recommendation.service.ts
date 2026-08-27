@@ -7,6 +7,7 @@ import { Manga } from '@/api/mangas/manga.entity';
 import { MangasService } from '@/api/mangas/mangas.service';
 import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
 import { MuRateLimitException } from '@/api/mangas/exceptions/mu-rate-limit.exception';
+import { hydrateIncompleteDtosInBackground } from '@/api/mangas/manga-completeness.util';
 import { RecoCacheService } from './reco-cache.service';
 import {
   CatalogCandidate,
@@ -679,7 +680,7 @@ export class RecommendationService {
       muRatings,
     );
 
-    return sorted
+    const dtos = sorted
       .map((scored) => {
         const manga = mangaMap.get(scored.mu_id);
         if (!manga) return null;
@@ -713,6 +714,21 @@ export class RecommendationService {
         return dto;
       })
       .filter((dto): dto is MangaQuickViewDto => dto !== null);
+
+    // Complétude des cartes (fix 2026-08-28) : les stubs créés par
+    // `saveRecommendations` n'ont ni année ni note (l'endpoint MU
+    // « recommendations » ne les renvoie pas), donc la carte s'affiche sans
+    // ligne meta. On déclenche leur hydratation en tâche de fond — au plus 8
+    // par requête, jamais bloquant, jamais fatal (cf. le helper).
+    // ⚠️ `RecoCacheService` (TTL 1 h) sert la réponse en cache : le gain
+    // n'est visible qu'au prochain miss de cache, pas sur cette requête.
+    hydrateIncompleteDtosInBackground(
+      dtos,
+      (id) => this.mangasService.getMangaDetails(id),
+      this.logger,
+    );
+
+    return dtos;
   }
 
   /**

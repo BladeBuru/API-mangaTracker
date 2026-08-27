@@ -21,6 +21,7 @@ import { MangaRecommendation } from './manga-recommendation.entity';
 import { UserManga } from './user-manga.entity';
 import { Repository } from 'typeorm';
 import { aggregateRating, CommunityRating } from './rating-aggregator';
+import { buildProtectedColumnsUpdate } from './manga-completeness.util';
 
 /** Durée de vie du cache des recommandations : 7 jours en ms */
 const RECO_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -145,21 +146,26 @@ export class MangasService {
 
     // A-5 : GREATEST inconditionnel sur total_chapters — un refresh MU ne
     // fait JAMAIS régresser le total (regex status MU peu fiable, un user à
-    // 90 chapitres lus prouve total ≥ 90 — cf. decisions.md). Les autres
-    // champs restent écrasés (overwrite).
+    // 90 chapitres lus prouve total ≥ 90 — cf. decisions.md).
+    //
+    // 2026-08-28 (complétude des données) : `year`, `rating`, les covers et
+    // `genres` passent par `buildProtectedColumnsUpdate` — ces colonnes ne
+    // sont plus dans le `SET` quand MU ne fournit pas de valeur. L'UPDATE
+    // était inconditionnel : un titre peu voté (`bayesian_rating: null`) ou
+    // sans année remettait à NULL une valeur correctement remplie par la
+    // synchro nocturne, et la carte reperdait son année/ses étoiles. Même
+    // doctrine que l'upsert catalogue (cf. `catalog-sync.mapper.ts`). Une
+    // vraie valeur MU écrase toujours normalement l'ancienne.
+    // `title` / `completed` / `associated` restent écrasés (overwrite).
     await this.mangaRepository
       .createQueryBuilder()
       .update(Manga)
       .set({
         title: details.title,
-        year: details.year,
-        small_cover_url: details.smallCoverUrl,
-        medium_cover_url: details.mediumCoverUrl,
-        rating: details.rating,
         total_chapters: () => 'GREATEST(total_chapters, :newTotal)',
         completed: details.completed,
         associated: details.associated,
-        genres: normalizedGenres,
+        ...buildProtectedColumnsUpdate(details, normalizedGenres),
       })
       .setParameter('newTotal', Number(details.totalChapters) || 0)
       .where('mu_id = :muId', { muId: muId.toString() })

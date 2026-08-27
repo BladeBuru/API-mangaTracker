@@ -76,10 +76,27 @@ La dépendance circulaire avec `LibraryModule` est gérée via `forwardRef()` da
 | `completed` | boolean | nullable | Statut de complétion selon MU |
 | `associated` | json | nullable | Titres alternatifs `[{title: string}]` |
 | `genres` | json | nullable | Genres normalisés `string[]` |
+| `hydration_attempted_at` | timestamptz | nullable | Dernière tentative du job `hydration` (succès OU échec). NULL = jamais tentée → priorité max. Garde anti-boucle : voir « Hydratation des lignes incomplètes » |
 | `created_at` | timestamp | auto | |
 | `updated_at` | timestamp | auto | Utilisé pour détecter les données périmées (> 1 jour) |
 
 **Relation** : `manga` → `user_manga` (OneToMany via `UserManga.manga`)
+
+**Migration** : `1787875200000-AddHydrationAttemptedAtToManga` (ajoute `hydration_attempted_at` + index `idx_manga_recommendation_recommended_mu_id`).
+
+#### Doctrine null-safe sur les colonnes nullable
+
+`year`, `rating`, `small_cover_url`, `medium_cover_url` et `genres` sont **protégées sur TOUS les chemins d'écriture** : elles ne sont incluses dans un `SET` que si la source MU fournit une valeur exploitable (ni `null`, ni `undefined`, ni chaîne vide). Une valeur réelle écrase toujours normalement l'ancienne — on refuse le null, on ne fige pas la donnée.
+
+Liste unique : `PROTECTED_NULLABLE_COLUMNS` dans `manga-completeness.util.ts`, appliquée par :
+
+| Chemin d'écriture | Mécanisme |
+|-------------------|-----------|
+| `CatalogSyncService.upsertPage` | `buildCatalogUpsertBatches` — lots par colonnes non-null (`catalog-sync.mapper.ts`) |
+| `MangasService.getMangaDetails` | `buildProtectedColumnsUpdate` étalé dans le `.set()` |
+| `MangaSyncService.syncAllMangasWithApi` | `buildProtectedColumnsUpdate` étalé dans le `.update()` |
+
+**Motivation (fix 2026-08-28)** : les deux derniers faisaient un `SET` inconditionnel. Quand MU renvoie `bayesian_rating: null` (titre peu voté) ou pas d'année, ils remettaient à NULL une valeur correctement remplie par la synchro nocturne — les cartes de recommandations reperdaient leur année et leurs étoiles à chaque consultation de fiche.
 
 ### Table `manga_recommendation`
 
@@ -166,7 +183,7 @@ La dépendance circulaire avec `LibraryModule` est gérée via `forwardRef()` da
 | `CATALOG_SYNC_MAX_PAGES` | `50` | Pages max de la passe `catalog:rating` (100 titres/page ≈ 5000 titres) |
 | `CATALOG_SYNC_PAGES_PER_RUN` | `60` | Budget de pages par nuit (toutes passes confondues) |
 | `CATALOG_SYNC_DELAY_MS` | `2000` | Délai entre 2 appels MU (30 req/min = 50 % du plafond MU anonyme) |
-| `CATALOG_SYNC_HYDRATION_BUDGET` | `200` | Appels `getMangaDetails` max/nuit pour hydrater les `genres IS NULL` |
+| `CATALOG_SYNC_HYDRATION_BUDGET` | `800` | Appels `getMangaDetails` max/nuit pour hydrater les lignes `manga` incomplètes. 800 × 2 s ≈ 27 min à 30 req/min, soit la moitié du plafond MU anonyme (~60 req/min). Relevé de 200 → 800 le 2026-08-28 : avec le critère élargi, 200/nuit mettait plusieurs semaines à rattraper le stock |
 
 ---
 
@@ -179,6 +196,24 @@ L'entité `Manga` a deux états de vie :
 2. **Complet** : rempli par `getMangaDetails` qui appelle MU, mappe via `MangaDetailsDto.fromMU`, et fait un `UPDATE` en BDD.
 
 Les deux états coexistent. Le code downstream doit tolérer les champs nullable.
+
+**Limite structurelle** : l'endpoint MU « recommendations » d'une série ne renvoie ni année ni note. Un stub reste donc sans `year` ni `rating` tant que `getMangaDetails` n'a pas tourné dessus — d'où une carte de recommandation avec image mais sans ligne meta. Deux mécanismes de rattrapage couvrent ce trou (fix 2026-08-28) : le job nightly `hydration` ci-dessous, et l'hydratation à la demande côté recommandations (voir `docs/specs/recommendations/spec-technique.md`).
+
+### Hydratation des lignes incomplètes (`CatalogSyncService.hydrateIncompleteRows`)
+
+Job nightly `hydration` (ex-`hydrateMissingGenres`, généralisé le 2026-08-28).
+
+| Aspect | Comportement |
+|--------|--------------|
+| **Critère** | `genres IS NULL OR rating IS NULL OR year IS NULL OR medium_cover_url IS NULL` — tout ce qui manque à une carte, plus seulement les genres |
+| **Priorité 1** | `mu_id` présent dans `manga_recommendation` (les titres réellement affichés aux utilisateurs) |
+| **Priorité 2** | `hydration_attempted_at ASC NULLS FIRST` — jamais tentée d'abord |
+| **Garde anti-boucle** | `hydration_attempted_at IS NULL OR < now() - 30 j`, horodatée après CHAQUE tentative (succès **ou** échec) |
+| **Budget** | `CATALOG_SYNC_HYDRATION_BUDGET` (défaut 800), 1 appel / `CATALOG_SYNC_DELAY_MS` |
+
+**Ancien tri supprimé** : `ORDER BY rating DESC NULLS LAST` enterrait précisément les lignes à réparer (un stub a `rating` NULL par construction, il passait donc derrière les ~5000 lignes du catalogue) et une ligne « genres OK / rating NULL » n'était jamais reprise — le système ne se rattrapait jamais seul.
+
+**Pourquoi une colonne dédiée plutôt que `updated_at < now() - 30 j`** : un stub fraîchement créé a un `updated_at` récent et serait exclu 30 jours alors que c'est exactement la ligne à réparer en priorité. `hydration_attempted_at` est aussi découplée des écritures sans rapport (refresh covers, report chapitres) qui repousseraient l'hydratation par effet de bord. C'est la garde la plus simple qui garantit réellement la progression du job d'une nuit à l'autre.
 
 ### Pattern fire-and-forget avec rate-limiting
 

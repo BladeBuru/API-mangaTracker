@@ -19,7 +19,8 @@ export type CatalogSyncRunStatus = 'completed' | 'partial' | 'failed';
  * Jobs suivis :
  * - `catalog:rating`   : passe principale nightly (orderby=rating).
  * - `catalog:week_pos` : passe hebdomadaire du dimanche (orderby=week_pos).
- * - `hydration`        : hydratation des genres manquants via getMangaDetails.
+ * - `hydration`        : hydratation des lignes `manga` incomplètes (genres,
+ *                        rating, année ou cover manquants) via getMangaDetails.
  */
 export type CatalogSyncJobName =
   | 'catalog:rating'
