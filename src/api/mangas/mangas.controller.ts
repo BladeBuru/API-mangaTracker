@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   ParseIntPipe,
   Post,
@@ -23,6 +24,7 @@ import { SearchMangaDto } from './dto/search-manga.dto';
 import { SearchMangaResponseDto } from './dto/search-manga-response.dto';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { LibraryService } from '@/api/library/library.service';
+import { DescriptionTranslationService } from './translation/description-translation.service';
 
 @ApiTags('Mangas')
 @ApiBearerAuth()
@@ -31,6 +33,7 @@ export class MangasController {
   constructor(
     private readonly mangasService: MangasService,
     private readonly libraryService: LibraryService,
+    private readonly descriptionTranslationService: DescriptionTranslationService,
   ) {}
 
   @ApiOperation({
@@ -135,8 +138,15 @@ export class MangasController {
   async mangaDetails(
     @Param('id', ParseIntPipe) id: number,
     @UserDecorator() user: any,
+    @Headers('accept-language') acceptLanguage?: string,
   ): Promise<MangaDetailsDto> {
     const mangaDetails = await this.mangasService.getMangaDetails(id);
+    const translated =
+      await this.descriptionTranslationService.getTranslatedDescription(
+        id,
+        mangaDetails.description,
+        this.descriptionTranslationService.parsePrimaryLang(acceptLanguage),
+      );
     let customLink: string | undefined = undefined;
     let inLibrary = false;
     let readChaptersCount: number | undefined = undefined;
@@ -171,6 +181,7 @@ export class MangasController {
       community_rating: c?.communityRating ?? undefined,
       community_rating_count: c?.communityRatingCount ?? 0,
       aggregated_rating: c?.aggregatedRating ?? undefined,
+      translated_description: translated ?? undefined,
     };
   }
 

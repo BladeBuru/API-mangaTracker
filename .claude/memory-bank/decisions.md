@@ -1,6 +1,6 @@
 # Décisions Architecturales — Manga Tracker API
 
-**Dernière mise à jour :** Mai 2026
+**Dernière mise à jour :** Juillet 2026
 
 ---
 
@@ -69,6 +69,18 @@
 **Raison** : Le front Flutter cible Android (actuel), iOS et Web à venir. La whitelist doit anticiper le domaine web futur.
 **Impact** : Variable `CORS_ORIGINS` (séparée par virgules) consommée dans `main.ts`. Mise à jour de la whitelist quand le domaine web sera décidé.
 **Date** : 2026-05 (évolution sécurité)
+
+---
+
+### total_chapters : écriture GREATEST inconditionnelle (anti-régression)
+**Décision** : Toute écriture de `manga.total_chapters` depuis MangaUpdates passe par `GREATEST(total_chapters, :newTotal)` — `MangasService.getMangaDetails`, `LibraryService.checkManga` (refresh 6h) et `ChapterReportService.consolidate` — **y compris quand MU annonce `completed = true` avec un total plus bas**.
+**Raison** :
+- Le total MU est extrait par regex sur le champ `status` → peu fiable (baisses fantômes constatées).
+- `sync-manga.service.ts` faisait déjà `Math.max` : on généralise l'invariant au lieu d'avoir deux comportements.
+- Un user avec `user_read_chapters = 90` prouve que le total réel ≥ 90 — une régression re-bloquerait sa progression (bug du cap 406).
+- Le chantier « signalement chapitres » (`manga_chapter_report`) repose sur des totaux **monotones croissants** pour que consolidation et refresh 6h convergent sans lock.
+**Impact** : une baisse légitime côté MU (correction éditoriale, très rare) ne redescend jamais automatiquement → correction manuelle en BDD assumée. `completed` reste écrasé par MU à chaque refresh (seul `total_chapters` est monotone).
+**Date** : 2026-07 (chantiers signalement chapitres + historique de lecture)
 
 ---
 

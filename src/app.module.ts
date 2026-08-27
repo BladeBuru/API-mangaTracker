@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
@@ -21,6 +22,8 @@ const envFilePath: string = getEnvPath(`${__dirname}/common/envs`);
     // pour des limites plus strictes (5–10 req/min).
     // Cf. CLAUDE.md « Sécurité non-négociable ».
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // Crons applicatifs (sync nightly du catalogue MU — CatalogSyncService).
+    ScheduleModule.forRoot(),
     ApiModule,
     HealthModule,
   ],

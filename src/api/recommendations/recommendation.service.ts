@@ -6,7 +6,12 @@ import { MangaRecommendation } from '@/api/mangas/manga-recommendation.entity';
 import { Manga } from '@/api/mangas/manga.entity';
 import { MangasService } from '@/api/mangas/mangas.service';
 import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
+import { MuRateLimitException } from '@/api/mangas/exceptions/mu-rate-limit.exception';
 import { RecoCacheService } from './reco-cache.service';
+import {
+  CatalogCandidate,
+  CatalogCandidateService,
+} from './catalog-candidate.service';
 
 /**
  * Entrée scorée pour un manga candidat.
@@ -49,24 +54,18 @@ export class RecommendationService {
    * Les recos étant intrinsèquement subjectives, on préfère un pool large
    * + un tri par score que de filtrer en amont.
    *
-   * Cap "soft" : si le pool final est trop maigre, on relaxe via
-   * `ADAPTIVE_FALLBACK_CAP` (cf. `scoreRecos`).
+   * Pool trop maigre malgré tout → complété par le catalogue local
+   * (cf. `CATALOG_MIN_POOL` / `augmentWithCatalog`), qui a remplacé
+   * l'ancien mécanisme de relax du cap (no-op en pratique).
    */
   private static readonly MAX_RECOS_PER_SOURCE = 40;
 
   /**
-   * Cap secondaire utilisé en repli quand le pool ne dépasse pas
-   * `MIN_POOL_BEFORE_RELAX`. On préfère plus de recos potentiellement
-   * redondantes que zéro reco du tout. (60 → 80 le 2026-06-11, suit le
-   * bump du cap principal.)
+   * Seuil de pool sous lequel le scoring MU est complété par des candidats
+   * du catalogue local (`CatalogCandidateService.findCandidates`). Le merge
+   * n'additionne JAMAIS : un candidat déjà scoré par MU garde son score MU.
    */
-  private static readonly ADAPTIVE_FALLBACK_CAP = 80;
-
-  /**
-   * Si la liste de candidats finale a moins de `MIN_POOL_BEFORE_RELAX`
-   * entrées, on rejoue le scoring avec `ADAPTIVE_FALLBACK_CAP`.
-   */
-  private static readonly MIN_POOL_BEFORE_RELAX = 50;
+  private static readonly CATALOG_MIN_POOL = 150;
 
   /** Limite max de la pagination. **2026-05-19** : 100 → 500. */
   private static readonly MAX_LIMIT = 500;
@@ -96,6 +95,16 @@ export class RecommendationService {
   /** Timeout par fetch MU (ms). */
   private static readonly FETCH_TIMEOUT_MS = 15000;
 
+  /** Pause entre deux batches de fetch MU bloquants (ms). */
+  private static readonly BATCH_DELAY_MS = 1000;
+
+  /** Pause après un 429 MU avant le batch suivant (ms). */
+  private static readonly RATE_LIMIT_DELAY_MS = 5000;
+
+  /** Injectable pour les tests (évite les vrais timers). */
+  sleep: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
   constructor(
     @InjectRepository(UserManga)
     private readonly userMangaRepository: Repository<UserManga>,
@@ -105,6 +114,7 @@ export class RecommendationService {
     private readonly mangaRepository: Repository<Manga>,
     private readonly mangasService: MangasService,
     private readonly recoCache: RecoCacheService,
+    private readonly catalogCandidates: CatalogCandidateService,
   ) {}
 
   /**
@@ -300,8 +310,8 @@ export class RecommendationService {
       if (uncachedIds.length > 0) {
         this.fetchUncachedInBackground(uncachedIds);
       }
-      // Adaptive : si pool trop maigre, relax le cap par source.
-      await this.relaxIfPoolTooSmall(userMangas, libraryMuIds, scoreMap);
+      // Pool trop maigre → complément depuis le catalogue local.
+      await this.augmentWithCatalog(userMangas, libraryMuIds, scoreMap);
       const result = await this.buildDtoFromScoreMap(
         scoreMap,
         effectiveLimit,
@@ -316,44 +326,10 @@ export class RecommendationService {
     this.logger.log(
       `Cache vide pour userId=${userId}, fetch MU pour ${userMangas.length} manga(s)`,
     );
+    await this.fetchAndScoreBlocking(userMangas, libraryMuIds, scoreMap);
 
-    for (
-      let i = 0;
-      i < userMangas.length;
-      i += RecommendationService.BATCH_SIZE
-    ) {
-      const batch = userMangas.slice(i, i + RecommendationService.BATCH_SIZE);
-      await Promise.all(
-        batch.map(async (um) => {
-          const muId = Number(um.manga.mu_id);
-          let recos: MangaRecommendation[];
-          try {
-            recos = await Promise.race([
-              this.mangasService.fetchAndCacheRecommendations(muId),
-              new Promise<MangaRecommendation[]>((_, reject) =>
-                setTimeout(
-                  () => reject(new Error('timeout')),
-                  RecommendationService.FETCH_TIMEOUT_MS,
-                ),
-              ),
-            ]);
-          } catch (err) {
-            this.logger.warn(`Reco fetch timeout/erreur pour ${muId}: ${err}`);
-            return;
-          }
-          this.scoreRecos(
-            um.manga.mu_id,
-            this.computeMultiplier(um),
-            recos,
-            libraryMuIds,
-            scoreMap,
-          );
-        }),
-      );
-    }
-
+    await this.augmentWithCatalog(userMangas, libraryMuIds, scoreMap);
     if (scoreMap.size === 0) return [];
-    await this.relaxIfPoolTooSmall(userMangas, libraryMuIds, scoreMap);
     const result = await this.buildDtoFromScoreMap(
       scoreMap,
       effectiveLimit,
@@ -405,17 +381,37 @@ export class RecommendationService {
 
     if (scoreMap.size > 0) {
       if (uncachedIds.length > 0) this.fetchUncachedInBackground(uncachedIds);
-      await this.relaxIfPoolTooSmall(userMangas, libraryMuIds, scoreMap);
+      await this.augmentWithCatalog(userMangas, libraryMuIds, scoreMap);
       return scoreMap;
     }
 
     // Cache vide : fetch bloquant batché
+    await this.fetchAndScoreBlocking(userMangas, libraryMuIds, scoreMap);
+    await this.augmentWithCatalog(userMangas, libraryMuIds, scoreMap);
+    return scoreMap;
+  }
+
+  /**
+   * Fetch MU bloquant batché (batch = BATCH_SIZE, timeout par fetch) qui
+   * alimente le scoreMap — factorisation des 2 anciennes boucles dupliquées
+   * de `buildUserRecommendations` / `computeScoreMap`.
+   *
+   * Rythme : pause `BATCH_DELAY_MS` (1 s) entre les batches ; si MU répond
+   * 429 (`MuRateLimitException` rethrow par `fetchAndCacheRecommendations`),
+   * la pause passe à `RATE_LIMIT_DELAY_MS` (5 s) avant le batch suivant.
+   */
+  private async fetchAndScoreBlocking(
+    userMangas: UserManga[],
+    libraryMuIds: Set<string>,
+    scoreMap: Map<string, ScoredEntry>,
+  ): Promise<void> {
     for (
       let i = 0;
       i < userMangas.length;
       i += RecommendationService.BATCH_SIZE
     ) {
       const batch = userMangas.slice(i, i + RecommendationService.BATCH_SIZE);
+      let rateLimited = false;
       await Promise.all(
         batch.map(async (um) => {
           const muId = Number(um.manga.mu_id);
@@ -430,7 +426,9 @@ export class RecommendationService {
                 ),
               ),
             ]);
-          } catch {
+          } catch (err) {
+            if (err instanceof MuRateLimitException) rateLimited = true;
+            this.logger.warn(`Reco fetch timeout/erreur pour ${muId}: ${err}`);
             return;
           }
           this.scoreRecos(
@@ -442,11 +440,62 @@ export class RecommendationService {
           );
         }),
       );
+      const hasNextBatch =
+        i + RecommendationService.BATCH_SIZE < userMangas.length;
+      if (hasNextBatch) {
+        await this.sleep(
+          rateLimited
+            ? RecommendationService.RATE_LIMIT_DELAY_MS
+            : RecommendationService.BATCH_DELAY_MS,
+        );
+      }
     }
-    if (scoreMap.size > 0) {
-      await this.relaxIfPoolTooSmall(userMangas, libraryMuIds, scoreMap);
+  }
+
+  /**
+   * Complète le scoreMap avec des candidats du catalogue local quand le
+   * scoring MU remonte moins de `CATALOG_MIN_POOL` entrées.
+   *
+   * Merge SANS addition : un candidat déjà scoré par MU garde son score MU
+   * (les recos humaines priment sur l'affinité de genres). L'exclusion
+   * stricte de la bibliothèque est conservée (défense en profondeur ici,
+   * `findCandidates` exclut déjà via `excludeMuIds`).
+   */
+  private async augmentWithCatalog(
+    userMangas: UserManga[],
+    libraryMuIds: Set<string>,
+    scoreMap: Map<string, ScoredEntry>,
+  ): Promise<void> {
+    if (scoreMap.size >= RecommendationService.CATALOG_MIN_POOL) return;
+
+    let candidates: CatalogCandidate[];
+    try {
+      candidates = await this.catalogCandidates.findCandidates(
+        userMangas,
+        libraryMuIds,
+      );
+    } catch (err) {
+      this.logger.warn(`Candidats catalogue indisponibles: ${err}`);
+      return;
     }
-    return scoreMap;
+    if (candidates.length === 0) return;
+
+    let added = 0;
+    for (const candidate of candidates) {
+      if (scoreMap.has(candidate.mu_id)) continue; // MU prime — pas d'addition
+      if (libraryMuIds.has(candidate.mu_id)) continue;
+      const sources = new Map<string, number>();
+      for (const sourceMuId of candidate.sourceMuIds) {
+        sources.set(sourceMuId, candidate.score);
+      }
+      scoreMap.set(candidate.mu_id, { score: candidate.score, sources });
+      added += 1;
+    }
+    if (added > 0) {
+      this.logger.log(
+        `Pool maigre — ${added} candidat(s) catalogue ajoutés (pool=${scoreMap.size})`,
+      );
+    }
   }
 
   /**
@@ -625,9 +674,7 @@ export class RecommendationService {
 
   /**
    * Applique les recos d'un manga source au scoreMap, en limitant la
-   * contribution à `perSourceCap` (par défaut MAX_RECOS_PER_SOURCE) pour
-   * la diversité. Permettre l'override est utilisé par le replay adaptatif
-   * (cf. `relaxIfPoolTooSmall`).
+   * contribution à `MAX_RECOS_PER_SOURCE` pour la diversité.
    */
   private scoreRecos(
     sourceMuId: string,
@@ -635,11 +682,10 @@ export class RecommendationService {
     recos: MangaRecommendation[],
     libraryMuIds: Set<string>,
     scoreMap: Map<string, ScoredEntry>,
-    perSourceCap: number = RecommendationService.MAX_RECOS_PER_SOURCE,
   ): void {
     const topRecos = [...recos]
       .sort((a, b) => b.weight - a.weight)
-      .slice(0, perSourceCap);
+      .slice(0, RecommendationService.MAX_RECOS_PER_SOURCE);
 
     for (const reco of topRecos) {
       // Exclusion stricte des mangas déjà en biblio : l'user ne veut pas
@@ -659,57 +705,6 @@ export class RecommendationService {
         (entry.sources.get(sourceMuId) ?? 0) + contribution,
       );
     }
-  }
-
-  /**
-   * Si le scoreMap a moins de `MIN_POOL_BEFORE_RELAX` entrées, rejoue le
-   * scoring avec `ADAPTIVE_FALLBACK_CAP` pour repêcher des candidats
-   * supplémentaires (long tail). On préfère un pool plus large
-   * potentiellement redondant à un pool quasi-vide.
-   *
-   * Effet : un user avec 1-2 mangas en biblio aura quand même un volume
-   * de recos décent (jusqu'à 25 recos par manga source au lieu de 5).
-   */
-  private async relaxIfPoolTooSmall(
-    userMangas: UserManga[],
-    libraryMuIds: Set<string>,
-    scoreMap: Map<string, ScoredEntry>,
-  ): Promise<void> {
-    if (scoreMap.size >= RecommendationService.MIN_POOL_BEFORE_RELAX) return;
-
-    this.logger.log(
-      `Pool maigre (${scoreMap.size} candidats) — relax cap ${RecommendationService.MAX_RECOS_PER_SOURCE} → ${RecommendationService.ADAPTIVE_FALLBACK_CAP}`,
-    );
-
-    // On rejoue uniquement avec les recos en cache (pas de re-fetch MU :
-    // si le cache est vide, la première passe l'aurait déjà rempli ou
-    // marqué uncached, donc rien à gagner à reposer la question).
-    await Promise.all(
-      userMangas.map(async (um) => {
-        const muId = Number(um.manga.mu_id);
-        const cached = await this.mangasService.getCachedRecommendations(muId);
-        if (cached.length === 0) return;
-        // ATTENTION : rejouer scoreRecos avec un cap plus large RE-AJOUTE les
-        // contributions des recos déjà comptabilisées dans la 1ère passe.
-        // Pour éviter le double-count, on ne scoore QUE les recos au-delà
-        // du cap de base.
-        const extraRecos = [...cached]
-          .sort((a, b) => b.weight - a.weight)
-          .slice(
-            RecommendationService.MAX_RECOS_PER_SOURCE,
-            RecommendationService.ADAPTIVE_FALLBACK_CAP,
-          );
-        this.scoreRecos(
-          um.manga.mu_id,
-          this.computeMultiplier(um),
-          extraRecos,
-          libraryMuIds,
-          scoreMap,
-          // Cap = +∞ ici (les recos sont déjà tronquées au-dessus).
-          extraRecos.length,
-        );
-      }),
-    );
   }
 
   /**

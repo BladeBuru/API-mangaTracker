@@ -2,10 +2,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { RecommendationService } from './recommendation.service';
 import { RecoCacheService } from './reco-cache.service';
+import {
+  CatalogCandidate,
+  CatalogCandidateService,
+} from './catalog-candidate.service';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { MangaRecommendation } from '@/api/mangas/manga-recommendation.entity';
 import { Manga } from '@/api/mangas/manga.entity';
 import { MangasService } from '@/api/mangas/mangas.service';
+import { MuRateLimitException } from '@/api/mangas/exceptions/mu-rate-limit.exception';
 import { ReadingStatus } from '@/api/library/reading-status.enum';
 
 /**
@@ -66,6 +71,7 @@ describe('RecommendationService', () => {
     fetchAndCacheRecommendations: jest.Mock;
     getCommunityRatings: jest.Mock;
   };
+  let catalogCandidates: { findCandidates: jest.Mock };
 
   beforeEach(async () => {
     userMangaRepo = { find: jest.fn().mockResolvedValue([]) };
@@ -79,6 +85,10 @@ describe('RecommendationService', () => {
       // Mock de l'enrichissement community rating (par défaut : map vide)
       getCommunityRatings: jest.fn().mockResolvedValue(new Map()),
     } as any;
+    // Catalogue local vide par défaut — les tests dédiés le peuplent.
+    catalogCandidates = {
+      findCandidates: jest.fn().mockResolvedValue([]),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -93,10 +103,13 @@ describe('RecommendationService', () => {
         },
         { provide: getRepositoryToken(Manga), useValue: mangaRepo },
         { provide: MangasService, useValue: mangasService },
+        { provide: CatalogCandidateService, useValue: catalogCandidates },
       ],
     }).compile();
 
     service = module.get<RecommendationService>(RecommendationService);
+    // Neutralise les pauses inter-batch (batch délai/429 testés dédiés).
+    service.sleep = jest.fn().mockResolvedValue(undefined);
   });
 
   it('utilise le fallback cold start si la bibliothèque est vide', async () => {
@@ -230,9 +243,10 @@ describe('RecommendationService', () => {
     expect(result[0].largeCoverUrl).toBe('https://cdn/2000-m.jpg');
   });
 
-  it('limite à MAX_RECOS_PER_SOURCE pour la diversité', async () => {
-    // 4 mangas en biblio, chacun avec 45 recos disjointes : pool initial = 4×40 = 160,
-    // au-dessus de MIN_POOL_BEFORE_RELAX (50) donc le cap=40 reste appliqué.
+  it('limite à MAX_RECOS_PER_SOURCE pour la diversité (pool ≥ 150 → catalogue non sollicité)', async () => {
+    // 4 mangas en biblio, chacun avec 45 recos disjointes : pool = 4×40 = 160,
+    // au-dessus de CATALOG_MIN_POOL (150) donc le catalogue local n'est pas
+    // interrogé et le cap=40 par source reste appliqué.
     const userMangas = Array.from({ length: 4 }, (_, i) =>
       makeUserManga({
         id: i + 1,
@@ -273,6 +287,8 @@ describe('RecommendationService', () => {
     const muIds = new Set(result.map((r) => r.muId));
     expect(muIds.has(2039)).toBe(true); // Top 40 de la source 1000
     expect(muIds.has(2040)).toBe(false); // 41e reco de la source 1000 → tronquée
+    // Seuil : pool (160) ≥ CATALOG_MIN_POOL (150) → catalogue non appelé.
+    expect(catalogCandidates.findCandidates).not.toHaveBeenCalled();
   });
 
   it('sert les recos depuis le cache user-level au 2e appel (US-4)', async () => {
@@ -735,5 +751,175 @@ describe('RecommendationService', () => {
     expect(mangasService.fetchAndCacheRecommendations).toHaveBeenCalledWith(
       1001,
     );
+  });
+
+  describe('catalogue local (CATALOG_MIN_POOL)', () => {
+    function makeCandidate(
+      mu_id: string,
+      score: number,
+      sourceMuIds: string[] = ['1000'],
+    ): CatalogCandidate {
+      return { mu_id, score, sourceMuIds };
+    }
+
+    it('fusionne les candidats catalogue sous le seuil : tri global, MU prime (pas d’addition), biblio exclue', async () => {
+      userMangaRepo.find.mockResolvedValue([
+        makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
+      ]);
+      // 3 recos MU en cache — scores ≈ weight × 1.2 (reading récent).
+      mangasService.getCachedRecommendations.mockResolvedValue([
+        makeReco('1000', '2000', 10),
+        makeReco('1000', '2001', 7),
+        makeReco('1000', '2002', 5),
+      ]);
+      // Catalogue : 1 nouveau candidat, 1 collision avec une reco MU (2002,
+      // score volontairement énorme), 1 candidat déjà en biblio (1000).
+      catalogCandidates.findCandidates.mockResolvedValue([
+        makeCandidate('3000', 4.5, ['1000']),
+        makeCandidate('2002', 999),
+        makeCandidate('1000', 999),
+      ]);
+      mangaRepo.find.mockImplementation(({ where }) => {
+        const ids = (where as any).mu_id._value;
+        return Promise.resolve(
+          ids.map((id: string) =>
+            makeManga({ mu_id: id, title: `Manga ${id}` }),
+          ),
+        );
+      });
+
+      const result = await service.buildUserRecommendations(42, 50, 0);
+
+      // findCandidates reçoit la biblio en exclusion stricte.
+      expect(catalogCandidates.findCandidates).toHaveBeenCalledTimes(1);
+      const excludeArg = catalogCandidates.findCandidates.mock
+        .calls[0][1] as Set<string>;
+      expect(excludeArg.has('1000')).toBe(true);
+
+      const ids = result.map((r) => r.muId);
+      // Biblio exclue même si le catalogue la propose.
+      expect(ids).not.toContain(1000);
+      // Fusion triée : le candidat catalogue s'intercale selon son score et
+      // 2002 GARDE son score MU (une addition/écrasement le mettrait en tête).
+      expect(ids).toEqual([2000, 2001, 2002, 3000]);
+      // Explicabilité : recommendedBecauseOf depuis sourceMuIds.
+      const dto3000 = result.find((r) => r.muId === 3000);
+      expect(dto3000!.recommendedBecauseOf).toContain('Manga 1000');
+    });
+
+    it('ne sollicite pas le catalogue quand le pool MU atteint le seuil (voir test MAX_RECOS_PER_SOURCE)', async () => {
+      // Pool vide + biblio vide → cold start, catalogue jamais consulté.
+      userMangaRepo.find.mockResolvedValue([]);
+      userMangaRepo.createQueryBuilder = jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        having: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      })) as any;
+      mangaRepo.createQueryBuilder = jest.fn(() => ({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      })) as any;
+
+      await service.buildUserRecommendations(42);
+      expect(catalogCandidates.findCandidates).not.toHaveBeenCalled();
+    });
+
+    it('by-genre bénéficie aussi du complément catalogue (via computeScoreMap)', async () => {
+      userMangaRepo.find.mockResolvedValue([
+        makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
+      ]);
+      mangasService.getCachedRecommendations.mockResolvedValue([
+        makeReco('1000', '2000', 10),
+      ]);
+      catalogCandidates.findCandidates.mockResolvedValue([
+        makeCandidate('3000', 4.5, ['1000']),
+      ]);
+      mangaRepo.find.mockImplementation(({ where }) => {
+        const ids = (where as any).mu_id._value;
+        return Promise.resolve(
+          ids.map((id: string) =>
+            makeManga({ mu_id: id, title: `Manga ${id}`, genres: ['Action'] }),
+          ),
+        );
+      });
+
+      const result = await service.buildUserRecommendationsByGenre(42, 5, 10);
+      expect(catalogCandidates.findCandidates).toHaveBeenCalledTimes(1);
+      expect(result['Action'].map((d) => d.muId)).toEqual([2000, 3000]);
+    });
+  });
+
+  describe('fetch bloquant batché (délai / 429)', () => {
+    function makeLibrary(size: number): UserManga[] {
+      return Array.from({ length: size }, (_, i) =>
+        makeUserManga({
+          id: i + 1,
+          manga: makeManga({ id: i + 1, mu_id: String(1000 + i) }),
+        }),
+      );
+    }
+
+    beforeEach(() => {
+      mangasService.getCachedRecommendations.mockResolvedValue([]);
+      mangaRepo.find.mockImplementation(({ where }) => {
+        const ids = (where as any).mu_id._value;
+        return Promise.resolve(
+          ids.map((id: string) =>
+            makeManga({ mu_id: id, title: `Manga ${id}` }),
+          ),
+        );
+      });
+    });
+
+    it('pause 1 s entre deux batches de 5 fetches MU', async () => {
+      userMangaRepo.find.mockResolvedValue(makeLibrary(10));
+      mangasService.fetchAndCacheRecommendations.mockImplementation(
+        (muId: number) =>
+          Promise.resolve([makeReco(String(muId), String(muId + 1000), 5)]),
+      );
+      const sleepSpy = jest.fn().mockResolvedValue(undefined);
+      service.sleep = sleepSpy;
+
+      await service.buildUserRecommendations(42, 50, 0);
+
+      // 10 mangas → 2 batches de 5 → une seule pause, de 1000 ms.
+      expect(sleepSpy).toHaveBeenCalledTimes(1);
+      expect(sleepSpy).toHaveBeenCalledWith(1000);
+    });
+
+    it('MuRateLimitException (429) dans un batch → pause 5 s avant le batch suivant', async () => {
+      userMangaRepo.find.mockResolvedValue(makeLibrary(10));
+      mangasService.fetchAndCacheRecommendations.mockImplementation(
+        (muId: number) => {
+          // Tout le 1er batch (1000-1004) est rate-limité.
+          if (muId < 1005) {
+            return Promise.reject(new MuRateLimitException(muId));
+          }
+          return Promise.resolve([
+            makeReco(String(muId), String(muId + 1000), 5),
+          ]);
+        },
+      );
+      const sleepSpy = jest.fn().mockResolvedValue(undefined);
+      service.sleep = sleepSpy;
+
+      const result = await service.buildUserRecommendations(42, 50, 0);
+
+      expect(sleepSpy).toHaveBeenCalledTimes(1);
+      expect(sleepSpy).toHaveBeenCalledWith(5000);
+      // Le 2e batch a été traité malgré le 429 du 1er.
+      expect(mangasService.fetchAndCacheRecommendations).toHaveBeenCalledWith(
+        1009,
+      );
+      expect(result.map((r) => r.muId)).toEqual(
+        expect.arrayContaining([2005, 2006, 2007, 2008, 2009]),
+      );
+    });
   });
 });

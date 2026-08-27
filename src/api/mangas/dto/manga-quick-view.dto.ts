@@ -86,6 +86,14 @@ export class MangaQuickViewDto {
   })
   aggregatedRating?: number;
 
+  @IsNumber()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description:
+      "Total de chapitres signalé par l'utilisateur (« ce manga a plus de chapitres »). Présent uniquement si le report dépasse encore le total officiel ; totalChapters reflète déjà ce total effectif.",
+  })
+  userReportedTotalChapters?: number;
+
   static fromMu(data: any) {
     const dto = new MangaQuickViewDto();
     dto.muId = data['record']['series_id'];
@@ -101,7 +109,13 @@ export class MangaQuickViewDto {
     return dto;
   }
 
-  static fromLibrary(userManga: UserManga) {
+  /**
+   * @param userReportedTotal Total « plus de chapitres » signalé par l'user
+   *   (Chantier A). `totalChapters` expose le total EFFECTIF
+   *   (max(officiel, report)) pour que le client débloque l'UI au-delà du
+   *   total officiel sans logique supplémentaire.
+   */
+  static fromLibrary(userManga: UserManga, userReportedTotal?: number) {
     const dto = new MangaQuickViewDto();
     dto.muId = parseInt(userManga.manga.mu_id);
     dto.title = userManga.manga.title;
@@ -112,7 +126,16 @@ export class MangaQuickViewDto {
     dto.largeCoverUrl = userManga.manga.medium_cover_url;
     dto.rating = userManga.manga.rating;
     dto.readChapters = userManga.user_read_chapters;
-    dto.totalChapters = userManga.manga.total_chapters;
+    dto.totalChapters = Math.max(
+      userManga.manga.total_chapters ?? 0,
+      userReportedTotal ?? 0,
+    );
+    if (
+      userReportedTotal !== undefined &&
+      userReportedTotal > (userManga.manga.total_chapters ?? 0)
+    ) {
+      dto.userReportedTotalChapters = userReportedTotal;
+    }
     dto.readingStatus = userManga.readingStatus;
     dto.associated = userManga.manga.associated ?? [];
     dto.customLink = userManga.custom_link ?? undefined;
