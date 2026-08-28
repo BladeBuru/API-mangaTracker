@@ -5,6 +5,38 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ---
 
+## [Unreleased] — feat/catalog-sharding-by-year
+
+> Dépend de la PR #74 (`fix/manga-data-completeness`), non mergée : cette branche en part et réécrit `catalog-sync.service.ts` par-dessus.
+
+### Fixed
+- **mangas** : le catalogue nightly réingérait éternellement les mêmes ~5 000 titres. `CATALOG_SYNC_MAX_PAGES` (50) était utilisée dans `effectiveLastPage()` comme **plafond absolu de pagination** et non comme budget par run : la passe `catalog:rating` parcourait les pages 1→50, atteignait son plafond, se déclarait `completed` et remettait le curseur à 0. Le curseur ne pouvait **structurellement jamais dépasser la page 50**, alors que la requête exposait 100 pages. Constat en prod : 5 055 mangas en base, `catalog:rating` avec `last_completed_page = 0` / `total_pages = 100` / statut `completed`. Le seul plafond de pagination est désormais le plafond RÉEL de la requête (`ceil(total_hits/100)`) borné par `MU_PAGE_HARD_CAP` (400)
+
+### Added
+- **mangas** : **découpage du catalogue MU par année de publication**. `total_hits` de `/series/search` est plafonné à 10 000 quelle que soit la requête (mesuré : page 100 OK, page 200 → 500, page 401 → 400) — une passe globale ne peut donc pas voir au-delà de 10 000 titres. Une passe par année (`catalog:year:<AAAA>`, de l'année courante jusqu'au plancher **1930**) ramène chaque requête sous ce plafond et rend l'ensemble du catalogue atteignable. Mesures du 2026-08-28 : `{year:2000}` → 2 805 hits, `{year:2015}` → 9 070, `{year:2024}` → 10 000 (saturé) ; avec l'`exclude_genre` NSFW réellement appliqué en prod, `{year:2015}` → 4 781 et `{year:2024}` → 7 124, donc **aucune année ne sature aujourd'hui**. Le paramètre `letter` a été écarté **par la mesure** : `{letter:'A'}` sature à 10 000, il ne découpe rien
+- **mangas** : **curseur par shard, jamais réinitialisé globalement**. Chaque shard porte sa propre ligne `catalog_sync_state` et son propre curseur. La file est reconstruite à chaque run et exclut les shards terminés encore frais → le premier shard restant est celui où la nuit précédente s'est arrêtée. Une nuit qui finit 2001 et entame 2000 est reprise à 2000 la nuit suivante, sans re-parcourir les années déjà faites
+- **mangas** : **rafraîchissement périodique** — un shard terminé est re-parcouru après `CATALOG_SYNC_SHARD_REFRESH_DAYS` (défaut 30 j), sauf les shards « chauds » (passes globales + année courante et précédente) qui utilisent une fenêtre de 7 j. L'objectif à terme est de capter les nouveautés, pas de tout refaire chaque nuit
+- **mangas** : **sous-découpage automatique à la saturation** — un shard annuel qui atteint 10 000 hits est marqué `saturated` et découpé en un sous-shard par genre non-NSFW (`catalog:year:<AAAA>:genre:<Genre>`, 30 genres = les 36 de `GET /v1/genres` moins les 6 NSFW déjà exclus). **Récursion limitée à 2 niveaux** : un sous-shard année × genre encore saturé produit un warn explicite et n'est pas re-découpé
+- **mangas** : `CATALOG_SYNC_YEAR_FLOOR` (défaut 1930) et `CATALOG_SYNC_SHARD_REFRESH_DAYS` (défaut 30) dans `template.env` et la spec technique
+
+### Changed
+- **mangas** : les deux notions confondues sont séparées. `CATALOG_SYNC_PAGES_PER_RUN` = budget de pages par nuit **réparti entre les shards** (le seul vrai frein) ; `CATALOG_SYNC_MAX_PAGES` est **dépréciée et ignorée**, un warn est loggé au démarrage si elle est encore définie, et elle est retirée de `template.env` pour qu'un opérateur ne croie pas piloter la pagination avec
+- **mangas** : parcours **décroissant** (année courante → 1930). La base était un top-5 000 par note biaisé vers les classiques : les années récentes apportent le plus de titres réellement nouveaux, et capter les nouveautés est l'objectif de fond. Le mécanisme de reprise est indifférent au sens de parcours
+- **mangas** : la passe globale `catalog:rating` est **conservée** malgré le découpage — c'est le seul filet pour les titres dont MU ne connaît pas l'année, qu'aucun shard annuel ne peut atteindre
+- **mangas** : `catalog-sync.service.ts` (468 lignes) découpé pour tenir la limite de 400 du repo → `CatalogShardPlannerService` (planification **pure** : ordre, éligibilité, rafraîchissement, sous-découpage — testable sans mock de repository ni de réseau), `CatalogPageIngestService` (appel MU + backoff + upsert), `CatalogHydrationService` (job d'hydratation, comportement inchangé), et `catalog-shard.ts` (types + construction du payload). Le service de sync ne garde que l'orchestration (380 lignes)
+- **Rythme réseau inchangé** : 1 requête / 2 s (`CATALOG_SYNC_DELAY_MS`), backoff 5/10/20/40 s sur 429/5xx. Le découpage n'accélère rien — il étale la couverture sur plusieurs nuits
+
+### BDD
+- Migration `1787961600000-AddShardingToCatalogSyncState` : colonnes `catalog_sync_state.completed_at` (timestamptz nullable, pivot de la reprise inter-shards — distinct de `last_run_at` qui est horodaté à chaque run complet ou non), `saturated` (boolean défaut false) et `total_hits` (int nullable). Additive et idempotente (`hasColumn`). Les 3 lignes existantes reçoivent `completed_at = NULL` → elles sont éligibles au premier run, donc le comportement au démarrage est « reprendre le travail », pas « tout recommencer »
+
+### Vérifié / non retenu
+- **`associated` n'est PAS alimentable depuis `/series/search`** — vérifié le 2026-08-28 sur la forme de requête exacte du shard (`orderby: rating` + `exclude_genre` + `year`). Les clés d'un `record` sont exactement `series_id, title, url, description, image, type, year, bayesian_rating, rating_votes, genres, last_updated` : aucun champ de titres alternatifs. C'est ce qui explique que seuls 117 mangas sur 5 055 en aient en base — ils ne sont remplis que par `getMangaDetails` (`/series/{id}`), à l'ouverture d'une fiche. La colonne `associated` reste donc hors du `orUpdate` de l'upsert catalogue, et **aucune persistance n'a été ajoutée**
+
+### Tests
+- +33 tests unitaires (182 → 215), répartis sur 4 suites : planification pure (composition de la file, plancher, ordre décroissant, week_pos le dimanche uniquement), **reprise inter-shards sur plusieurs nuits** (la nuit 2 repart sur le shard laissé en cours sans re-parcourir les terminés), fenêtres de rafraîchissement (7 j vs 30 j), détection de saturation et sous-découpage (dont la limite à 2 niveaux), **budget de pages global à la nuit et non par shard**, non-régression du backoff (429 → 4 retries 5/10/20/40 s, 5xx, 400 non-retryable) et de la doctrine null-safe de l'upsert. Test dédié au bug corrigé : 100 pages parcourues malgré `CATALOG_SYNC_MAX_PAGES=50`
+
+---
+
 ## [Unreleased] — fix/manga-data-completeness
 
 ### Fixed

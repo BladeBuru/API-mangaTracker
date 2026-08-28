@@ -137,6 +137,22 @@
 
 ---
 
+## 🗂️ Catalogue MangaUpdates — découpage par année (2026-08-28)
+
+Branche `feat/catalog-sharding-by-year` (dépend de la PR #74).
+
+**Bug corrigé** : `CATALOG_SYNC_MAX_PAGES` (50) servait de plafond absolu de pagination — la passe s'arrêtait page 50, se déclarait terminée, remettait le curseur à 0 et réingérait éternellement les mêmes ~5 000 titres. La variable est désormais **dépréciée et ignorée**.
+
+**Découpage** : `total_hits` de `/series/search` est plafonné à 10 000 par requête. Une passe par année (`catalog:year:<AAAA>`, année courante → 1930) ramène chaque requête sous ce plafond. Sous-découpage par genre si une année sature, récursion limitée à 2 niveaux.
+
+**Reprise inter-shards** : une ligne `catalog_sync_state` par shard, curseur jamais réinitialisé globalement. La file exclut les shards terminés encore frais → une nuit reprend là où la précédente s'est arrêtée. Rafraîchissement 30 j (7 j pour les passes globales et les 2 années les plus récentes).
+
+**Découpage du code** : `catalog-sync.service.ts` (468 l.) → orchestration seule (400 l.) + `CatalogShardPlannerService` (planification pure), `CatalogPageIngestService` (MU + backoff + upsert), `CatalogHydrationService`.
+
+**Résultat négatif à ne pas ré-investiguer** : le payload `/series/search` **ne contient pas** `associated` (titres alternatifs). Ils ne sont alimentables que par `getMangaDetails` — d'où 117 mangas sur 5 055 seulement.
+
+---
+
 ## 🐛 Problèmes connus
 
 Voir [.claude/memory-bank/known-issues.md](known-issues.md) — 5 problèmes actifs détectés à l'audit sécurité de mai 2026.

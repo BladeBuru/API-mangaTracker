@@ -18,6 +18,9 @@ import { MangaChapterReport } from '../library/manga-chapter-report.entity';
 import { UpdateMangaService } from './update-manga.service';
 import { MangaSyncService } from './sync-manga.service';
 import { CatalogSyncService } from './catalog-sync.service';
+import { CatalogHydrationService } from './catalog-hydration.service';
+import { CatalogPageIngestService } from './catalog-page-ingest.service';
+import { CatalogShardPlannerService } from './catalog-shard-planner.service';
 import { CatalogSyncState } from './catalog-sync-state.entity';
 import { CoverProxyService } from './cover-proxy.service';
 import { RecoCacheModule } from '../recommendations/reco-cache.module';
@@ -57,6 +60,9 @@ import { GtxProvider } from './translation/gtx.provider';
     UpdateMangaService,
     MangaSyncService,
     CatalogSyncService,
+    CatalogShardPlannerService,
+    CatalogPageIngestService,
+    CatalogHydrationService,
     CoverProxyService,
     DescriptionTranslationService,
     DeeplProvider,

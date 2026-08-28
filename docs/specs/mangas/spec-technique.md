@@ -11,7 +11,7 @@
 
 ## Architecture du module
 
-Le module `mangas` regroupe deux controllers, sept services, quatre entités et plusieurs DTOs. Il est découpé selon les responsabilités suivantes :
+Le module `mangas` regroupe deux controllers, dix services, quatre entités et plusieurs DTOs. Il est découpé selon les responsabilités suivantes :
 
 - **MangasController** : endpoints catalogue (tendances, recherche, détail, recommandations)
 - **MangaCoversController** : endpoints covers (proxy redirect, refresh, sync admin)
@@ -21,7 +21,10 @@ Le module `mangas` regroupe deux controllers, sept services, quatre entités et 
 - **CoverProxyService** : résolution de l'URL upstream pour le proxy 302
 - **HelperService** : utilitaires de formatage des requêtes MU
 - **DescriptionTranslationService** : cache Postgres des descriptions traduites + cascade providers (DeepL / gtx) + dédup in-flight + SWR sur hash mismatch + negative-cache 5 min
-- **CatalogSyncService** : synchronisation nightly paginée du catalogue MU vers la table `manga` (cron 03:30, curseur de reprise, backoff 429, statut `partial` sur erreur DB + `consecutive_failures++`)
+- **CatalogSyncService** : orchestration de la synchronisation nightly du catalogue MU vers la table `manga`, **découpée en shards par année** (cron 03:30, budget de pages réparti entre shards, curseur de reprise par shard, statut `partial` sur erreur DB + `consecutive_failures++`)
+- **CatalogShardPlannerService** : planification pure des shards (ordre, éligibilité, rafraîchissement, sous-découpage) — aucune I/O, donc testable sans mock
+- **CatalogPageIngestService** : ingestion d'une page de shard (appel MU + backoff + upsert)
+- **CatalogHydrationService** : job nightly d'hydratation des lignes `manga` incomplètes
 
 La dépendance circulaire avec `LibraryModule` est gérée via `forwardRef()` dans `MangasModule`.
 
@@ -42,7 +45,11 @@ La dépendance circulaire avec `LibraryModule` est gérée via `forwardRef()` da
 | `src/api/mangas/manga-recommendation.entity.ts` | Entité TypeORM `manga_recommendation` | ~33 |
 | `src/api/mangas/manga-translation.entity.ts` | Entité TypeORM `manga_translation` (cache traductions) | ~48 |
 | `src/api/mangas/catalog-sync-state.entity.ts` | Entité TypeORM `catalog_sync_state` (curseur de reprise cron) | ~66 |
-| `src/api/mangas/catalog-sync.service.ts` | Sync nightly catalogue MU — cron, pagination, backoff, curseur, statut partial sur erreur DB | ~380 |
+| `src/api/mangas/catalog-sync.service.ts` | Sync nightly catalogue MU — **orchestration seule** : cron, file de shards, budget de pages, curseur, statut partial sur erreur DB | ~380 |
+| `src/api/mangas/catalog-shard.ts` | Types de shard (`global` / `year` / `year_genre`) + construction du payload MU `/series/search` | ~67 |
+| `src/api/mangas/catalog-shard-planner.service.ts` | Planification **pure** des shards : ordre de parcours, éligibilité, fenêtres de rafraîchissement, sous-découpage d'un shard saturé | ~237 |
+| `src/api/mangas/catalog-page-ingest.service.ts` | Ingestion d'une page : appel MU + backoff 429/5xx + upsert `manga` | ~145 |
+| `src/api/mangas/catalog-hydration.service.ts` | Job nightly d'hydratation des lignes `manga` incomplètes via `getMangaDetails` | ~162 |
 | `src/api/mangas/catalog-sync.mapper.ts` | Mapping records MU → lots upsert `manga` (lots séparés genre/non-genre, rating/year/covers null-safe) | ~82 |
 | `src/api/mangas/genre.utils.ts` | Normalisation des formats genres MU hétérogènes (`string` / `{genre}`) | ~24 |
 | `src/api/mangas/exceptions/mu-rate-limit.exception.ts` | Exception typée HTTP 429 MU — distingue rate-limit d'un échec quelconque | ~18 |
@@ -92,7 +99,7 @@ Liste unique : `PROTECTED_NULLABLE_COLUMNS` dans `manga-completeness.util.ts`, a
 
 | Chemin d'écriture | Mécanisme |
 |-------------------|-----------|
-| `CatalogSyncService.upsertPage` | `buildCatalogUpsertBatches` — lots par colonnes non-null (`catalog-sync.mapper.ts`) |
+| `CatalogPageIngestService.upsertPage` | `buildCatalogUpsertBatches` — lots par colonnes non-null (`catalog-sync.mapper.ts`) |
 | `MangasService.getMangaDetails` | `buildProtectedColumnsUpdate` étalé dans le `.set()` |
 | `MangaSyncService.syncAllMangasWithApi` | `buildProtectedColumnsUpdate` étalé dans le `.update()` |
 
@@ -133,16 +140,21 @@ Liste unique : `PROTECTED_NULLABLE_COLUMNS` dans `manga-completeness.util.ts`, a
 | Colonne | Type | Contrainte | Notes |
 |---------|------|-----------|-------|
 | `id` | integer | PK, auto-increment | |
-| `job_name` | varchar | UNIQUE NOT NULL | `catalog:rating`, `catalog:week_pos`, `hydration` |
-| `last_completed_page` | integer | DEFAULT 0 | Curseur de reprise |
+| `job_name` | varchar | UNIQUE NOT NULL | Clé du shard. Noms **fixes** : `catalog:rating`, `catalog:week_pos`, `hydration`. Noms **dynamiques** : `catalog:year:<AAAA>`, `catalog:year:<AAAA>:genre:<Genre>` |
+| `last_completed_page` | integer | DEFAULT 0 | Curseur de reprise **propre au shard** — jamais réinitialisé globalement |
 | `total_pages` | integer | nullable | Connu après la 1re réponse MU |
-| `last_run_at` | timestamptz | nullable | Date du dernier run |
+| `last_run_at` | timestamptz | nullable | Date du dernier run, **complet ou non** |
 | `last_run_status` | varchar | nullable | `completed`, `partial`, `failed` |
 | `consecutive_failures` | integer | DEFAULT 0 | Remis à 0 sur passe complétée ; incrémenté sur erreur DB (sans sauter la passe) |
+| `completed_at` | timestamptz | nullable | Date de la dernière complétion **intégrale** du shard (dernière page atteinte). NULL = jamais terminé ou parcours en cours. **Pivot de la reprise inter-shards** — distinct de `last_run_at`, voir « Pattern catalogue nightly » |
+| `saturated` | boolean | DEFAULT false | `true` quand la requête du shard atteint le plafond `total_hits` de MU (10 000) : réponse tronquée → sous-découpage par genre |
+| `total_hits` | integer | nullable | Dernier `total_hits` annoncé par MU — diagnostic + détection de saturation |
 | `created_at` | timestamp | auto | |
 | `updated_at` | timestamp | auto | |
 
-**3 lignes max** (une par `job_name`). **Migration** : `1753300000000-CreateCatalogSyncState`.
+**Une ligne par shard** (et non plus 3 lignes fixes) : ~100 shards annuels (année courante → 1930) + les passes globales + `hydration`, auxquels s'ajoutent des sous-shards par genre **uniquement si une année sature**.
+
+**Migrations** : `1753300000000-CreateCatalogSyncState` puis `1787961600000-AddShardingToCatalogSyncState` (ajoute `completed_at`, `saturated`, `total_hits`). Cette dernière est additive et idempotente (`hasColumn`) → sûre avec `migrationsRun: true` en production. Les 3 lignes existantes reçoivent `completed_at = NULL` et `saturated = false`, ce qui les rend éligibles au prochain run : le comportement au premier démarrage est « reprendre le travail », pas « tout recommencer ».
 
 ---
 
@@ -180,8 +192,10 @@ Liste unique : `PROTECTED_NULLABLE_COLUMNS` dans `manga-completeness.util.ts`, a
 | `DEEPL_API_KEY` | _(absent)_ | Clé API DeepL Free — si absent, fallback automatique sur Google gtx |
 | `TRANSLATION_TIMEOUT_MS` | `4000` | Timeout dur (ms) de la traduction synchrone au 1er visiteur |
 | `CATALOG_SYNC_ENABLED` | `true` (`false` si `NODE_ENV=test`) | Active/désactive le cron catalogue |
-| `CATALOG_SYNC_MAX_PAGES` | `50` | Pages max de la passe `catalog:rating` (100 titres/page ≈ 5000 titres) |
-| `CATALOG_SYNC_PAGES_PER_RUN` | `60` | Budget de pages par nuit (toutes passes confondues) |
+| `CATALOG_SYNC_MAX_PAGES` | — | **DÉPRÉCIÉE ET IGNORÉE** depuis le découpage par année. Elle servait de plafond **absolu** de pagination dans `effectiveLastPage()` : la passe s'arrêtait page 50, se déclarait `completed` et remettait le curseur à 0 — le curseur ne pouvait donc structurellement jamais dépasser la page 50, et les mêmes ~5 000 titres étaient réingérés chaque nuit. Si la variable est encore définie, un `warn` est loggé au démarrage pour qu'un opérateur ne croie pas piloter la pagination avec |
+| `CATALOG_SYNC_PAGES_PER_RUN` | `60` | Budget de pages par nuit, **réparti entre les shards** de la file — c'est le **seul vrai frein** au débit de la synchro |
+| `CATALOG_SYNC_YEAR_FLOOR` | `1930` | Année la plus ancienne shardée. Mesuré : 1900 / 1910 / 1920 / 1925 → 0 hit, 1930 → 1, 1935 → 2, 1950 → 4 |
+| `CATALOG_SYNC_SHARD_REFRESH_DAYS` | `30` | Délai avant de re-parcourir un shard terminé. Les shards « chauds » (passes globales, année courante et précédente) utilisent 7 j en dur |
 | `CATALOG_SYNC_DELAY_MS` | `2000` | Délai entre 2 appels MU (30 req/min = 50 % du plafond MU anonyme) |
 | `CATALOG_SYNC_HYDRATION_BUDGET` | `800` | Appels `getMangaDetails` max/nuit pour hydrater les lignes `manga` incomplètes. 800 × 2 s ≈ 27 min à 30 req/min, soit la moitié du plafond MU anonyme (~60 req/min). Relevé de 200 → 800 le 2026-08-28 : avec le critère élargi, 200/nuit mettait plusieurs semaines à rattraper le stock |
 
@@ -199,9 +213,9 @@ Les deux états coexistent. Le code downstream doit tolérer les champs nullable
 
 **Limite structurelle** : l'endpoint MU « recommendations » d'une série ne renvoie ni année ni note. Un stub reste donc sans `year` ni `rating` tant que `getMangaDetails` n'a pas tourné dessus — d'où une carte de recommandation avec image mais sans ligne meta. Deux mécanismes de rattrapage couvrent ce trou (fix 2026-08-28) : le job nightly `hydration` ci-dessous, et l'hydratation à la demande côté recommandations (voir `docs/specs/recommendations/spec-technique.md`).
 
-### Hydratation des lignes incomplètes (`CatalogSyncService.hydrateIncompleteRows`)
+### Hydratation des lignes incomplètes (`CatalogHydrationService.hydrateIncompleteRows`)
 
-Job nightly `hydration` (ex-`hydrateMissingGenres`, généralisé le 2026-08-28).
+Job nightly `hydration` (ex-`hydrateMissingGenres`, généralisé le 2026-08-28), extrait de `CatalogSyncService` avec le découpage par année : les deux jobs partagent la contrainte de débit MU mais rien d'autre — l'un pagine une recherche, l'autre complète des lignes une par une.
 
 | Aspect | Comportement |
 |--------|--------------|
@@ -280,13 +294,73 @@ Stratégie à 5 couches :
 
 Invariant : une traduction ratée ne produit jamais de 5xx.
 
-### Pattern catalogue nightly avec curseur de reprise (CatalogSyncService)
+### Pattern catalogue nightly découpé en shards par année (CatalogSyncService)
 
-Cron `03:30` + jitter aléatoire 0-15 min. Politique réseau : 1 appel / `CATALOG_SYNC_DELAY_MS` (2 s). Backoff 5/10/20/40 s sur 429/5xx (4 retries).
+Cron `03:30` + jitter aléatoire 0-15 min. Anti-réentrance par flag `running` in-process (un seul process API en prod ; à remplacer par un `pg_advisory_lock` si l'API passe multi-instance).
 
-Trois jobs (`catalog:rating`, `catalog:week_pos`, `hydration`), 1 ligne `catalog_sync_state` par job. Reprise automatique via `last_completed_page`. Sur erreur DB dans `runCatalogPass` : statut `partial` écrit + `consecutive_failures` incrémenté, la passe ne saute pas (correction adversariale d8641f4) — l'ancien comportement loggait l'erreur mais poursuivait sans mettre à jour l'état.
+#### Le problème corrigé (2026-08-28)
+
+Deux plafonds se cumulaient et figeaient le catalogue :
+
+| Plafond | Effet mesuré |
+|---------|--------------|
+| `total_hits` de `/series/search` est plafonné à **10 000** quelle que soit la requête | page 100 OK, page 200 → 500, page 401 → 400. Le corpus atteignable **par requête** est donc de 10 000 titres maximum |
+| `CATALOG_SYNC_MAX_PAGES` (50) servait de **plafond absolu de pagination** dans `effectiveLastPage()` | la passe atteignait son plafond, se déclarait `completed`, remettait le curseur à 0 — et réingérait éternellement les mêmes ~5 000 titres. La prod contenait 5 055 mangas |
+
+Le curseur ne pouvait donc **structurellement** jamais dépasser la page 50. Le second plafond a été supprimé, le premier est contourné par le découpage.
+
+#### Pourquoi l'année comme axe de découpage
+
+Mesures du 2026-08-28 sur `/series/search` :
+
+| Requête | `total_hits` |
+|---------|-------------|
+| `{year: 2000}` — sans exclusion NSFW | 2 805 |
+| `{year: 2015}` — sans exclusion NSFW | 9 070 |
+| `{year: 2024}` — sans exclusion NSFW | 10 000 — **saturé** |
+| `{genre: ['Action'], year: 2024}` | 1 264 |
+| `{year: 2015}` — **avec** l'`exclude_genre` NSFW réellement utilisé en prod | 4 781 |
+| `{year: 2024}` — **avec** l'`exclude_genre` NSFW réellement utilisé en prod | 7 124 |
+
+Toutes les requêtes catalogue portent l'`exclude_genre` NSFW : **aucune année ne sature actuellement**. Le sous-découpage par genre est donc un filet de sécurité, pas le régime nominal.
+
+Le paramètre `letter` a été écarté **par la mesure** : `{letter: 'A'}` sature à 10 000, il ne découpe rien.
+
+**Bornes** : plancher **1930** (mesuré : 1900 / 1910 / 1920 / 1925 → 0 hit, 1930 → 1, 1935 → 2, 1950 → 4 — descendre plus bas coûterait une requête par année pour zéro titre), plafond = année courante.
+
+**Ordre de parcours décroissant** (année courante → 1930) : la base existante était un top-5000 par note, biaisé vers les classiques. Ce sont les années récentes qui apportent le plus de titres réellement nouveaux, et capter les nouveautés est l'objectif de fond. Le mécanisme de reprise est indifférent au sens de parcours — inverser la boucle de `buildYearShards` suffirait à repasser en ascendant.
+
+**La passe globale `catalog:rating` est conservée** malgré le découpage : les titres dont MU ne connaît pas l'année ne sont atteignables par **aucun** shard annuel, elle est leur seul filet.
+
+#### Reprise inter-shards
+
+Chaque shard porte **sa propre ligne `catalog_sync_state` et son propre curseur**, jamais réinitialisé globalement. La file est reconstruite à chaque run par `CatalogShardPlannerService.planQueue` et exclut les shards terminés encore frais : le premier shard restant est donc exactement celui sur lequel la nuit précédente s'est arrêtée, curseur intact.
+
+`completed_at` est le pivot de ce mécanisme. Il est distinct de `last_run_at`, horodaté à **chaque** run, complet ou non — c'est pourquoi ce dernier ne peut pas servir à décider d'une reprise.
+
+**Rafraîchissement** : un shard terminé est re-parcouru après `CATALOG_SYNC_SHARD_REFRESH_DAYS` (30 j). Exception pour les shards « chauds » — passes globales, année courante et année précédente — qui utilisent une fenêtre de **7 j** : c'est là qu'apparaissent les nouveautés et que les notes bougent encore. Les années anciennes ne bougent quasiment plus ; les re-parcourir souvent gaspillerait le budget au détriment des années jamais visitées.
+
+#### Sous-découpage d'un shard saturé
+
+Si un shard annuel atteint 10 000 hits, il est marqué `saturated` et découpé en **un sous-shard par genre non-NSFW** : 30 genres (`MU_SHARDABLE_GENRES`, source `GET /v1/genres` = 36 genres moins les 6 de `NSFW_GENRES`, déjà exclus de toutes les requêtes — les inclure produirait des sous-shards systématiquement vides).
+
+**Récursion limitée à 2 niveaux** : un sous-shard année × genre encore saturé produit un `warn` explicite (trou de couverture réel, titres hors de portée) et n'est **pas** re-découpé — MU n'offre pas de filtre permettant de descendre plus bas.
+
+#### Plafonds de pagination et politique réseau
+
+Le seul plafond de pagination est désormais `ceil(total_hits / 100)`, borné par `MU_PAGE_HARD_CAP` (400) et par l'éventuel `pageCap` propre au shard (`catalog:week_pos` : 10 pages — le top hebdo n'a de sens que sur ses premières pages). Vérifié sur `{year: 2015}` (4 781 hits) : la page 48 renvoie 81 records et la page 49 renvoie 0 record **sans erreur**. `CATALOG_SYNC_PAGES_PER_RUN` reste le seul vrai frein, réparti entre les shards de la file.
+
+**Politique réseau inchangée** : 1 appel / `CATALOG_SYNC_DELAY_MS` (2 s, soit 30 req/min = 50 % du plafond MU anonyme), backoff 5/10/20/40 s sur 429/5xx (4 retries). Sur backoff épuisé, erreur non-retryable **ou** erreur DB : arrêt propre — curseur conservé, statut `partial`, `consecutive_failures` incrémenté, exception non propagée pour ne pas sauter les shards suivants du run (correction adversariale d8641f4) — l'ancien comportement loggait l'erreur mais poursuivait sans mettre à jour l'état.
 
 **Stratégie upsert catalogue** (`catalog-sync.mapper.ts`) : lots séparés pour les records avec/sans genres — le lot sans genres n'inclut pas `genres` dans `orUpdate` (les genres existants ne sont jamais écrasés par null). Les colonnes `rating`, `year`, `small_cover_url`, `medium_cover_url` ne sont jamais écrasées par null : seules les valeurs non-null du record MU sont incluses dans `orUpdate` (correction adversariale d8641f4).
+
+#### Le champ `associated` n'existe pas dans le payload search (résultat négatif)
+
+Vérifié le 2026-08-28 sur la forme de requête **exacte** d'un shard (`orderby: rating` + `exclude_genre` NSFW + `year`) : les clés d'un `record` de `/series/search` sont exactement `series_id`, `title`, `url`, `description`, `image`, `type`, `year`, `bayesian_rating`, `rating_votes`, `genres`, `last_updated`. **Pas de champ `associated`.**
+
+Conséquence : les titres alternatifs ne sont alimentables **que** par `getMangaDetails` (endpoint `/series/{id}`) — ce qui explique que seuls 117 mangas sur 5 055 en aient en base. La colonne `associated` reste donc volontairement hors du `orUpdate` de l'upsert catalogue : la synchro nocturne ne peut ni la remplir ni l'écraser.
+
+Documenté ici pour éviter de ré-investiguer : ce n'est pas un oubli de mapping, c'est une limite de l'endpoint.
 
 ### Dégradation gracieuse sur rate-limit MU (MangasService)
 
