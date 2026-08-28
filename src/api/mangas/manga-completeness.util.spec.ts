@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { MuRateLimitException } from './exceptions/mu-rate-limit.exception';
 import {
+  buildAssociatedUpdate,
   buildProtectedColumnsUpdate,
   hydrateIncompleteDtosInBackground,
   isIncompleteDto,
@@ -271,5 +272,35 @@ describe('hydrateIncompleteDtosInBackground — hydratation à la demande', () =
 
     await flush();
     expect(hydrate).toHaveBeenCalledTimes(3);
+  });
+});
+
+/**
+ * `associated` (titres alternatifs) n'est renseigné que par `/v1/series/{id}`.
+ * `MangaDetailsDto.fromMU` applique `muObject['associated'] ?? []` : une
+ * réponse MU sans le champ produit un tableau VIDE, indiscernable d'un « MU
+ * n'a rien renvoyé ». L'UPDATE écrivait ce `[]` sans condition — une fiche
+ * déjà pourvue pouvait donc PERDRE ses titres alternatifs.
+ */
+describe('buildAssociatedUpdate', () => {
+  it('should write associated when MU actually returned titles', () => {
+    const titles = [{ title: 'Kimetsu no Yaiba' }, { title: 'Demon Slayer' }];
+
+    expect(buildAssociatedUpdate(titles)).toEqual({ associated: titles });
+  });
+
+  it('should omit the column on an EMPTY array (never erase existing titles)', () => {
+    expect(buildAssociatedUpdate([])).toEqual({});
+  });
+
+  it('should omit the column on null/undefined', () => {
+    expect(buildAssociatedUpdate(null)).toEqual({});
+    expect(buildAssociatedUpdate(undefined)).toEqual({});
+  });
+
+  it('should omit the column on a non-array payload', () => {
+    expect(
+      buildAssociatedUpdate('nope' as unknown as { title: string }[]),
+    ).toEqual({});
   });
 });

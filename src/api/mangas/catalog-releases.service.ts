@@ -209,6 +209,11 @@ export class CatalogReleasesService {
       // postérieur au curseur, les pages suivantes sont encore plus anciennes.
       if (fresh.length < result.records.length) break;
 
+      // Page incomplète = fin des résultats disponibles. Sans cette garde, un
+      // rattrapage qui tombe pile sur une page partielle irait quand même
+      // demander la suivante — une requête MU gratuite, chaque nuit.
+      if (result.records.length < CatalogReleasesService.PER_PAGE) break;
+
       // Page pleine et intégralement fraîche → il reste probablement du
       // retard à rattraper. On respecte le rythme MU avant de continuer.
       await this.sleep(this.delayMs);

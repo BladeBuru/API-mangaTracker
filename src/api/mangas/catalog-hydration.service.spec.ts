@@ -132,6 +132,12 @@ describe('CatalogHydrationService', () => {
       expect(sql).toContain('m.medium_cover_url IS NULL');
     });
 
+    it('sélectionne aussi les fiches sans titres alternatifs (associated)', async () => {
+      await service.hydrateIncompleteRows(10);
+
+      expect(whereClauses()).toContain('m.associated IS NULL');
+    });
+
     it('ne trie plus par rating (le biais qui enterrait les lignes à réparer)', async () => {
       await service.hydrateIncompleteRows(10);
 
@@ -217,6 +223,69 @@ describe('CatalogHydrationService', () => {
 
       expect(hydrated).toBe(2);
       expect(mangasService.getMangaDetails).toHaveBeenCalledTimes(2);
+    });
+  });
+  /**
+   * Le point le plus important du chantier « titres alternatifs » : `associated`
+   * n'existe que sur `/v1/series/{id}`, exactement l'appel que ce job fait
+   * déjà. Un job dédié aurait tapé une SECONDE fois la même fiche pour une
+   * donnée reçue dans la première réponse — le double du budget réseau pour
+   * zéro information supplémentaire, sur l'API qu'il faut ménager.
+   */
+  describe('titres alternatifs — pas de second appel de fiche', () => {
+    it("n'appelle getMangaDetails QU'UNE fois par ligne, quel que soit le nombre de champs manquants", async () => {
+      selectQb.getMany.mockResolvedValue([stub('100'), stub('200')]);
+
+      await service.hydrateIncompleteRows(2);
+
+      expect(mangasService.getMangaDetails).toHaveBeenCalledTimes(2);
+      expect(mangasService.getMangaDetails).toHaveBeenNthCalledWith(1, 100);
+      expect(mangasService.getMangaDetails).toHaveBeenNthCalledWith(2, 200);
+    });
+
+    it('ne re-sonde jamais une fiche déjà enrichie', async () => {
+      // Le filtrage se fait en SQL : une ligne complète (associated compris)
+      // ne sort pas du SELECT, donc aucun appel réseau n'est émis pour elle.
+      selectQb.getMany.mockResolvedValue([]);
+
+      const hydrated = await service.hydrateIncompleteRows(800);
+
+      expect(mangasService.getMangaDetails).not.toHaveBeenCalled();
+      expect(hydrated).toBe(0);
+    });
+
+    it('respecte le budget nocturne même avec le critère élargi', async () => {
+      // Le critère élargi fait bondir le lot éligible (131 000 fiches à
+      // terme) : c'est le LIMIT SQL qui borne le nombre d'appels MU, pas la
+      // taille du lot. Sans lui, une nuit taperait MU 131 000 fois.
+      selectQb.getMany.mockResolvedValue([stub('1'), stub('2'), stub('3')]);
+
+      await service.hydrateIncompleteRows(3);
+
+      expect(selectQb.limit).toHaveBeenCalledWith(3);
+      expect(mangasService.getMangaDetails).toHaveBeenCalledTimes(3);
+      // Rythme MU inchangé : 1 appel / 2 s, aucune accélération.
+      expect(sleepMock).toHaveBeenCalledTimes(3);
+      expect(sleepMock).toHaveBeenCalledWith(2000);
+    });
+  });
+
+  describe('priorisation par usage réel', () => {
+    it('classe bibliothèque utilisateur (0) avant recommandation (1) avant le reste (2)', async () => {
+      await service.hydrateIncompleteRows(10);
+
+      const [order] = selectQb.orderBy.mock.calls[0];
+      const sql = String(order);
+      // Avec 131 000 fiches à couvrir, l'ordre décide de ce que les
+      // utilisateurs voient réparé les premières nuits.
+      expect(sql).toContain('user_manga um WHERE um.manga_id = m.mu_id');
+      expect(sql).toContain('mr.recommended_mu_id = m.mu_id');
+      expect(sql.indexOf('user_manga')).toBeLessThan(
+        sql.indexOf('manga_recommendation'),
+      );
+      expect(sql).toContain('THEN 0');
+      expect(sql).toContain('THEN 1');
+      expect(sql).toContain('ELSE 2');
     });
   });
 });
