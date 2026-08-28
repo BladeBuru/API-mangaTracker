@@ -7,6 +7,7 @@ import {
   CatalogCandidateService,
 } from './catalog-candidate.service';
 import { GenreSectionService } from './genre-section.service';
+import { DismissalService } from './dismissal.service';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { MangaRecommendation } from '@/api/mangas/manga-recommendation.entity';
 import { Manga } from '@/api/mangas/manga.entity';
@@ -61,6 +62,8 @@ function makeReco(
 
 describe('RecommendationService', () => {
   let service: RecommendationService;
+  /** Instance réelle — permet d'espionner le passage du set d'exclusion. */
+  let genreSections: GenreSectionService;
   // Les mocks sont volontairement étendus avec `createQueryBuilder?: any`
   // pour les tests sleeper hits / segmentation qui overrident dynamiquement
   // la méthode (faux QueryBuilder).
@@ -73,6 +76,15 @@ describe('RecommendationService', () => {
     getCommunityRatings: jest.Mock;
   };
   let catalogCandidates: { findCandidates: jest.Mock };
+  /**
+   * mu_id écartés par l'utilisateur (« pas intéressé / déjà vu »). Vide par
+   * défaut : chaque test qui teste l'exclusion y ajoute ses ids.
+   */
+  let dismissedMuIds: Set<string>;
+  let dismissals: {
+    getDismissedMuIds: jest.Mock;
+    buildExclusionSet: jest.Mock;
+  };
 
   beforeEach(async () => {
     userMangaRepo = { find: jest.fn().mockResolvedValue([]) };
@@ -89,6 +101,19 @@ describe('RecommendationService', () => {
     // Catalogue local vide par défaut — les tests dédiés le peuplent.
     catalogCandidates = {
       findCandidates: jest.fn().mockResolvedValue([]),
+    };
+    // Double du DismissalService qui reproduit fidèlement l'union
+    // « bibliothèque ∪ rejets » du vrai service (cf. buildExclusionSet).
+    dismissedMuIds = new Set<string>();
+    dismissals = {
+      getDismissedMuIds: jest.fn(async () => new Set(dismissedMuIds)),
+      buildExclusionSet: jest.fn(
+        async (_userId: number, libraryMuIds: Iterable<string>) => {
+          const excluded = new Set<string>(libraryMuIds);
+          for (const muId of dismissedMuIds) excluded.add(muId);
+          return excluded;
+        },
+      ),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -107,10 +132,12 @@ describe('RecommendationService', () => {
         { provide: getRepositoryToken(Manga), useValue: mangaRepo },
         { provide: MangasService, useValue: mangasService },
         { provide: CatalogCandidateService, useValue: catalogCandidates },
+        { provide: DismissalService, useValue: dismissals },
       ],
     }).compile();
 
     service = module.get<RecommendationService>(RecommendationService);
+    genreSections = module.get<GenreSectionService>(GenreSectionService);
     // Neutralise les pauses inter-batch (batch délai/429 testés dédiés).
     service.sleep = jest.fn().mockResolvedValue(undefined);
   });
@@ -954,6 +981,186 @@ describe('RecommendationService', () => {
       expect(result.map((r) => r.muId)).toEqual(
         expect.arrayContaining([2005, 2006, 2007, 2008, 2009]),
       );
+    });
+  });
+  /**
+   * Feature « pas intéressé / déjà vu ».
+   *
+   * Un titre écarté ne doit plus JAMAIS remonter — quel que soit le chemin.
+   * Ces tests couvrent les chemins un par un : le risque principal de la
+   * feature est d'en oublier un.
+   */
+  describe('exclusion des titres écartés (« pas intéressé / déjà vu »)', () => {
+    it('liste plate : un titre écarté ne remonte plus, même recommandé fortement', async () => {
+      userMangaRepo.find.mockResolvedValue([
+        makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
+      ]);
+      // 2001 est LA reco la plus forte — c'est le cas « One Piece » : le
+      // meilleur candidat de l'algo, et pourtant l'user n'en veut pas.
+      mangasService.getCachedRecommendations.mockResolvedValue([
+        makeReco('1000', '2001', 100, 'Deja vu en anime'),
+        makeReco('1000', '2000', 5, 'A decouvrir'),
+      ]);
+      mangaRepo.find.mockImplementation(({ where }) => {
+        const ids = (where as any).mu_id._value;
+        return Promise.resolve(
+          ids.map((id: string) =>
+            makeManga({ mu_id: id, title: `Manga ${id}` }),
+          ),
+        );
+      });
+
+      dismissedMuIds.add('2001');
+      const result = await service.buildUserRecommendations(42);
+
+      expect(result.map((r) => r.muId)).toEqual([2000]);
+    });
+
+    it('candidats catalogue : le set d exclusion transmis contient biblio ET rejets', async () => {
+      userMangaRepo.find.mockResolvedValue([
+        makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
+      ]);
+      mangasService.getCachedRecommendations.mockResolvedValue([
+        makeReco('1000', '2000', 10),
+      ]);
+      // Le catalogue re-propose le titre écarté : il doit être filtré même
+      // si `findCandidates` était complaisant.
+      catalogCandidates.findCandidates.mockResolvedValue([
+        { mu_id: '3000', score: 4.5, sourceMuIds: ['1000'] },
+        { mu_id: '2001', score: 999, sourceMuIds: ['1000'] },
+      ]);
+      mangaRepo.find.mockImplementation(({ where }) => {
+        const ids = (where as any).mu_id._value;
+        return Promise.resolve(
+          ids.map((id: string) =>
+            makeManga({ mu_id: id, title: `Manga ${id}` }),
+          ),
+        );
+      });
+
+      dismissedMuIds.add('2001');
+      const result = await service.buildUserRecommendations(42);
+
+      const excludeArg = catalogCandidates.findCandidates.mock
+        .calls[0][1] as Set<string>;
+      expect(excludeArg.has('1000')).toBe(true); // biblio
+      expect(excludeArg.has('2001')).toBe(true); // rejet
+      // Défense en profondeur : filtré même si le catalogue le renvoie.
+      expect(result.map((r) => r.muId)).not.toContain(2001);
+    });
+
+    it('sections par genre : le set d exclusion est transmis a GenreSectionService', async () => {
+      userMangaRepo.find.mockResolvedValue([
+        makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
+      ]);
+      mangasService.getCachedRecommendations.mockResolvedValue([
+        makeReco('1000', '2000', 10),
+      ]);
+      mangaRepo.find.mockResolvedValue([
+        makeManga({ mu_id: '2000', genres: ['Action'] }),
+      ]);
+      const spy = jest
+        .spyOn(genreSections, 'buildSections')
+        .mockResolvedValue({});
+
+      dismissedMuIds.add('2001');
+      await service.buildUserRecommendationsByGenre(42, 5, 10);
+
+      // 5e argument = biblio ∪ rejets. Sans lui, GenreSectionService
+      // reconstruirait une exclusion « biblio seule » et ses compléments
+      // catalogue pourraient réintroduire un titre écarté.
+      const excludeArg = spy.mock.calls[0][4];
+      expect(excludeArg.has('1000')).toBe(true);
+      expect(excludeArg.has('2001')).toBe(true);
+    });
+
+    it('sleepers : les titres écartés partent dans le NOT IN de la requête', async () => {
+      userMangaRepo.find.mockResolvedValue([
+        makeUserManga({ manga: makeManga({ mu_id: '1000' }) }),
+      ]);
+      const mangaQb = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+      mangaRepo.createQueryBuilder = jest.fn(() => mangaQb) as any;
+
+      dismissedMuIds.add('2001');
+      await service.findSleeperHits(42, 20);
+
+      const notInCall = mangaQb.andWhere.mock.calls.find(([sql]) =>
+        (sql as string).includes('NOT IN'),
+      );
+      expect(notInCall).toBeDefined();
+      expect((notInCall![1] as { lib: string[] }).lib).toEqual(
+        expect.arrayContaining(['1000', '2001']),
+      );
+    });
+
+    it('cold start : un titre écarté est exclu du top communauté (biblio vide)', async () => {
+      // Bibliothèque vide ne veut pas dire « rien à exclure » : c'est même
+      // le cas d'usage fondateur — l'user écarte One Piece avant d'avoir
+      // ajouté quoi que ce soit.
+      userMangaRepo.find.mockResolvedValue([]);
+      userMangaRepo.createQueryBuilder = jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        having: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          { manga_id: '5000', avg: '9.0', count: '10' },
+          { manga_id: '5001', avg: '8.5', count: '8' },
+        ]),
+      })) as any;
+      mangaRepo.find.mockImplementation(({ where }) => {
+        const ids = (where as any).mu_id._value;
+        return Promise.resolve(
+          ids.map((id: string) =>
+            makeManga({ mu_id: id, title: `Manga ${id}` }),
+          ),
+        );
+      });
+      // Sleepers vides — on isole le top communauté.
+      mangaRepo.createQueryBuilder = jest.fn(() => ({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      })) as any;
+      mangasService.getCommunityRatings.mockResolvedValue(new Map());
+
+      dismissedMuIds.add('5000');
+      const result = await service.buildUserRecommendations(42, 50, 0);
+
+      expect(result.map((r) => r.muId)).toEqual([5001]);
+    });
+
+    it('cold start : les rejets du vrai userId sont chargés (et non la sentinelle -1)', async () => {
+      userMangaRepo.find.mockResolvedValue([]);
+      userMangaRepo.createQueryBuilder = jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        having: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      })) as any;
+      mangaRepo.createQueryBuilder = jest.fn(() => ({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      })) as any;
+
+      await service.buildUserRecommendations(42, 50, 0);
+
+      // Avant la feature, le cold start appelait findSleeperHits(-1) : les
+      // rejets de l'utilisateur n'auraient jamais été chargés.
+      expect(dismissals.getDismissedMuIds).toHaveBeenCalledWith(42);
+      expect(dismissals.getDismissedMuIds).not.toHaveBeenCalledWith(-1);
     });
   });
 });

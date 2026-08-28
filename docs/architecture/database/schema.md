@@ -31,6 +31,7 @@
 | `manga_comments` | comments | `MangaComment` | `1746231300000-CreateMangaComment` |
 | `comment_reports` | comments | `CommentReport` | `1746231300000-CreateMangaComment` |
 | `manga_shares` | sharing | `MangaShare` | `1746231400000-CreateSharing` |
+| `user_manga_dismissal` | recommendations | `UserMangaDismissal` | `1788048000000-CreateUserMangaDismissal` |
 | `reading_groups` | sharing | `ReadingGroup` | `1746231400000-CreateSharing` |
 
 ---
@@ -80,6 +81,49 @@ un scan de `user_manga` à chaque sélection.
 
 **Cardinalité attendue :** ~100 shards annuels (année courante → 1930) + 4 lignes fixes +
 sous-shards par genre uniquement si saturation. Ordre de grandeur : 100-200 lignes.
+
+---
+
+### Table `user_manga_dismissal` (ajoutée 2026-08-28)
+
+Rejets « pas intéressé / déjà vu » : un titre que l'utilisateur a explicitement
+écarté de ses recommandations. Une ligne = un titre écarté par un utilisateur.
+
+| Colonne | Type PostgreSQL | Contrainte | Notes |
+|---------|-----------------|------------|-------|
+| `id` | integer | PK, auto-increment | |
+| `user_id` | integer | FK → `user(id)` ON DELETE CASCADE, NOT NULL | |
+| `manga_id` | bigint | FK → `manga(mu_id)` ON DELETE CASCADE, NOT NULL | Même forme de FK que `user_manga` et `manga_chapter_report` (référence `mu_id`, pas `id`) |
+| `reason` | varchar(32) | NOT NULL | `already_read` / `not_interested` / `seen_elsewhere` |
+| `created_at` | timestamp | NOT NULL DEFAULT CURRENT_TIMESTAMP | |
+
+**Index :**
+- `UQ_dismissal_user_manga` UNIQUE `(user_id, manga_id)` — un rejet actif par titre
+  et par utilisateur. C'est cette contrainte qui porte l'upsert `ON CONFLICT DO UPDATE`
+  du service (pas de `SELECT` préalable, donc pas de fenêtre de course).
+- `IDX_dismissal_user` `(user_id)` — chemin chaud : la liste des rejets est lue à
+  **chaque** calcul de recommandations (liste plate, sections par genre, sleepers,
+  cold start, fiche détail).
+
+**Pourquoi `varchar` et non un enum PostgreSQL :** convention du repo
+(cf. `user_manga.readingStatus`), et ajouter une valeur à un enum PG imposerait une
+migration alors qu'ici il suffit d'étendre l'enum applicatif validé par `class-validator`.
+
+**Pourquoi une raison typée et obligatoire :** c'est la valeur de la donnée, pas un
+détail d'UI. Un booléen « masqué » perdrait la distinction entre « déjà lu, j'ai aimé »
+(affinité **positive** mal exploitée) et « pas intéressé » (signal **négatif** réel) —
+la base de prod ne contient que 4 notes utilisateur pour 6 comptes, ce sont les seuls
+signaux négatifs explicites dont disposera un futur moteur de recommandation.
+
+**Migration appliquée :** `1788048000000-CreateUserMangaDismissal` — création simple,
+idempotente (`hasTable`), table vide au départ, aucune migration de data.
+
+**Cardinalité attendue :** quelques dizaines de lignes par utilisateur actif.
+
+> Note de cohérence : l'inventaire ci-dessus liste des noms au pluriel, mais les tables
+> réellement créées par les entités et les migrations sont au **singulier**
+> (`@Entity('user_manga')`, `@Entity('manga_chapter_report')`, `user_manga_dismissal`).
+> La convention de nommage rappelée ci-dessous décrit l'intention, pas l'état du schéma.
 
 ---
 

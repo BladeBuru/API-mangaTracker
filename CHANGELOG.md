@@ -38,6 +38,44 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ### Tests
 - +44 tests unitaires (216 → 260), 2 suites ajoutées : incrémentalité du curseur (traite uniquement le postérieur, avance au plus récent vu, second passage idempotent, fenêtre bornée au premier run), monotonie de `total_chapters` (assertion sur le SQL `GREATEST` **et** sur le fait qu'aucune autre colonne n'entre dans le `SET`), séries inconnues ignorées sans insertion de stub, plafond de pages, cadence 1 req / 2 s, **non-régression du backoff** (429 → 5/10/20/40 s, 400 non-retryable) avec **curseur conservé** après échec réseau ou DB, anti-réentrance, parsing du champ `chapter` sur ses formes réelles, sélection « seulement si manquant » et **un seul appel de fiche par ligne**, respect du budget, priorisation bibliothèque > recommandation > reste
+## [Unreleased] — feat/pas-interesse
+
+> Part de `feat/catalogue-et-recos`. Aucun impact sur les branches catalogue en cours.
+
+### Added
+- **recommendations** : fonctionnalité **« pas intéressé / déjà vu »**. Le besoin, dans les mots de l'utilisateur : *« On me recommande One Piece et Naruto. Les deux, c'est les meilleurs, les plus connus. Sauf que moi je les ai — j'adore, mais je les ai vus en animé et je n'ai pas forcément envie de les relire. »* Aucun algorithme ne peut deviner ça : l'information n'existe ni dans MangaUpdates, ni dans la bibliothèque, ni dans les notes. Elle est désormais captée explicitement
+- **recommendations** : **raison typée et obligatoire** (`already_read` / `not_interested` / `seen_elsewhere`) plutôt qu'un booléen « masqué ». C'est le signal négatif qui manque cruellement au produit — la base de prod ne contient que **4 notes utilisateur pour 6 comptes**. Un booléen perdrait pour toujours la distinction entre « déjà lu, j'ai aimé » (affinité **positive** mal exploitée) et « pas intéressé » (signal **négatif** réel), les deux valeurs qu'un futur moteur de recommandation aura besoin de séparer
+- **recommendations** : 3 routes, `JwtAuthGuard` + throttle **60/h par utilisateur** (tracké sur `req.user.id` et non sur l'IP — derrière NPMplus, un throttle par IP serait un budget global partagé, cf. `UserThrottlerGuard`). Quota volontairement plus large que le signalement de chapitres (10/h) : écarter des titres est un geste de tri normal, on ne vise que l'abus scripté
+  - `POST /recommendations/dismissals/:muId` (body `{ reason }`)
+  - `DELETE /recommendations/dismissals/:muId` (204) — l'utilisateur doit toujours pouvoir revenir sur sa décision
+  - `GET /recommendations/dismissals` — rend un rejet accidentel récupérable même après la disparition du SnackBar d'annulation ; sans cette route, un titre écarté par erreur serait irrécupérable puisqu'il ne remonte plus nulle part
+
+### Changed
+- **recommendations** : **exclusion appliquée aux 8 chemins de recommandation**, via un point d'entrée unique. Le module comportait six endroits construisant leur propre exclusion de la bibliothèque ; ajouter un filtre à chacun aurait garanti d'en oublier un. Le set d'exclusion existant est donc **élargi à la source** (`DismissalService.buildExclusionSet` = biblio ∪ rejets, `libraryMuIds` renommé `excludedMuIds`) et se propage inchangé dans toutes les branches descendantes, qui n'ont pas eu à être modifiées :
+  1. `GET /recommendations` (liste plate) — `buildUserRecommendations` → `scoreRecos`
+  2. cold start, top communauté — `buildTopCommunityDtos` filtre les `mu_id` remontés
+  3. cold start, sleepers — le **vrai `userId`** est désormais propagé
+  4. `GET /recommendations/sleepers` — `NOT IN` en SQL
+  5. `GET /recommendations/by-genre` (pool) — `computeScoreMap` → `scoreRecos`
+  6. `GET /recommendations/by-genre` (compléments catalogue) — set transmis en 5e argument à `GenreSectionService.buildSections`
+  7. candidats catalogue — `CatalogCandidateService.findCandidates`, `NOT IN` en SQL
+  8. `GET /mangas/recommendations/:muId` (fiche détail) — filtrage après le merge MU + communauté
+- **recommendations** : **la sentinelle `userId = -1` du cold start est abandonnée**. `buildColdStartRecommendations` appelait `findSleeperHits(-1, …)` pour dire « pas de bibliothèque à exclure ». C'était faux dès l'arrivée de cette feature : **bibliothèque vide ne veut pas dire rien à exclure** — un compte sans aucun titre peut très bien avoir déjà écarté One Piece, c'est même le cas d'usage fondateur. La sentinelle ne survit que comme garde défensive (`userId <= 0` → set vide sans requête)
+- **recommendations** : `GenreSectionService.buildSections` prend le set d'exclusion en **paramètre obligatoire** au lieu de le reconstruire depuis `userMangas`. Il ne reconstituait que la bibliothèque, donc ses compléments catalogue pouvaient réintroduire un titre écarté. Paramètre obligatoire et non optionnel **par choix** : l'omettre est une erreur de compilation, pas une régression muette en production
+- **mangas** : `getRecommendationsAsQuickView(muId, userId?)` — `userId` optionnel, transmis par le controller. Les appels internes sans contexte utilisateur conservent le comportement historique
+- **recommendations** : le cache `RecoCacheService` est invalidé au rejet **et** à l'annulation. Sans ça, l'effet n'apparaîtrait qu'à l'expiration du TTL d'une heure — l'utilisateur écarterait un titre, rechargerait, et le reverrait
+
+### BDD
+- Migration `1788048000000-CreateUserMangaDismissal` : table `user_manga_dismissal` (`user_id`, `manga_id`, `reason`, `created_at`), FK CASCADE vers `user(id)` et `manga(mu_id)` comme `user_manga` et `manga_chapter_report`, index UNIQUE `(user_id, manga_id)` et index `(user_id)`. Création idempotente (`hasTable`), table vide au départ, aucune migration de data
+- `reason` en `varchar(32)` et non en enum PostgreSQL : convention du repo (cf. `user_manga.readingStatus`), et une nouvelle valeur ne demanderait alors aucune migration
+- L'index UNIQUE porte l'upsert `ON CONFLICT (user_id, manga_id) DO UPDATE SET reason` : rejeter deux fois le même titre ne crée qu'une ligne et la raison la plus récente gagne, **sans `SELECT` préalable** donc sans fenêtre de course
+
+### Architecture
+- `DismissalModule` est un micro-module autonome (TypeORM + `RecoCacheModule`), sur le modèle de `RecoCacheModule` : importable par `RecommendationModule` **et** par `MangasModule` (recos de la fiche détail) sans créer de cycle `mangas ↔ recommendations`
+
+### Tests
+- +22 tests unitaires (216 → 238), dont **un par chemin d'exclusion** pour que l'oubli d'une branche casse la CI plutôt que la prod : liste plate (le titre écarté ne remonte pas même en tête du pool), candidats catalogue (set transmis + refiltrage à l'ajout), sections par genre (set transmis à `GenreSectionService`, `NOT IN` du complément catalogue, entrée exclue ignorée dans le pool), sleepers (`NOT IN` SQL), cold start (top communauté filtré + rejets du vrai `userId` chargés), fiche détail (avec et sans `userId`, cas « toutes les recos écartées »)
+- `DismissalService` : unicité par upsert, annulation, 404 sur double annulation, 404 sur manga inconnu, invalidation du cache, sentinelle `userId <= 0` sans requête, union biblio ∪ rejets, listing trié
 
 ---
 
