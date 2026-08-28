@@ -21,7 +21,10 @@ import { MangaRecommendation } from './manga-recommendation.entity';
 import { UserManga } from './user-manga.entity';
 import { Repository } from 'typeorm';
 import { aggregateRating, CommunityRating } from './rating-aggregator';
-import { buildProtectedColumnsUpdate } from './manga-completeness.util';
+import {
+  buildAssociatedUpdate,
+  buildProtectedColumnsUpdate,
+} from './manga-completeness.util';
 
 /** Durée de vie du cache des recommandations : 7 jours en ms */
 const RECO_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -156,7 +159,10 @@ export class MangasService {
     // synchro nocturne, et la carte reperdait son année/ses étoiles. Même
     // doctrine que l'upsert catalogue (cf. `catalog-sync.mapper.ts`). Une
     // vraie valeur MU écrase toujours normalement l'ancienne.
-    // `title` / `completed` / `associated` restent écrasés (overwrite).
+    // `title` / `completed` restent écrasés (overwrite). `associated` passe
+    // désormais par `buildAssociatedUpdate` (2026-08-29) : le DTO le remplit
+    // avec `[]` quand MU ne renvoie rien, et cet UPDATE inconditionnel
+    // pouvait donc EFFACER des titres alternatifs déjà en base.
     await this.mangaRepository
       .createQueryBuilder()
       .update(Manga)
@@ -164,7 +170,7 @@ export class MangasService {
         title: details.title,
         total_chapters: () => 'GREATEST(total_chapters, :newTotal)',
         completed: details.completed,
-        associated: details.associated,
+        ...buildAssociatedUpdate(details.associated),
         ...buildProtectedColumnsUpdate(details, normalizedGenres),
       })
       .setParameter('newTotal', Number(details.totalChapters) || 0)

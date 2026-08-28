@@ -7,10 +7,8 @@ import { CatalogHydrationService } from './catalog-hydration.service';
 import { CatalogPageIngestService } from './catalog-page-ingest.service';
 import { CatalogShardPlannerService } from './catalog-shard-planner.service';
 import { CatalogShard } from './catalog-shard';
-import {
-  CatalogSyncJobName,
-  CatalogSyncState,
-} from './catalog-sync-state.entity';
+import { CatalogSyncRunnableJob } from './catalog-sync-state.entity';
+import { CatalogSyncState } from './catalog-sync-state.entity';
 import { intFromConfig } from './catalog-sync.mapper';
 
 /** Bilan d'une passe de shard, remonté à la boucle de budget. */
@@ -126,9 +124,10 @@ export class CatalogSyncService {
    * Point d'entrée testable. Sans argument : file de shards (budget réparti
    * entre eux) puis hydratation des lignes incomplètes. Avec `jobName` : ce
    * job fixe uniquement. No-op (warn) si un run est déjà en cours
-   * (anti-réentrance).
+   * (anti-réentrance). `releases` en est EXCLU par le type : ce job a son
+   * propre cron et son propre curseur (`CatalogReleasesService`).
    */
-  async runOnce(jobName?: CatalogSyncJobName): Promise<void> {
+  async runOnce(jobName?: CatalogSyncRunnableJob): Promise<void> {
     if (this.running) {
       this.logger.warn(
         'Sync catalogue déjà en cours — run ignoré (anti-réentrance)',

@@ -19,6 +19,7 @@ import { UpdateMangaService } from './update-manga.service';
 import { MangaSyncService } from './sync-manga.service';
 import { CatalogSyncService } from './catalog-sync.service';
 import { CatalogHydrationService } from './catalog-hydration.service';
+import { CatalogReleasesService } from './catalog-releases.service';
 import { CatalogPageIngestService } from './catalog-page-ingest.service';
 import { CatalogShardPlannerService } from './catalog-shard-planner.service';
 import { CatalogSyncState } from './catalog-sync-state.entity';
@@ -63,6 +64,7 @@ import { GtxProvider } from './translation/gtx.provider';
     CatalogShardPlannerService,
     CatalogPageIngestService,
     CatalogHydrationService,
+    CatalogReleasesService,
     CoverProxyService,
     DescriptionTranslationService,
     DeeplProvider,

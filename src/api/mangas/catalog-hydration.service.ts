@@ -18,15 +18,28 @@ import { MangasService } from './mangas.service';
  * lignes une par une.
  *
  * **Critère élargi** (rationale complète : `docs/specs/mangas/spec-technique.md`) :
- *  - `genres`, `rating`, `year` OU `medium_cover_url` NULL — tout ce qui
- *    manque à une carte, plus seulement les genres ;
- *  - **priorisation par usage réel** : d'abord les `mu_id` présents dans
+ *  - `genres`, `rating`, `year`, `medium_cover_url` OU `associated` NULL —
+ *    tout ce qui manque à une carte ou à une fiche, plus seulement les
+ *    genres ;
+ *  - **priorisation par usage réel** : d'abord les `mu_id` présents dans une
+ *    bibliothèque utilisateur (`user_manga`), puis ceux présents dans
  *    `manga_recommendation`. L'ancien `ORDER BY rating DESC NULLS LAST` est
  *    supprimé : un stub a `rating` NULL par construction, il passait donc
  *    derrière les ~5000 lignes du catalogue et n'était jamais repris ;
  *  - **garde anti-boucle** : `hydration_attempted_at` horodatée après CHAQUE
  *    tentative (succès comme échec) → une ligne que MU ne peut pas compléter
  *    sort du lot 30 jours au lieu de brûler le budget en boucle.
+ *
+ * ## Pourquoi les titres alternatifs passent par ICI (2026-08-29)
+ *
+ * `associated` (titres alternatifs) n'est PAS dans le payload
+ * `/series/search` : il faut ouvrir la fiche `/v1/series/{id}`. Or c'est
+ * exactement l'appel que ce job fait déjà, et cet appel ramène `associated`
+ * **dans la même réponse** que genres/rating/année/cover. Un second job dédié
+ * aux titres alternatifs aurait donc tapé une deuxième fois la même fiche
+ * pour une donnée déjà reçue — soit le double du budget réseau pour zéro
+ * information supplémentaire, sur l'API qu'il faut justement ménager.
+ * D'où l'élargissement du critère plutôt qu'un nouveau service.
  */
 @Injectable()
 export class CatalogHydrationService {
@@ -74,16 +87,24 @@ export class CatalogHydrationService {
     const rows = await this.mangaRepository
       .createQueryBuilder('m')
       .where(
-        '(m.genres IS NULL OR m.rating IS NULL OR m.year IS NULL OR m.medium_cover_url IS NULL)',
+        '(m.genres IS NULL OR m.rating IS NULL OR m.year IS NULL OR ' +
+          'm.medium_cover_url IS NULL OR m.associated IS NULL)',
       )
       .andWhere(
         '(m.hydration_attempted_at IS NULL OR m.hydration_attempted_at < :retryBefore)',
         { retryBefore },
       )
-      // Priorité 0 : le titre est recommandé quelque part → il est affiché sur
-      // des cartes. Priorité 1 : le reste du catalogue.
+      // Priorité 0 : le titre est dans la bibliothèque d'au moins un
+      // utilisateur — c'est le signal d'usage le plus fort, quelqu'un le suit
+      // réellement. Priorité 1 : le titre est recommandé quelque part, donc
+      // affiché sur des cartes. Priorité 2 : le reste du catalogue.
+      // Avec 131 000 fiches à couvrir, l'ordre décide de ce que les
+      // utilisateurs voient réparé les premières nuits.
       .orderBy(
-        'CASE WHEN EXISTS (SELECT 1 FROM manga_recommendation mr WHERE mr.recommended_mu_id = m.mu_id) THEN 0 ELSE 1 END',
+        'CASE ' +
+          'WHEN EXISTS (SELECT 1 FROM user_manga um WHERE um.manga_id = m.mu_id) THEN 0 ' +
+          'WHEN EXISTS (SELECT 1 FROM manga_recommendation mr WHERE mr.recommended_mu_id = m.mu_id) THEN 1 ' +
+          'ELSE 2 END',
         'ASC',
       )
       .addOrderBy('m.hydration_attempted_at', 'ASC', 'NULLS FIRST')

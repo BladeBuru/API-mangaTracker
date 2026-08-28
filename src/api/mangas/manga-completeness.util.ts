@@ -94,6 +94,34 @@ export function buildProtectedColumnsUpdate(
 }
 
 /**
+ * Fraction « titres alternatifs » d'un UPDATE `manga`, en null-safe.
+ *
+ * `associated` n'est renseigné que par `/v1/series/{id}` — jamais par
+ * `/series/search`. Le mapping DTO (`MangaDetailsDto.fromMU`) applique
+ * `muObject['associated'] ?? []`, si bien qu'une réponse MU sans titres
+ * alternatifs produit un tableau VIDE, indiscernable d'un « MU n'a rien
+ * renvoyé ». L'UPDATE de `getMangaDetails` écrivait ce `[]` sans condition :
+ * une fiche déjà pourvue de ses titres alternatifs pouvait donc les PERDRE
+ * au passage suivant (réponse MU partielle, champ absent).
+ *
+ * Règle, alignée sur `buildProtectedColumnsUpdate` : la colonne n'entre dans
+ * le `SET` que si MU fournit au moins un titre. Sinon elle est omise et la
+ * valeur en base est conservée.
+ *
+ * Conséquence assumée : une série qui n'a réellement AUCUN titre alternatif
+ * garde `associated = NULL` et reste éligible au job d'hydratation. C'est la
+ * garde `hydration_attempted_at` (30 j) qui l'empêche de brûler le budget en
+ * boucle — exactement le traitement déjà réservé à un titre sans note ni
+ * année.
+ */
+export function buildAssociatedUpdate(
+  associated: { title: string }[] | null | undefined,
+): QueryDeepPartialEntity<Manga> {
+  if (!Array.isArray(associated) || associated.length === 0) return {};
+  return { associated } as QueryDeepPartialEntity<Manga>;
+}
+
+/**
  * Plafond DUR d'hydratations déclenchées par UNE requête de recommandations.
  * Aligné sur la politique réseau MU (~60 req/min anonyme) : au pire 8 appels
  * détail en tâche de fond par requête, jamais dans le chemin de réponse.

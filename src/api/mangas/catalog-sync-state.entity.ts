@@ -20,7 +20,12 @@ export type CatalogSyncRunStatus = 'completed' | 'partial' | 'failed';
  * - `catalog:rating`   : passe globale (orderby=rating).
  * - `catalog:week_pos` : passe hebdomadaire du dimanche (orderby=week_pos).
  * - `hydration`        : hydratation des lignes `manga` incomplètes (genres,
- *                        rating, année ou cover manquants) via getMangaDetails.
+ *                        rating, année, cover OU titres alternatifs manquants)
+ *                        via getMangaDetails.
+ * - `releases`         : flux des dernières sorties de chapitres
+ *                        (`CatalogReleasesService`). Seul job à ne PAS
+ *                        paginer un catalogue : son curseur est temporel
+ *                        (`cursor_time_added`), pas une page.
  *
  * La table contient AUSSI des lignes à nom dynamique, une par shard de
  * catalogue, non énumérables ici : `catalog:year:<AAAA>` et
@@ -30,7 +35,16 @@ export type CatalogSyncRunStatus = 'completed' | 'partial' | 'failed';
 export type CatalogSyncJobName =
   | 'catalog:rating'
   | 'catalog:week_pos'
-  | 'hydration';
+  | 'hydration'
+  | 'releases';
+
+/**
+ * Jobs réellement orchestrés par `CatalogSyncService.runOnce`. `releases` en
+ * est exclu : il a son propre cron (02:00) et son propre curseur temporel,
+ * porté par `CatalogReleasesService`. Le type empêche de l'y passer par
+ * erreur — il n'a pas de shard à construire.
+ */
+export type CatalogSyncRunnableJob = Exclude<CatalogSyncJobName, 'releases'>;
 
 /**
  * Curseur persistant de la synchronisation nightly du catalogue MangaUpdates
@@ -87,6 +101,22 @@ export class CatalogSyncState {
   /** Dernier `total_hits` observé — diagnostic et détection de saturation. */
   @Column({ type: 'int', nullable: true })
   total_hits: number | null;
+
+  /**
+   * Curseur **temporel** du job `releases` : plus grand `time_added.timestamp`
+   * (epoch secondes) déjà traité. `null` = jamais tourné → le job se rabat sur
+   * une fenêtre de rattrapage bornée (`RELEASES_SYNC_LOOKBACK_DAYS`).
+   *
+   * `bigint` (donc exposé en `string` par TypeORM) plutôt que `int` : un epoch
+   * secondes dépasse `int4` en 2038, et réutiliser `last_completed_page` pour
+   * y loger un horodatage aurait mélangé deux sémantiques dans une colonne
+   * dont le nom promet une page.
+   *
+   * N'a de sens QUE pour la ligne `releases` — NULL partout ailleurs.
+   * Migration `1788048000000`.
+   */
+  @Column({ type: 'bigint', nullable: true })
+  cursor_time_added: string | null;
 
   @CreateDateColumn()
   created_at: Date;

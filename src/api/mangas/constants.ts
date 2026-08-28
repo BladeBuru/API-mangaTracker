@@ -6,6 +6,14 @@ export const MU_TRENDS_URL = 'https://api.mangaupdates.com/v1/series/search';
 
 export const MU_DETAIL_URL = 'https://api.mangaupdates.com/v1/series/';
 
+/**
+ * Flux des sorties de chapitres (`CatalogReleasesService`). Endpoint POST,
+ * distinct de `/series/search` : il renvoie des SORTIES, pas des séries — le
+ * rapprochement avec `manga.mu_id` exige `include_metadata: true`.
+ */
+export const MU_RELEASES_URL =
+  'https://api.mangaupdates.com/v1/releases/search';
+
 export const NSFW_GENRES = [
   'Adult',
   'Smut',

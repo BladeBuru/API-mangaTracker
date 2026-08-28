@@ -1,7 +1,6 @@
 import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { AxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { Repository } from 'typeorm';
 import { buildSearchBody, CatalogShard } from './catalog-shard';
@@ -13,6 +12,7 @@ import {
 } from './catalog-sync.mapper';
 import { MU_TRENDS_URL } from './constants';
 import { Manga } from './manga.entity';
+import { fetchWithMuBackoff, MU_BACKOFF_DELAYS_MS } from './mu-backoff';
 
 /**
  * Ingestion d'UNE page de catalogue : appel MU `/series/search` avec backoff,
@@ -31,8 +31,15 @@ export class CatalogPageIngestService {
   /** perpage max accepté par MU (au-delà, coercion silencieuse). */
   static readonly PER_PAGE = 100;
 
-  /** Backoff sur 429/5xx (4 tentatives après l'appel initial). */
-  private static readonly BACKOFF_DELAYS_MS = [5_000, 10_000, 20_000, 40_000];
+  /**
+   * Backoff sur 429/5xx (4 tentatives après l'appel initial).
+   *
+   * Réexporté depuis `mu-backoff.ts` (2026-08-29) : la politique est
+   * désormais PARTAGÉE avec le job `releases`, pour qu'aucun des deux jobs
+   * nocturnes ne puisse dériver de l'autre. Valeurs et critère de retry
+   * inchangés.
+   */
+  static readonly BACKOFF_DELAYS_MS = MU_BACKOFF_DELAYS_MS;
 
   /** Warn une seule fois si le payload search ne contient pas les genres. */
   private genresMissingWarned = false;
@@ -85,27 +92,14 @@ export class CatalogPageIngestService {
     shard: CatalogShard,
     page: number,
   ): Promise<CatalogPage> {
-    let lastError: unknown;
-    const retries = CatalogPageIngestService.BACKOFF_DELAYS_MS;
-    for (let attempt = 0; attempt <= retries.length; attempt++) {
-      if (attempt > 0) {
-        const delay = retries[attempt - 1];
-        this.logger.warn(
-          `MU ${shard.jobName} page ${page} : retry ${attempt}/${retries.length} dans ${delay} ms`,
-        );
-        await this.sleep(delay);
-      }
-      try {
-        return await this.fetchSearchPage(shard, page);
-      } catch (err) {
-        lastError = err;
-        const status = (err as AxiosError)?.response?.status;
-        const retryable =
-          status === 429 || (typeof status === 'number' && status >= 500);
-        if (!retryable) throw err;
-      }
-    }
-    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+    return fetchWithMuBackoff(
+      () => this.fetchSearchPage(shard, page),
+      `${shard.jobName} page ${page}`,
+      this.logger,
+      // Lu à l'appel et non capturé à la construction : les tests remplacent
+      // `this.sleep` après instanciation.
+      (ms) => this.sleep(ms),
+    );
   }
 
   /**
