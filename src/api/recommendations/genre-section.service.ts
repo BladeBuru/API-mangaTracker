@@ -85,6 +85,7 @@ export class GenreSectionService {
     userMangas: UserManga[],
     topGenres: number,
     perGenre: number,
+    excludedMuIds: Set<string>,
   ): Promise<Record<string, MangaQuickViewDto[]>> {
     if (scoreMap.size === 0) return {};
 
@@ -114,6 +115,9 @@ export class GenreSectionService {
       for (const entry of pool) {
         if (list.length >= perGenre) break;
         if (assigned.has(entry.mu_id)) continue;
+        // Défense en profondeur : le pool vient d'un scoreMap déjà filtré,
+        // mais on ne veut dépendre d'aucune garantie amont pour un rejet.
+        if (excludedMuIds.has(entry.mu_id)) continue;
         if (!this.normalizedGenres(mangaMap.get(entry.mu_id)).has(genre)) {
           continue;
         }
@@ -124,9 +128,14 @@ export class GenreSectionService {
     }
 
     // Complément catalogue des sections déficitaires. Exclusions cumulées :
-    // biblio + tout titre déjà affiché (pool affecté et compléments amont).
-    const libraryMuIds = new Set(userMangas.map((um) => um.manga.mu_id));
-    const excluded = new Set<string>([...libraryMuIds, ...assigned]);
+    // `excludedMuIds` (biblio ∪ titres écartés « pas intéressé / déjà vu »,
+    // calculé par `RecommendationService.buildExclusionSet`) + tout titre
+    // déjà affiché (pool affecté et compléments amont).
+    //
+    // ⚠️ Ce set est fourni par l'appelant et JAMAIS reconstruit ici : le
+    // recalculer depuis `userMangas` ne donnerait que la bibliothèque et
+    // laisserait les compléments catalogue réintroduire un titre rejeté.
+    const excluded = new Set<string>([...excludedMuIds, ...assigned]);
     const fillers = new Map<string, Manga[]>();
     for (const [genre, list] of sections) {
       const deficit = perGenre - list.length;

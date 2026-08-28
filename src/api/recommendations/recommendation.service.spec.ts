@@ -7,6 +7,7 @@ import {
   CatalogCandidateService,
 } from './catalog-candidate.service';
 import { GenreSectionService } from './genre-section.service';
+import { DismissalService } from './dismissal.service';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { MangaRecommendation } from '@/api/mangas/manga-recommendation.entity';
 import { Manga } from '@/api/mangas/manga.entity';
@@ -73,6 +74,15 @@ describe('RecommendationService', () => {
     getCommunityRatings: jest.Mock;
   };
   let catalogCandidates: { findCandidates: jest.Mock };
+  /**
+   * mu_id écartés par l'utilisateur (« pas intéressé / déjà vu »). Vide par
+   * défaut : chaque test qui teste l'exclusion y ajoute ses ids.
+   */
+  let dismissedMuIds: Set<string>;
+  let dismissals: {
+    getDismissedMuIds: jest.Mock;
+    buildExclusionSet: jest.Mock;
+  };
 
   beforeEach(async () => {
     userMangaRepo = { find: jest.fn().mockResolvedValue([]) };
@@ -89,6 +99,19 @@ describe('RecommendationService', () => {
     // Catalogue local vide par défaut — les tests dédiés le peuplent.
     catalogCandidates = {
       findCandidates: jest.fn().mockResolvedValue([]),
+    };
+    // Double du DismissalService qui reproduit fidèlement l'union
+    // « bibliothèque ∪ rejets » du vrai service (cf. buildExclusionSet).
+    dismissedMuIds = new Set<string>();
+    dismissals = {
+      getDismissedMuIds: jest.fn(async () => new Set(dismissedMuIds)),
+      buildExclusionSet: jest.fn(
+        async (_userId: number, libraryMuIds: Iterable<string>) => {
+          const excluded = new Set<string>(libraryMuIds);
+          for (const muId of dismissedMuIds) excluded.add(muId);
+          return excluded;
+        },
+      ),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -107,6 +130,7 @@ describe('RecommendationService', () => {
         { provide: getRepositoryToken(Manga), useValue: mangaRepo },
         { provide: MangasService, useValue: mangasService },
         { provide: CatalogCandidateService, useValue: catalogCandidates },
+        { provide: DismissalService, useValue: dismissals },
       ],
     }).compile();
 

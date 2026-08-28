@@ -120,8 +120,12 @@ export class MangasController {
   @Get('recommendations/:muId')
   async mangaRecommendations(
     @Param('muId', ParseIntPipe) muId: number,
+    @UserDecorator() user: any,
   ): Promise<MangaQuickViewDto[]> {
-    return this.mangasService.getRecommendationsAsQuickView(muId);
+    // `user.id` transmis pour exclure les titres écartés par l'utilisateur
+    // (« pas intéressé / déjà vu ») — la fiche détail est un chemin de
+    // recommandation comme les autres.
+    return this.mangasService.getRecommendationsAsQuickView(muId, user.id);
   }
 
   @ApiOperation({

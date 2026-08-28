@@ -7,6 +7,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { MangaQuickViewDto } from './dto/manga-quick-view.dto';
+import { DismissalService } from '@/api/recommendations/dismissal.service';
 import { catchError, firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
 import { MU_DETAIL_URL, MU_TRENDS_URL, NSFW_GENRES } from './constants';
@@ -37,6 +38,7 @@ export class MangasService {
     private readonly recoRepository: Repository<MangaRecommendation>,
     @InjectRepository(UserManga)
     private readonly userMangaRepository: Repository<UserManga>,
+    private readonly dismissals: DismissalService,
   ) {}
 
   /**
@@ -437,12 +439,13 @@ export class MangasService {
    */
   async getRecommendationsAsQuickView(
     muId: number,
+    userId?: number,
   ): Promise<MangaQuickViewDto[]> {
     // **2026-05-19** : agrège désormais MU recos (max 5 par manga, limite
     // upstream MU) + community recos (mangas que les autres users de la
     // communauté possèdent aussi en biblio). Avant on était limité aux 5
     // de MU → user veut "toutes les recos de la communauté".
-    const recos = await this.getRecommendationsForManga(muId);
+    let recos = await this.getRecommendationsForManga(muId);
     const communityRecos = await this.findCommunityRecommendations(muId);
 
     // Merge : MU recos en premier (sorted by weight DESC déjà), puis
@@ -465,6 +468,19 @@ export class MangasService {
     }
 
     if (!recos.length) return [];
+
+    // Exclusion des titres écartés (« pas intéressé / déjà vu »). Les recos
+    // de la fiche détail sont un chemin de recommandation à part entière :
+    // sans ce filtre, un titre rejeté depuis la home réapparaîtrait ici.
+    // `userId` optionnel — les appels internes sans contexte user ne
+    // filtrent rien (comportement historique).
+    if (userId !== undefined) {
+      const dismissed = await this.dismissals.getDismissedMuIds(userId);
+      if (dismissed.size > 0) {
+        recos = recos.filter((r) => !dismissed.has(r.recommended_mu_id));
+        if (!recos.length) return [];
+      }
+    }
 
     const recMuIds = recos.map((r) => r.recommended_mu_id);
     const mangas = await this.mangaRepository

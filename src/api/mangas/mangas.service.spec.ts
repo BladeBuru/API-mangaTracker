@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { DismissalService } from '@/api/recommendations/dismissal.service';
 import { MangasService } from './mangas.service';
 import { HttpModule, HttpService } from '@nestjs/axios';
 import { HelperService } from './helper.service';
@@ -44,6 +45,12 @@ describe('MangasService', () => {
           useValue: mockRepo(),
         },
         { provide: getRepositoryToken(UserManga), useValue: mockRepo() },
+        // Aucun rejet par défaut — les recos de la fiche détail ne filtrent
+        // que si un userId est passé (cf. getRecommendationsAsQuickView).
+        {
+          provide: DismissalService,
+          useValue: { getDismissedMuIds: jest.fn(async () => new Set()) },
+        },
       ],
       imports: [HttpModule],
     }).compile();
@@ -135,6 +142,12 @@ describe('MangasService — getMangaDetails : UPDATE null-safe', () => {
           useValue: mockRepo(),
         },
         { provide: getRepositoryToken(UserManga), useValue: mockRepo() },
+        // Aucun rejet par défaut — les recos de la fiche détail ne filtrent
+        // que si un userId est passé (cf. getRecommendationsAsQuickView).
+        {
+          provide: DismissalService,
+          useValue: { getDismissedMuIds: jest.fn(async () => new Set()) },
+        },
       ],
     }).compile();
 
@@ -251,6 +264,12 @@ describe('MangasService — searchManga', () => {
           useValue: mockRepo(),
         },
         { provide: getRepositoryToken(UserManga), useValue: mockRepo() },
+        // Aucun rejet par défaut — les recos de la fiche détail ne filtrent
+        // que si un userId est passé (cf. getRecommendationsAsQuickView).
+        {
+          provide: DismissalService,
+          useValue: { getDismissedMuIds: jest.fn(async () => new Set()) },
+        },
       ],
     }).compile();
 

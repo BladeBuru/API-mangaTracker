@@ -111,7 +111,7 @@ describe('GenreSectionService', () => {
   });
 
   it('retourne {} sans requête si le pool est vide', async () => {
-    const result = await service.buildSections(new Map(), [], 5, 10);
+    const result = await service.buildSections(new Map(), [], 5, 10, new Set());
     expect(result).toEqual({});
     expect(mangaRepo.find).not.toHaveBeenCalled();
   });
@@ -125,6 +125,7 @@ describe('GenreSectionService', () => {
       [makeUserManga('1000', ['Action'])],
       5,
       10,
+      new Set(['1000']),
     );
 
     // Une seule section Action (les variantes trimées fusionnent) et le
@@ -153,6 +154,7 @@ describe('GenreSectionService', () => {
       ],
       5,
       10,
+      new Set(['1000', '1001', '1002']),
     );
 
     expect(result['Action'].map((d) => d.muId)).toEqual([2000]);
@@ -181,6 +183,7 @@ describe('GenreSectionService', () => {
       ],
       5,
       1, // perGenre = 1 → Action pleine avec 2000
+      new Set(['1000', '1001', '1002']),
     );
 
     expect(result['Action'].map((d) => d.muId)).toEqual([2000]);
@@ -203,6 +206,7 @@ describe('GenreSectionService', () => {
       [makeUserManga('1000', ['Action'])],
       5,
       3, // 1 titre pool → déficit de 2
+      new Set(['1000']),
     );
 
     // Pool d'abord (score desc), compléments ensuite (rating desc).
@@ -258,6 +262,7 @@ describe('GenreSectionService', () => {
       ],
       5,
       2, // chaque section a 1 titre pool → déficit de 1 chacune
+      new Set(['1000', '1001', '1002']),
     );
 
     // 2 sections déficitaires → exactement 2 requêtes (pas de N+1).
@@ -301,6 +306,7 @@ describe('GenreSectionService', () => {
       ],
       5,
       10,
+      new Set(['1000', '1001', '1002']),
     );
 
     expect(Object.keys(result)).toEqual(['Romance', 'Action']);
@@ -325,6 +331,7 @@ describe('GenreSectionService', () => {
       [makeUserManga('1000', undefined)], // stub sans genres
       5,
       10,
+      new Set(['1000']),
     );
 
     // Action (2 candidats pool) avant Romance (1).
@@ -340,6 +347,7 @@ describe('GenreSectionService', () => {
       [makeUserManga('1000', ['Action']), makeUserManga('1001', ['Isekai'])],
       5,
       3,
+      new Set(['1000', '1001']),
     );
 
     // Action servie avec son titre pool malgré l'échec du complément ;
@@ -380,6 +388,7 @@ describe('GenreSectionService', () => {
       [makeUserManga('1000', ['Action'])],
       5,
       2,
+      new Set(['1000']),
     );
 
     const dto = result['Action'][0];

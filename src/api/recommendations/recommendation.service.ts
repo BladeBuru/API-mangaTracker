@@ -14,6 +14,7 @@ import {
   CatalogCandidateService,
 } from './catalog-candidate.service';
 import { GenreSectionService } from './genre-section.service';
+import { DismissalService } from './dismissal.service';
 import { ScoredEntry } from './scored-entry.interface';
 
 @Injectable()
@@ -109,7 +110,28 @@ export class RecommendationService {
     private readonly recoCache: RecoCacheService,
     private readonly catalogCandidates: CatalogCandidateService,
     private readonly genreSections: GenreSectionService,
+    private readonly dismissals: DismissalService,
   ) {}
+
+  /**
+   * Set d'exclusion d'un utilisateur = bibliothèque ∪ titres écartés
+   * (« pas intéressé / déjà vu »).
+   *
+   * **Point d'entrée unique de l'exclusion.** Tous les chemins de reco de ce
+   * service partent de ce set, qui se propage ensuite tel quel dans
+   * `scoreRecos`, `augmentWithCatalog` → `CatalogCandidateService`, et
+   * `GenreSectionService`. Aucune branche aval ne reconstruit d'exclusion :
+   * c'est ce qui garantit qu'un titre rejeté ne peut réapparaître nulle part.
+   */
+  private buildExclusionSet(
+    userId: number,
+    userMangas: UserManga[],
+  ): Promise<Set<string>> {
+    return this.dismissals.buildExclusionSet(
+      userId,
+      userMangas.map((um) => um.manga.mu_id),
+    );
+  }
 
   /**
    * Trouve les "sleeper hits" : nouveautés récentes peu recommandées par la
@@ -138,21 +160,21 @@ export class RecommendationService {
     const ratingMin = 7.5;
     const recoVisibilityThreshold = 5;
 
-    // 1. Bibliothèque user → exclusion
+    // 1. Bibliothèque user + titres écartés → exclusion
     const userMangas = await this.userMangaRepository.find({
       where: { user: { id: userId } },
       relations: ['manga'],
     });
-    const libraryMuIds = new Set(userMangas.map((um) => um.manga.mu_id));
+    const excludedMuIds = await this.buildExclusionSet(userId, userMangas);
 
-    // 2. Candidats : récents + bien notés + pas en biblio
+    // 2. Candidats : récents + bien notés + ni en biblio ni écartés
     const candidatesQuery = this.mangaRepository
       .createQueryBuilder('m')
       .where('m.year >= :yearMin', { yearMin })
       .andWhere('m.rating >= :ratingMin', { ratingMin });
-    if (libraryMuIds.size > 0) {
+    if (excludedMuIds.size > 0) {
       candidatesQuery.andWhere('m.mu_id NOT IN (:...lib)', {
-        lib: Array.from(libraryMuIds),
+        lib: Array.from(excludedMuIds),
       });
     }
     const candidates = await candidatesQuery.getMany();
@@ -272,12 +294,13 @@ export class RecommendationService {
       // top communauté (notes locales agrégées) complété par des sleepers
       // récents, pour que l'écran ne soit jamais vide.
       return this.buildColdStartRecommendations(
+        userId,
         effectiveLimit,
         effectiveOffset,
       );
     }
 
-    const libraryMuIds = new Set(userMangas.map((um) => um.manga.mu_id));
+    const excludedMuIds = await this.buildExclusionSet(userId, userMangas);
     const scoreMap = new Map<string, ScoredEntry>();
     const uncachedIds: number[] = [];
 
@@ -294,7 +317,7 @@ export class RecommendationService {
           um.manga.mu_id,
           this.computeMultiplier(um),
           cached,
-          libraryMuIds,
+          excludedMuIds,
           scoreMap,
         );
       }),
@@ -305,7 +328,7 @@ export class RecommendationService {
         this.fetchUncachedInBackground(uncachedIds);
       }
       // Pool trop maigre → complément depuis le catalogue local.
-      await this.augmentWithCatalog(userMangas, libraryMuIds, scoreMap);
+      await this.augmentWithCatalog(userMangas, excludedMuIds, scoreMap);
       const result = await this.buildDtoFromScoreMap(
         scoreMap,
         effectiveLimit,
@@ -320,9 +343,9 @@ export class RecommendationService {
     this.logger.log(
       `Cache vide pour userId=${userId}, fetch MU pour ${userMangas.length} manga(s)`,
     );
-    await this.fetchAndScoreBlocking(userMangas, libraryMuIds, scoreMap);
+    await this.fetchAndScoreBlocking(userMangas, excludedMuIds, scoreMap);
 
-    await this.augmentWithCatalog(userMangas, libraryMuIds, scoreMap);
+    await this.augmentWithCatalog(userMangas, excludedMuIds, scoreMap);
     if (scoreMap.size === 0) return [];
     const result = await this.buildDtoFromScoreMap(
       scoreMap,
@@ -347,14 +370,17 @@ export class RecommendationService {
   private async computeScoreMap(userId: number): Promise<{
     scoreMap: Map<string, ScoredEntry>;
     userMangas: UserManga[];
+    excludedMuIds: Set<string>;
   }> {
     const userMangas = await this.userMangaRepository.find({
       where: { user: { id: userId } },
       relations: ['manga'],
     });
-    if (userMangas.length === 0) return { scoreMap: new Map(), userMangas };
+    if (userMangas.length === 0) {
+      return { scoreMap: new Map(), userMangas, excludedMuIds: new Set() };
+    }
 
-    const libraryMuIds = new Set(userMangas.map((um) => um.manga.mu_id));
+    const excludedMuIds = await this.buildExclusionSet(userId, userMangas);
     const scoreMap = new Map<string, ScoredEntry>();
     const uncachedIds: number[] = [];
 
@@ -370,7 +396,7 @@ export class RecommendationService {
           um.manga.mu_id,
           this.computeMultiplier(um),
           cached,
-          libraryMuIds,
+          excludedMuIds,
           scoreMap,
         );
       }),
@@ -378,14 +404,14 @@ export class RecommendationService {
 
     if (scoreMap.size > 0) {
       if (uncachedIds.length > 0) this.fetchUncachedInBackground(uncachedIds);
-      await this.augmentWithCatalog(userMangas, libraryMuIds, scoreMap);
-      return { scoreMap, userMangas };
+      await this.augmentWithCatalog(userMangas, excludedMuIds, scoreMap);
+      return { scoreMap, userMangas, excludedMuIds };
     }
 
     // Cache vide : fetch bloquant batché
-    await this.fetchAndScoreBlocking(userMangas, libraryMuIds, scoreMap);
-    await this.augmentWithCatalog(userMangas, libraryMuIds, scoreMap);
-    return { scoreMap, userMangas };
+    await this.fetchAndScoreBlocking(userMangas, excludedMuIds, scoreMap);
+    await this.augmentWithCatalog(userMangas, excludedMuIds, scoreMap);
+    return { scoreMap, userMangas, excludedMuIds };
   }
 
   /**
@@ -399,7 +425,7 @@ export class RecommendationService {
    */
   private async fetchAndScoreBlocking(
     userMangas: UserManga[],
-    libraryMuIds: Set<string>,
+    excludedMuIds: Set<string>,
     scoreMap: Map<string, ScoredEntry>,
   ): Promise<void> {
     for (
@@ -432,7 +458,7 @@ export class RecommendationService {
             um.manga.mu_id,
             this.computeMultiplier(um),
             recos,
-            libraryMuIds,
+            excludedMuIds,
             scoreMap,
           );
         }),
@@ -460,7 +486,7 @@ export class RecommendationService {
    */
   private async augmentWithCatalog(
     userMangas: UserManga[],
-    libraryMuIds: Set<string>,
+    excludedMuIds: Set<string>,
     scoreMap: Map<string, ScoredEntry>,
   ): Promise<void> {
     if (scoreMap.size >= RecommendationService.CATALOG_MIN_POOL) return;
@@ -469,7 +495,7 @@ export class RecommendationService {
     try {
       candidates = await this.catalogCandidates.findCandidates(
         userMangas,
-        libraryMuIds,
+        excludedMuIds,
       );
     } catch (err) {
       this.logger.warn(`Candidats catalogue indisponibles: ${err}`);
@@ -480,7 +506,7 @@ export class RecommendationService {
     let added = 0;
     for (const candidate of candidates) {
       if (scoreMap.has(candidate.mu_id)) continue; // MU prime — pas d'addition
-      if (libraryMuIds.has(candidate.mu_id)) continue;
+      if (excludedMuIds.has(candidate.mu_id)) continue;
       const sources = new Map<string, number>();
       for (const sourceMuId of candidate.sourceMuIds) {
         sources.set(sourceMuId, candidate.score);
@@ -525,14 +551,20 @@ export class RecommendationService {
     >(userId, variant);
     if (cachedResult) return cachedResult;
 
-    const { scoreMap, userMangas } = await this.computeScoreMap(userId);
+    const { scoreMap, userMangas, excludedMuIds } =
+      await this.computeScoreMap(userId);
     if (scoreMap.size === 0) return {};
 
+    // `excludedMuIds` (biblio ∪ rejets) est transmis explicitement : sans
+    // lui, `GenreSectionService` reconstruirait une exclusion « biblio
+    // seule » et les compléments catalogue des sections déficitaires
+    // pourraient réintroduire un titre écarté.
     const result = await this.genreSections.buildSections(
       scoreMap,
       userMangas,
       topGenres,
       perGenre,
+      excludedMuIds,
     );
     this.recoCache.set(userId, variant, result);
     return result;
@@ -562,7 +594,7 @@ export class RecommendationService {
     sourceMuId: string,
     multiplier: number,
     recos: MangaRecommendation[],
-    libraryMuIds: Set<string>,
+    excludedMuIds: Set<string>,
     scoreMap: Map<string, ScoredEntry>,
   ): void {
     const topRecos = [...recos]
@@ -574,7 +606,7 @@ export class RecommendationService {
       // voir ce qu'il a déjà. Le volume restant après filtrage est garanti
       // par MAX_RECOS_PER_SOURCE=30 (au lieu de 10) pour qu'il reste assez
       // de candidats même après exclusion (ex: 30 - ~10 déjà-lus = 20).
-      if (libraryMuIds.has(reco.recommended_mu_id)) continue;
+      if (excludedMuIds.has(reco.recommended_mu_id)) continue;
       const contribution = reco.weight * multiplier;
       let entry = scoreMap.get(reco.recommended_mu_id);
       if (!entry) {
@@ -745,6 +777,7 @@ export class RecommendationService {
    * candidats au fil du scroll.
    */
   private async buildColdStartRecommendations(
+    userId: number,
     limit: number,
     offset: number,
   ): Promise<MangaQuickViewDto[]> {
@@ -755,13 +788,19 @@ export class RecommendationService {
       RecommendationService.MAX_LIMIT * 3,
     );
 
-    const topDtos = await this.buildTopCommunityDtos(poolSize);
+    // Bibliothèque vide ne veut pas dire « rien à exclure » : un user peut
+    // très bien écarter des titres AVANT d'avoir ajouté quoi que ce soit —
+    // c'est même le cas d'usage typique (« One Piece, je l'ai vu en animé »).
+    const dismissedMuIds = await this.dismissals.getDismissedMuIds(userId);
 
-    // Sleepers : userId sentinelle -1 = aucune biblio à exclure.
+    const topDtos = await this.buildTopCommunityDtos(poolSize, dismissedMuIds);
+
+    // Sleepers : `findSleeperHits` refait l'exclusion complète pour ce user
+    // (biblio vide ∪ rejets).
     let sleepers: MangaQuickViewDto[] = [];
     try {
       sleepers = await this.findSleeperHits(
-        -1,
+        userId,
         RecommendationService.COLD_START_SLEEPER_BUDGET,
       );
     } catch (err) {
@@ -786,6 +825,7 @@ export class RecommendationService {
    */
   private async buildTopCommunityDtos(
     maxRows: number,
+    excludedMuIds: Set<string> = new Set(),
   ): Promise<MangaQuickViewDto[]> {
     const rows: Array<{ manga_id: string; avg: string; count: string }> =
       await this.userMangaRepository
@@ -804,7 +844,12 @@ export class RecommendationService {
 
     if (rows.length === 0) return [];
 
-    const muIds = rows.map((r) => r.manga_id);
+    // Exclusion des titres écartés — le « top communauté » du cold start est
+    // précisément là où One Piece / Naruto remontent en premier.
+    const muIds = rows
+      .map((r) => r.manga_id)
+      .filter((muId) => !excludedMuIds.has(muId));
+    if (muIds.length === 0) return [];
     const mangas = await this.mangaRepository.find({
       where: { mu_id: In(muIds) },
     });
