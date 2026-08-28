@@ -386,3 +386,91 @@ describe('MangasService — searchManga', () => {
     expect(response.hasMore).toBe(false);
   });
 });
+
+/**
+ * Feature « pas intéressé / déjà vu » — chemin des recos de la fiche détail
+ * (`GET /mangas/recommendations/:muId`). Sans ce filtre, un titre écarté
+ * depuis la home réapparaîtrait dès l'ouverture d'une fiche.
+ */
+describe('MangasService — getRecommendationsAsQuickView : exclusion des titres écartés', () => {
+  let service: MangasService;
+  let getDismissedMuIds: jest.Mock;
+
+  function makeManga(mu_id: string): Manga {
+    const manga = new Manga();
+    manga.id = Number(mu_id);
+    manga.mu_id = mu_id;
+    manga.title = `Manga ${mu_id}`;
+    manga.medium_cover_url = `https://cdn/${mu_id}.jpg`;
+    return manga;
+  }
+
+  function makeReco(recommended_mu_id: string): MangaRecommendation {
+    const reco = new MangaRecommendation();
+    reco.source_mu_id = '1000';
+    reco.recommended_mu_id = recommended_mu_id;
+    reco.recommended_title = `Manga ${recommended_mu_id}`;
+    reco.weight = 10;
+    return reco;
+  }
+
+  beforeEach(async () => {
+    getDismissedMuIds = jest.fn(async () => new Set<string>());
+    const mangaRepo = {
+      ...mockRepo(),
+      createQueryBuilder: jest.fn(() => ({
+        where: jest.fn().mockReturnThis(),
+        getMany: jest
+          .fn()
+          .mockResolvedValue([makeManga('2000'), makeManga('2001')]),
+      })),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MangasService,
+        { provide: HttpService, useValue: { get: jest.fn() } },
+        { provide: HelperService, useValue: {} },
+        { provide: getRepositoryToken(Manga), useValue: mangaRepo },
+        {
+          provide: getRepositoryToken(MangaRecommendation),
+          useValue: mockRepo(),
+        },
+        { provide: getRepositoryToken(UserManga), useValue: mockRepo() },
+        { provide: DismissalService, useValue: { getDismissedMuIds } },
+      ],
+    }).compile();
+
+    service = module.get<MangasService>(MangasService);
+    jest
+      .spyOn(service, 'getRecommendationsForManga')
+      .mockResolvedValue([makeReco('2000'), makeReco('2001')]);
+    jest.spyOn(service, 'findCommunityRecommendations').mockResolvedValue([]);
+    // Neutralise le refresh background des covers (fire-and-forget).
+    jest.spyOn(service, 'getMangaDetails').mockResolvedValue({} as never);
+  });
+
+  it('retire les titres écartés quand un userId est fourni', async () => {
+    getDismissedMuIds.mockResolvedValue(new Set(['2001']));
+
+    const result = await service.getRecommendationsAsQuickView(1000, 42);
+
+    expect(getDismissedMuIds).toHaveBeenCalledWith(42);
+    expect(result.map((d) => d.muId)).toEqual([2000]);
+  });
+
+  it('ne filtre rien sans userId (appels internes sans contexte utilisateur)', async () => {
+    const result = await service.getRecommendationsAsQuickView(1000);
+
+    expect(getDismissedMuIds).not.toHaveBeenCalled();
+    expect(result.map((d) => d.muId)).toEqual([2000, 2001]);
+  });
+
+  it('retourne [] si toutes les recos sont écartées', async () => {
+    getDismissedMuIds.mockResolvedValue(new Set(['2000', '2001']));
+
+    const result = await service.getRecommendationsAsQuickView(1000, 42);
+
+    expect(result).toEqual([]);
+  });
+});

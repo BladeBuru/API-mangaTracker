@@ -551,8 +551,9 @@ export class RecommendationService {
     >(userId, variant);
     if (cachedResult) return cachedResult;
 
-    const { scoreMap, userMangas, excludedMuIds } =
-      await this.computeScoreMap(userId);
+    const { scoreMap, userMangas, excludedMuIds } = await this.computeScoreMap(
+      userId,
+    );
     if (scoreMap.size === 0) return {};
 
     // `excludedMuIds` (biblio ∪ rejets) est transmis explicitement : sans

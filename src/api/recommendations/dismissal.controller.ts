@@ -37,11 +37,12 @@ export class DismissalController {
   constructor(private readonly dismissalService: DismissalService) {}
 
   @ApiOperation({
-    summary: 'Écarter un manga des recommandations (« pas intéressé / déjà vu »)',
+    summary:
+      'Écarter un manga des recommandations (« pas intéressé / déjà vu »)',
     description:
-      "Le titre ne remonte plus dans AUCUN chemin de recommandation (liste paginée, sections par genre, pépites, cold start, recos de la fiche détail) tant que le rejet existe. " +
+      'Le titre ne remonte plus dans AUCUN chemin de recommandation (liste paginée, sections par genre, pépites, cold start, recos de la fiche détail) tant que le rejet existe. ' +
       "Rejeter deux fois le même titre ne crée qu'une ligne : la raison la plus récente écrase la précédente. " +
-      'Le cache de recommandations est invalidé immédiatement — pas besoin d\'attendre le TTL.',
+      "Le cache de recommandations est invalidé immédiatement — pas besoin d'attendre le TTL.",
   })
   @ApiResponse({
     status: 201,
@@ -73,7 +74,7 @@ export class DismissalController {
   @ApiResponse({ status: 204, description: 'Rejet annulé' })
   @ApiResponse({
     status: 404,
-    description: "Aucun rejet enregistré pour ce manga",
+    description: 'Aucun rejet enregistré pour ce manga',
   })
   @Delete(':muId')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -86,7 +87,8 @@ export class DismissalController {
   }
 
   @ApiOperation({
-    summary: "Liste des titres écartés par l'utilisateur (du plus récent au plus ancien)",
+    summary:
+      "Liste des titres écartés par l'utilisateur (du plus récent au plus ancien)",
     description:
       "Rend un rejet accidentel récupérable même après la disparition du SnackBar d'annulation : le titre étant exclu des recommandations, l'utilisateur ne le recroiserait jamais autrement.",
   })

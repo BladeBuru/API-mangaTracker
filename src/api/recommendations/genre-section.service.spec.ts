@@ -406,4 +406,54 @@ describe('GenreSectionService', () => {
     const [idsArg] = mangasService.getCommunityRatings.mock.calls[0];
     expect(idsArg).toEqual(expect.arrayContaining(['2000', '9000']));
   });
+  /**
+   * Feature « pas intéressé / déjà vu » : le complément catalogue des
+   * sections déficitaires est le chemin par lequel un titre écarté pouvait
+   * revenir par la bande — il ne passe pas par le scoreMap déjà filtré.
+   */
+  it('complément catalogue : un titre écarté part dans le NOT IN de la requête', async () => {
+    registerMangas(makeManga('2000', ['Action']));
+    const qbs = mockCatalogQb([
+      [makeManga('9000', ['Action'], { rating: 8.2 })],
+    ]);
+
+    // Set fourni par RecommendationService = biblio (1000) ∪ rejets (7777).
+    await service.buildSections(
+      new Map([['2000', makeEntry(10)]]),
+      [makeUserManga('1000', ['Action'])],
+      5,
+      3,
+      new Set(['1000', '7777']),
+    );
+
+    const excludeCall = qbs[0].andWhere.mock.calls.find(([sql]) =>
+      (sql as string).includes('excludeMuIds'),
+    );
+    const excluded = (excludeCall![1] as { excludeMuIds: string[] })
+      .excludeMuIds;
+    expect(excluded).toContain('7777');
+  });
+
+  it('défense en profondeur : un titre écarté présent dans le pool est ignoré', async () => {
+    // Le scoreMap est normalement déjà filtré en amont ; on vérifie que la
+    // section ne dépend d'aucune garantie de l'appelant.
+    registerMangas(
+      makeManga('2000', ['Action']),
+      makeManga('7777', ['Action']),
+    );
+    mockCatalogQb([[]]);
+
+    const result = await service.buildSections(
+      new Map([
+        ['7777', makeEntry(100)],
+        ['2000', makeEntry(10)],
+      ]),
+      [makeUserManga('1000', ['Action'])],
+      5,
+      10,
+      new Set(['1000', '7777']),
+    );
+
+    expect(result['Action'].map((d) => d.muId)).toEqual([2000]);
+  });
 });

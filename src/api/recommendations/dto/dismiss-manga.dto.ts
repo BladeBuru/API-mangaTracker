@@ -1,9 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEnum } from 'class-validator';
-import {
-  DISMISSAL_REASONS,
-  DismissalReason,
-} from '../dismissal-reason.enum';
+import { DISMISSAL_REASONS, DismissalReason } from '../dismissal-reason.enum';
 
 /**
  * Body de `POST /recommendations/dismissals/:muId`.
@@ -33,7 +30,10 @@ export class DismissMangaDto {
  * `GET /recommendations/dismissals`.
  */
 export class DismissalDto {
-  @ApiProperty({ description: 'Identifiant MangaUpdates du titre écarté', example: 12345 })
+  @ApiProperty({
+    description: 'Identifiant MangaUpdates du titre écarté',
+    example: 12345,
+  })
   muId: number;
 
   @ApiProperty({ description: 'Titre du manga écarté', example: 'One Piece' })
