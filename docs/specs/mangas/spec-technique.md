@@ -49,7 +49,10 @@ La dépendance circulaire avec `LibraryModule` est gérée via `forwardRef()` da
 | `src/api/mangas/catalog-shard.ts` | Types de shard (`global` / `year` / `year_genre`) + construction du payload MU `/series/search` | ~67 |
 | `src/api/mangas/catalog-shard-planner.service.ts` | Planification **pure** des shards : ordre de parcours, éligibilité, fenêtres de rafraîchissement, sous-découpage d'un shard saturé | ~237 |
 | `src/api/mangas/catalog-page-ingest.service.ts` | Ingestion d'une page : appel MU + backoff 429/5xx + upsert `manga` | ~145 |
-| `src/api/mangas/catalog-hydration.service.ts` | Job nightly d'hydratation des lignes `manga` incomplètes via `getMangaDetails` | ~162 |
+| `src/api/mangas/catalog-hydration.service.ts` | Job nightly d'hydratation des lignes `manga` incomplètes via `getMangaDetails` — **titres alternatifs (`associated`) inclus dans le critère**, priorisation bibliothèque > reco > catalogue | ~183 |
+| `src/api/mangas/catalog-releases.service.ts` | **Job nocturne des dernières sorties** — curseur temporel incrémental sur `time_added`, `total_chapters` en `GREATEST`, aucune création de série | ~380 |
+| `src/api/mangas/mu-release.mapper.ts` | Mapping `/releases/search` — extraction du `series_id` depuis `metadata`, parsing du champ `chapter`, dédoublonnage par série | ~164 |
+| `src/api/mangas/mu-backoff.ts` | Politique de retry MU (5/10/20/40 s sur 429/5xx) **partagée** par les deux jobs nocturnes | ~60 |
 | `src/api/mangas/catalog-sync.mapper.ts` | Mapping records MU → lots upsert `manga` (lots séparés genre/non-genre, rating/year/covers null-safe) | ~82 |
 | `src/api/mangas/genre.utils.ts` | Normalisation des formats genres MU hétérogènes (`string` / `{genre}`) | ~24 |
 | `src/api/mangas/exceptions/mu-rate-limit.exception.ts` | Exception typée HTTP 429 MU — distingue rate-limit d'un échec quelconque | ~18 |
@@ -60,7 +63,7 @@ La dépendance circulaire avec `LibraryModule` est gérée via `forwardRef()` da
 | `src/api/mangas/dto/manga-details.dto.ts` | DTO détail manga — parsing MU + enrichissement user | ~399 |
 | `src/api/mangas/dto/manga-quick-view.dto.ts` | DTO liste manga — factories fromMu/fromLibrary | ~130 |
 | `src/api/mangas/dto/search-manga.dto.ts` | DTO corps de requête recherche | ~(petit) |
-| `src/api/mangas/constants.ts` | URLs MU et liste NSFW_GENRES | ~17 |
+| `src/api/mangas/constants.ts` | URLs MU (dont `/releases/search`) et liste NSFW_GENRES | ~70 |
 | `src/api/mangas/mangas.module.ts` | Déclaration du module NestJS | ~35 |
 | `src/api/mangas/helper.service.ts` | Formatage des requêtes vers l'API MU | ~(petit) |
 
@@ -140,7 +143,7 @@ Liste unique : `PROTECTED_NULLABLE_COLUMNS` dans `manga-completeness.util.ts`, a
 | Colonne | Type | Contrainte | Notes |
 |---------|------|-----------|-------|
 | `id` | integer | PK, auto-increment | |
-| `job_name` | varchar | UNIQUE NOT NULL | Clé du shard. Noms **fixes** : `catalog:rating`, `catalog:week_pos`, `hydration`. Noms **dynamiques** : `catalog:year:<AAAA>`, `catalog:year:<AAAA>:genre:<Genre>` |
+| `job_name` | varchar | UNIQUE NOT NULL | Clé du shard. Noms **fixes** : `catalog:rating`, `catalog:week_pos`, `hydration`, `releases`. Noms **dynamiques** : `catalog:year:<AAAA>`, `catalog:year:<AAAA>:genre:<Genre>` |
 | `last_completed_page` | integer | DEFAULT 0 | Curseur de reprise **propre au shard** — jamais réinitialisé globalement |
 | `total_pages` | integer | nullable | Connu après la 1re réponse MU |
 | `last_run_at` | timestamptz | nullable | Date du dernier run, **complet ou non** |
@@ -149,12 +152,13 @@ Liste unique : `PROTECTED_NULLABLE_COLUMNS` dans `manga-completeness.util.ts`, a
 | `completed_at` | timestamptz | nullable | Date de la dernière complétion **intégrale** du shard (dernière page atteinte). NULL = jamais terminé ou parcours en cours. **Pivot de la reprise inter-shards** — distinct de `last_run_at`, voir « Pattern catalogue nightly » |
 | `saturated` | boolean | DEFAULT false | `true` quand la requête du shard atteint le plafond `total_hits` de MU (10 000) : réponse tronquée → sous-découpage par genre |
 | `total_hits` | integer | nullable | Dernier `total_hits` annoncé par MU — diagnostic + détection de saturation |
+| `cursor_time_added` | bigint | nullable | **Curseur temporel du job `releases`** : plus grand `time_added.timestamp` (epoch secondes) déjà traité. NULL partout ailleurs. `bigint` car un epoch secondes dépasse `int4` en 2038 |
 | `created_at` | timestamp | auto | |
 | `updated_at` | timestamp | auto | |
 
 **Une ligne par shard** (et non plus 3 lignes fixes) : ~100 shards annuels (année courante → 1930) + les passes globales + `hydration`, auxquels s'ajoutent des sous-shards par genre **uniquement si une année sature**.
 
-**Migrations** : `1753300000000-CreateCatalogSyncState` puis `1787961600000-AddShardingToCatalogSyncState` (ajoute `completed_at`, `saturated`, `total_hits`). Cette dernière est additive et idempotente (`hasColumn`) → sûre avec `migrationsRun: true` en production. Les 3 lignes existantes reçoivent `completed_at = NULL` et `saturated = false`, ce qui les rend éligibles au prochain run : le comportement au premier démarrage est « reprendre le travail », pas « tout recommencer ».
+**Migrations** : `1753300000000-CreateCatalogSyncState`, `1787961600000-AddShardingToCatalogSyncState` (ajoute `completed_at`, `saturated`, `total_hits`) puis `1788048000000-AddReleasesCursorToCatalogSyncState` (ajoute `cursor_time_added`). Cette dernière est additive et idempotente (`hasColumn`) → sûre avec `migrationsRun: true` en production. Les 3 lignes existantes reçoivent `completed_at = NULL` et `saturated = false`, ce qui les rend éligibles au prochain run : le comportement au premier démarrage est « reprendre le travail », pas « tout recommencer ».
 
 ---
 
@@ -197,6 +201,9 @@ Liste unique : `PROTECTED_NULLABLE_COLUMNS` dans `manga-completeness.util.ts`, a
 | `CATALOG_SYNC_YEAR_FLOOR` | `1930` | Année la plus ancienne shardée. Mesuré : 1900 / 1910 / 1920 / 1925 → 0 hit, 1930 → 1, 1935 → 2, 1950 → 4 |
 | `CATALOG_SYNC_SHARD_REFRESH_DAYS` | `30` | Délai avant de re-parcourir un shard terminé. Les shards « chauds » (passes globales, année courante et précédente) utilisent 7 j en dur |
 | `CATALOG_SYNC_DELAY_MS` | `2000` | Délai entre 2 appels MU (30 req/min = 50 % du plafond MU anonyme) |
+| `RELEASES_SYNC_ENABLED` | `true` (`false` si `NODE_ENV=test`) | Active/désactive le cron des dernières sorties |
+| `RELEASES_SYNC_MAX_PAGES` | `20` | Plafond DUR de pages MU par run du job sorties. 3 pages suffisent en régime établi (267 sorties/jour mesurées) ; le plafond ne sert qu'à borner un rattrapage après une longue indisponibilité — sans lui, un curseur périmé de plusieurs semaines ferait paginer le job sans fin |
+| `RELEASES_SYNC_LOOKBACK_DAYS` | `7` | Fenêtre de rattrapage au **tout premier run** (curseur NULL). On ne remonte pas tout l'historique MU : le but du job est de ne pas rater les NOUVEAUX chapitres, pas de reconstruire le passé (l'hydratation et le signalement communautaire s'en chargent) |
 | `CATALOG_SYNC_HYDRATION_BUDGET` | `800` | Appels `getMangaDetails` max/nuit pour hydrater les lignes `manga` incomplètes. 800 × 2 s ≈ 27 min à 30 req/min, soit la moitié du plafond MU anonyme (~60 req/min). Relevé de 200 → 800 le 2026-08-28 : avec le critère élargi, 200/nuit mettait plusieurs semaines à rattraper le stock |
 
 ---
@@ -219,8 +226,8 @@ Job nightly `hydration` (ex-`hydrateMissingGenres`, généralisé le 2026-08-28)
 
 | Aspect | Comportement |
 |--------|--------------|
-| **Critère** | `genres IS NULL OR rating IS NULL OR year IS NULL OR medium_cover_url IS NULL` — tout ce qui manque à une carte, plus seulement les genres |
-| **Priorité 1** | `mu_id` présent dans `manga_recommendation` (les titres réellement affichés aux utilisateurs) |
+| **Critère** | `genres IS NULL OR rating IS NULL OR year IS NULL OR medium_cover_url IS NULL OR associated IS NULL` — tout ce qui manque à une carte **ou à une fiche**, plus seulement les genres |
+| **Priorité 1** | `mu_id` présent dans une bibliothèque utilisateur (`user_manga`), puis dans `manga_recommendation` (les titres réellement vus par les utilisateurs) |
 | **Priorité 2** | `hydration_attempted_at ASC NULLS FIRST` — jamais tentée d'abord |
 | **Garde anti-boucle** | `hydration_attempted_at IS NULL OR < now() - 30 j`, horodatée après CHAQUE tentative (succès **ou** échec) |
 | **Budget** | `CATALOG_SYNC_HYDRATION_BUDGET` (défaut 800), 1 appel / `CATALOG_SYNC_DELAY_MS` |
@@ -362,6 +369,91 @@ Conséquence : les titres alternatifs ne sont alimentables **que** par `getManga
 
 Documenté ici pour éviter de ré-investiguer : ce n'est pas un oubli de mapping, c'est une limite de l'endpoint.
 
+### Pattern job nocturne des dernières sorties (CatalogReleasesService)
+
+**Besoin** : « synchroniser les dernières sorties, c'est primordial » — ne pas rater les nouveaux chapitres.
+
+`manga.total_chapters` n'était alimenté que par `getMangaDetails` (ouverture d'une fiche) et par `ChapterReportService` (signalement communautaire) : autrement dit, **uniquement sur les titres que quelqu'un consultait déjà**. D'où les remontées « MangaUpdates est en retard sur le nombre de chapitres », qui n'étaient pas un retard de MU mais un retard de **notre** copie. Ce job lit le flux des sorties et fait monter `total_chapters` sur **tout le catalogue en base**, chaque nuit, sans intervention utilisateur.
+
+#### Sémantique de l'API vérifiée (mesures du 2026-08-29)
+
+| Constat | Détail |
+|---------|--------|
+| **`record.id` n'est PAS le `series_id`** | C'est l'id de la **sortie** (~1 262 426, incrémental). Les `series_id` MU sont des entiers à 11 chiffres (ex. 64156727159) et `GET /v1/series/1262426` répond **404**. Un mapping qui aurait confondu les deux n'aurait jamais rapproché la moindre ligne — **en silence** |
+| **`series_id` ⇒ `include_metadata: true`** | Le vrai identifiant n'apparaît que sous `metadata.series.series_id` (100/100 records d'une page). Sans ce paramètre, la réponse ne contient **aucune** clé de rapprochement avec `manga.mu_id` |
+| **`time_added` est un OBJET** | `{ timestamp: 1787934483, as_rfc3339: '…', as_string: '…' }`. Le curseur utilise `timestamp` (epoch secondes). `as_rfc3339` porte un décalage PDT qui en ferait un curseur fragile |
+| **`orderby` ∈ {date, time, title, vol, chap}** | `time` (date d'ajout MU) est **strictement décroissant** — vérifié sur 100 records consécutifs |
+| **`release_date` inexploitable** | La base MU contient des dates aberrantes saisies à la main : `0001-07-05`, `1111-11-11`, `0004-04-07` (observées en tri ascendant). Seul `time_added` est monotone |
+| **Volume** | 267 sorties sur une journée pleine (2026-08-26) → **3 pages de 100 par nuit**, soit ~6 s de requêtes |
+| **Plafonds** | `perpage: 100` accepté ; `total_hits` plafonné à 10 000 comme sur `/series/search` |
+
+#### Incrémentalité
+
+Le job pagine du plus récent au plus ancien (`orderby: 'time'`) et s'arrête dès qu'une page ne contient plus rien de postérieur à `cursor_time_added`.
+
+**Aucune sortie ne peut être manquée** : de nouvelles sorties insérées pendant le run n'apparaissent qu'en **tête** de tri et décalent les suivantes vers le bas. On peut donc revoir un enregistrement — sans effet, l'écriture est idempotente — mais jamais en sauter un.
+
+**Le curseur n'avance QUE sur un run intégralement réussi.** Le parcours allant du plus récent au plus ancien, un échec en page 3 laisse les sorties des pages 3+ (les plus **anciennes**, donc les plus proches du curseur) non traitées : avancer le curseur au plus récent les enterrerait définitivement. On préfère re-parcourir la fenêtre au prochain run.
+
+#### Écriture
+
+| Aspect | Comportement |
+|--------|--------------|
+| **Colonne écrite** | `total_chapters` **uniquement** — aucune autre colonne n'entre dans le `SET` |
+| **Invariant A-5** | `GREATEST(total_chapters, :newTotal)` — monotone croissant. Une sortie isolée d'un vieux chapitre (rescan, retraduction) ne fait jamais régresser un total plus élevé |
+| **Parsing `chapter`** | Chaîne libre saisie par les groupes. Plage `A-B` → **B** (« 12-13 » = le chapitre 13 est paru) ; sinon **premier nombre en tête** (`12.5` → 12, `18b` → 18, `112 + Afterword 1-3` → 112). Le « premier nombre » plutôt qu'un `max` sur toute la chaîne est délibéré : `5 (of 10)` doit donner 5. **On préfère sous-estimer** — une sous-estimation se corrige au passage suivant, une surestimation est définitive |
+| **Dédoublonnage** | Une série qui sort plusieurs chapitres dans la fenêtre ne produit qu'un seul UPDATE, au plus haut numéro |
+| **Séries inconnues** | **Jamais créées.** Voir ci-dessous |
+
+**Pourquoi aucune insertion en stub** (décision, pas raccourci) : `/releases/search` n'applique pas l'`exclude_genre` NSFW du catalogue et ne fournit **ni année, ni note, ni genres**. Insérer des stubs depuis ce flux polluerait `manga` de séries NSFW et de lignes vides qui (a) entreraient dans les pools de recommandation, (b) consommeraient le budget d'hydratation — au détriment des titres réellement vus par les utilisateurs. La découverte reste le métier du catalogue.
+
+#### Politique réseau
+
+Rythme et backoff **inchangés** : 1 requête / `CATALOG_SYNC_DELAY_MS` (2 s), backoff 5/10/20/40 s sur 429/5xx, extraits dans `mu-backoff.ts` et **partagés** avec le catalogue — deux jobs frappent désormais MU en nocturne, dupliquer la boucle aurait ouvert la porte à une divergence silencieuse sur le point le plus sensible du projet.
+
+**Séparation dans la nuit** : sorties à **02:00** (+ jitter 0-10 min), catalogue à **03:30** (+ jitter 0-15 min). Les deux ne frappent donc jamais MU simultanément. Pire cas du job sorties : 20 pages × (2 s + 75 s de backoff complet) ≈ **26 min**, contre 90 min de marge avant le catalogue.
+
+---
+
+### Dimensionnement de l'hydratation (titres alternatifs inclus)
+
+**Le point structurant** : `associated` n'est PAS dans `/series/search` — il faut ouvrir `/v1/series/{id}`, soit **1 requête par manga**. Or c'est exactement l'appel que `CatalogHydrationService` fait déjà, et cet appel ramène `associated` **dans la même réponse** que genres/rating/année/cover.
+
+**Un job dédié aux titres alternatifs aurait donc tapé une seconde fois la même fiche pour une donnée déjà reçue** : le double du budget réseau pour zéro information supplémentaire, sur l'API qu'il faut justement ménager. D'où l'élargissement du critère existant (`associated IS NULL`) plutôt qu'un nouveau service.
+
+#### Combien de nuits ?
+
+Corpus atteignable **131 185 titres** (mesuré année par année, NSFW exclu) ; base de prod actuelle **5 055 lignes**. À 1 fiche / 2 s, couvrir 131 185 fiches représente **~73 h de requêtes**, à étaler.
+
+| `CATALOG_SYNC_HYDRATION_BUDGET` | Durée/nuit | Nuits pour 131 185 | Nuits pour les 5 055 actuelles |
+|---|---|---|---|
+| 800 (défaut) | 27 min | **164** (~5,5 mois) | 7 |
+| 1 500 | 50 min | 88 (~3 mois) | 4 |
+| 2 000 | 67 min | **66** (~2,2 mois) | 3 |
+| 3 000 | 100 min | 44 (~1,5 mois) | 2 |
+| 5 000 | 167 min | 27 (~1 mois) | 2 |
+
+Le corpus n'est pas hydratable avant d'être **en base** : le catalogue doit d'abord ingérer les 131 185 titres, soit 1 312 pages à 60 pages/nuit ≈ **22 nuits**. Les deux jobs progressent en parallèle.
+
+**Charge MU par nuit aux valeurs par défaut** : sorties ~6 s + catalogue 60 pages ≈ 2 min + hydratation 800 fiches ≈ 27 min ≈ **30 min de requêtes**, toujours à 30 req/min (50 % du plafond anonyme). Il reste donc une marge confortable pour relever le budget : **2 000 est recommandé** (67 min/nuit, corpus complet en ~66 nuits) sans changer le rythme d'une seule requête. « C'est pas grave si c'est étalé sur plusieurs jours ou semaines » — mais ne pas se faire bannir reste l'exigence n°1, et **le rythme (1 req / 2 s) ne bouge jamais** : seul le nombre de fiches par nuit est ajustable.
+
+#### Critère et priorisation
+
+| Aspect | Comportement |
+|--------|--------------|
+| **Critère** | `genres IS NULL OR rating IS NULL OR year IS NULL OR medium_cover_url IS NULL OR associated IS NULL` |
+| **Appel par ligne** | **Un seul** `getMangaDetails`, quel que soit le nombre de champs manquants |
+| **Priorité 0** | `mu_id` présent dans une bibliothèque utilisateur (`user_manga`) — le signal d'usage le plus fort |
+| **Priorité 1** | `mu_id` présent dans `manga_recommendation` — titres affichés sur des cartes |
+| **Priorité 2** | Reste du catalogue |
+| **Garde anti-boucle** | `hydration_attempted_at IS NULL OR < now() - 30 j`, horodatée après CHAQUE tentative |
+
+**Conséquence assumée sur `associated`** : une série qui n'a réellement aucun titre alternatif garde `associated = NULL` (l'écriture est null-safe et n'enregistre pas `[]`) et reste éligible. C'est `hydration_attempted_at` qui l'empêche de brûler le budget en boucle — exactement le traitement déjà réservé à un titre sans note ni année.
+
+**Écriture null-safe** (`buildAssociatedUpdate`) : `MangaDetailsDto.fromMU` applique `muObject['associated'] ?? []`, donc une réponse MU sans le champ produit un tableau **vide**. L'UPDATE de `getMangaDetails` l'écrivait sans condition : une fiche déjà pourvue pouvait **perdre** ses titres alternatifs. La colonne n'entre désormais dans le `SET` que si MU fournit au moins un titre.
+
+---
+
 ### Dégradation gracieuse sur rate-limit MU (MangasService)
 
 `getRecommendationsForManga` intercepte `MuRateLimitException` (429 MU) et retourne `[]` au lieu de propager l'exception (correction adversariale d8641f4). L'appelant (`RecommendationService`) reçoit un tableau vide et continue — plus de 429 propagé au client.
@@ -398,3 +490,7 @@ La constante `RATING_CONFIDENCE_WEIGHT = 50` signifie qu'il faut 50 votes locaux
 | `src/api/mangas/rating-aggregator.spec.ts` | Tests unitaires formule Bayesienne (comportements aux limites) | Existant |
 | `src/api/mangas/catalog-sync.service.spec.ts` | Tests unitaires CatalogSyncService (cron, backoff, curseur, statut partial) | À créer |
 | `src/api/mangas/translation/description-translation.service.spec.ts` | Tests unitaires DescriptionTranslationService (cache hit, SWR, negative-cache, cascade providers) | À créer |
+| `src/api/mangas/catalog-releases.service.spec.ts` | Job des sorties : incrémentalité du curseur (traite uniquement le postérieur, avance au plus récent vu, 2e passage idempotent, fenêtre bornée au 1er run), monotonie `GREATEST` et aucune autre colonne au `SET`, séries inconnues ignorées sans stub, plafond de pages, cadence 1 req / 2 s, backoff 5/10/20/40 s avec **curseur conservé** après échec réseau ou DB, anti-réentrance | ✅ |
+| `src/api/mangas/mu-release.mapper.spec.ts` | Parsing du champ `chapter` sur ses formes réelles (entier, plage `12-13` → borne haute, `12.5`, `18b`, `112 + Afterword 1-3`, `5 (of 10)` → 5), `series_id` lu depuis `metadata` et jamais depuis `record.id`, dédoublonnage par série | ✅ |
+| `src/api/mangas/catalog-hydration.service.spec.ts` | Critère élargi (`associated IS NULL` compris), **un seul appel de fiche par ligne**, budget nocturne respecté, priorisation bibliothèque > reco > reste, garde anti-boucle | ✅ |
+| `src/api/mangas/manga-completeness.util.spec.ts` | Doctrine null-safe, dont `buildAssociatedUpdate` : la colonne est omise sur `[]` / null → une fiche déjà pourvue ne peut plus perdre ses titres alternatifs | ✅ |

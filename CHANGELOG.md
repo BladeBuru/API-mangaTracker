@@ -5,6 +5,42 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ---
 
+## [Unreleased] — feat/releases-et-titres-alt
+
+> Part de `feat/catalogue-et-recos` (sharding par année), non mergée.
+
+### Added
+- **mangas** : **job nocturne des dernières sorties** (`CatalogReleasesService`, cron 02:00 + jitter 0-10 min). Interroge `POST /v1/releases/search` de façon **incrémentale** et fait monter `manga.total_chapters` sans qu'aucun utilisateur ait à ouvrir la fiche ni à signaler quoi que ce soit. C'est l'attaque directe du problème remonté par les utilisateurs (« MangaUpdates est en retard sur le nombre de chapitres ») : jusqu'ici `total_chapters` n'était alimenté que par `getMangaDetails` (à l'ouverture d'une fiche) et par le signalement communautaire (`ChapterReportService`) — donc uniquement sur les titres que quelqu'un consultait déjà. Le job couvre désormais **tout le catalogue en base**, chaque nuit
+- **mangas** : curseur temporel `catalog_sync_state.cursor_time_added` (ligne `releases`) — le job ne récupère que ce qui est apparu depuis son dernier passage
+- **mangas** : `RELEASES_SYNC_ENABLED`, `RELEASES_SYNC_MAX_PAGES` (défaut 20) et `RELEASES_SYNC_LOOKBACK_DAYS` (défaut 7) dans la spec technique
+- **mangas** : `mu-backoff.ts` — politique de retry MU (5/10/20/40 s sur 429/5xx) extraite et **partagée** par les deux jobs nocturnes
+
+### Changed
+- **mangas** : le job d'hydratation (`CatalogHydrationService`) est **étendu aux titres alternatifs** au lieu de recevoir un second service. Critère élargi à `associated IS NULL`. `/v1/series/{id}` ramène **déjà** `associated` dans la même réponse que genres/rating/année/cover — un job dédié aurait tapé une **seconde fois la même fiche** pour une donnée déjà reçue, soit le double du budget réseau pour zéro information supplémentaire, sur l'API qu'il faut justement ménager
+- **mangas** : priorisation de l'hydratation par **usage réel** — bibliothèque utilisateur (0) > recommandation (1) > reste du catalogue (2). Avec 131 185 fiches à couvrir, l'ordre décide de ce que les utilisateurs voient réparé les premières nuits
+- **Rythme réseau inchangé** : 1 requête / 2 s (`CATALOG_SYNC_DELAY_MS`), backoff 5/10/20/40 s. Les deux jobs sont **séparés dans la nuit** (sorties 02:00, catalogue 03:30 + jitter 15 min) et ne frappent donc jamais MU simultanément — la marge est de 90 min pour un pire cas mesuré à ~26 min
+
+### Fixed
+- **mangas** : **perte possible des titres alternatifs**. `getMangaDetails` écrivait `associated` sans condition, alors que `MangaDetailsDto.fromMU` applique `muObject['associated'] ?? []` : une réponse MU sans le champ produisait un tableau **vide** qui écrasait des titres alternatifs déjà en base. La colonne passe par `buildAssociatedUpdate` (null-safe, même doctrine que `PROTECTED_NULLABLE_COLUMNS`)
+- **mangas** : une requête MU inutile par run du job sorties — une page incomplète signifie la fin des résultats disponibles, la page suivante était demandée quand même
+
+### Vérifié sur l'API MU (mesures du 2026-08-29, pas des suppositions)
+- **`record.id` de `/releases/search` n'est PAS le `series_id`** — contrairement à ce qu'on pouvait supposer. C'est l'id de la **sortie** (~1 262 426, incrémental) ; les `series_id` MU sont des entiers à 11 chiffres (ex. 64156727159) et `GET /v1/series/1262426` répond **404**. Un mapping qui aurait confondu les deux n'aurait **jamais** rapproché la moindre ligne, en silence
+- **Le vrai `series_id` n'arrive qu'avec `include_metadata: true`**, sous `metadata.series.series_id` (présent sur 100/100 records d'une page)
+- **`time_added` est un OBJET**, pas une chaîne : `{ timestamp, as_rfc3339, as_string }`. Le curseur s'appuie sur `timestamp` (epoch secondes) ; `as_rfc3339` porte un décalage PDT qui en ferait un curseur fragile
+- **`orderby` n'accepte que `{date, time, title, vol, chap}`** — `time` (date d'ajout) est strictement décroissant, vérifié sur 100 records consécutifs. `release_date` est **inexploitable** comme curseur : la base MU contient des dates aberrantes saisies à la main (`0001-07-05`, `1111-11-11`, `0004-04-07`)
+- **`perpage: 100` accepté**, `total_hits` plafonné à 10 000 comme sur `/series/search`
+- **Volume mesuré : 267 sorties sur une journée pleine** (2026-08-26) → **3 pages par nuit** en régime établi, soit ~6 s de requêtes
+- **Formes réelles du champ `chapter`** sur 100 sorties consécutives : entier (92 %), plage `12-13` (5 %), décimal `12.5` (1 %), suffixe `18b` (1 %), composé `112 + Afterword 1-3` (1 %)
+
+### BDD
+- Migration `1788048000000-AddReleasesCursorToCatalogSyncState` : colonne `catalog_sync_state.cursor_time_added` (bigint nullable — un epoch secondes dépasse `int4` en 2038) et index `idx_user_manga_manga_id` (la priorisation de l'hydratation s'appuie sur un `EXISTS` par `user_manga.manga_id`). Additive et idempotente (`hasColumn` / `IF NOT EXISTS`). `NULL` sur les lignes existantes = « job jamais tourné » → au premier run le job se limite à une fenêtre de rattrapage bornée au lieu de remonter tout l'historique MU
+
+### Tests
+- +44 tests unitaires (216 → 260), 2 suites ajoutées : incrémentalité du curseur (traite uniquement le postérieur, avance au plus récent vu, second passage idempotent, fenêtre bornée au premier run), monotonie de `total_chapters` (assertion sur le SQL `GREATEST` **et** sur le fait qu'aucune autre colonne n'entre dans le `SET`), séries inconnues ignorées sans insertion de stub, plafond de pages, cadence 1 req / 2 s, **non-régression du backoff** (429 → 5/10/20/40 s, 400 non-retryable) avec **curseur conservé** après échec réseau ou DB, anti-réentrance, parsing du champ `chapter` sur ses formes réelles, sélection « seulement si manquant » et **un seul appel de fiche par ligne**, respect du budget, priorisation bibliothèque > recommandation > reste
+
+---
+
 ## [Unreleased] — feat/catalog-sharding-by-year
 
 > Dépend de la PR #74 (`fix/manga-data-completeness`), non mergée : cette branche en part et réécrit `catalog-sync.service.ts` par-dessus.
