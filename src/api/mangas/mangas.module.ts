@@ -18,9 +18,14 @@ import { MangaChapterReport } from '../library/manga-chapter-report.entity';
 import { UpdateMangaService } from './update-manga.service';
 import { MangaSyncService } from './sync-manga.service';
 import { CatalogSyncService } from './catalog-sync.service';
+import { CatalogHydrationService } from './catalog-hydration.service';
+import { CatalogReleasesService } from './catalog-releases.service';
+import { CatalogPageIngestService } from './catalog-page-ingest.service';
+import { CatalogShardPlannerService } from './catalog-shard-planner.service';
 import { CatalogSyncState } from './catalog-sync-state.entity';
 import { CoverProxyService } from './cover-proxy.service';
 import { RecoCacheModule } from '../recommendations/reco-cache.module';
+import { DismissalModule } from '../recommendations/dismissal.module';
 import { MangaTranslation } from './manga-translation.entity';
 import { DescriptionTranslationService } from './translation/description-translation.service';
 import { DeeplProvider } from './translation/deepl.provider';
@@ -45,6 +50,10 @@ import { GtxProvider } from './translation/gtx.provider';
     // ChapterLogService / ChapterReportService (chantiers A & B) et leurs
     // entités dans le forFeature ci-dessus.
     RecoCacheModule,
+    // Recos de la fiche détail (`getRecommendationsAsQuickView`) : elles
+    // doivent exclure les titres écartés par l'utilisateur, comme tous les
+    // autres chemins. Module autonome → pas de cycle mangas ↔ recommendations.
+    DismissalModule,
   ],
   controllers: [MangasController, MangaCoversController],
   providers: [
@@ -57,6 +66,10 @@ import { GtxProvider } from './translation/gtx.provider';
     UpdateMangaService,
     MangaSyncService,
     CatalogSyncService,
+    CatalogShardPlannerService,
+    CatalogPageIngestService,
+    CatalogHydrationService,
+    CatalogReleasesService,
     CoverProxyService,
     DescriptionTranslationService,
     DeeplProvider,

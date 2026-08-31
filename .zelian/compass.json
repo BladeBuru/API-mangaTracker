@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "generated_by": "zelian-framework@3.16.0",
+  "updated_at": "2026-08-28T10:35:51.477Z",
+  "entries": [
+    {
+      "id": "mangas",
+      "app": null,
+      "module": "mangas",
+      "label": "mangas",
+      "spec_dir": "docs/specs/mangas",
+      "code": [
+        "src/api/mangas/catalog-shard.ts",
+        "src/api/mangas/catalog-shard-planner.service.ts",
+        "src/api/mangas/catalog-page-ingest.service.ts",
+        "src/api/mangas/catalog-hydration.service.ts",
+        "src/api/mangas/catalog-sync.service.ts",
+        "src/api/mangas/catalog-sync-state.entity.ts",
+        "src/api/mangas/constants.ts",
+        "src/api/mangas/mangas.module.ts",
+        "src/migrations/1787961600000-AddShardingToCatalogSyncState.ts"
+      ],
+      "keywords": [],
+      "updated_at": "2026-08-28T10:35:51.477Z"
+    }
+  ]
+}

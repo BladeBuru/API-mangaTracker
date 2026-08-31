@@ -57,6 +57,25 @@ export class Manga {
   @Column({ type: 'json', nullable: true })
   genres?: string[];
 
+  /**
+   * Date de la dernière tentative d'hydratation par le job nightly
+   * `hydration` (`CatalogSyncService.hydrateIncompleteRows`), qu'elle ait
+   * réussi ou échoué.
+   *
+   * Garde anti-boucle : sans elle, un titre dont MU n'a réellement PAS de
+   * note ni d'année resterait éligible chaque nuit et consommerait tout le
+   * budget d'hydratation sur les mêmes lignes, indéfiniment. Une ligne
+   * tentée n'est réessayée qu'après `HYDRATION_RETRY_AFTER_MS` (30 j), le
+   * temps que MU ait pu publier la donnée manquante.
+   *
+   * NULL = jamais tentée → priorité maximale (cf. `ORDER BY ... NULLS FIRST`).
+   * Colonne dédiée plutôt que `updated_at` : un stub fraîchement créé a un
+   * `updated_at` récent et serait exclu 30 jours alors que c'est exactement
+   * la ligne à réparer en priorité. Migration `1787875200000`.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  hydration_attempted_at: Date | null;
+
   @CreateDateColumn()
   created_at: Date;
 

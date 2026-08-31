@@ -77,6 +77,54 @@
 
 ## ✅ Problèmes Résolus
 
+### Cartes de recommandations sans année ni note en étoiles
+- **Module** : mangas + recommendations
+- **Résolu le** : 2026-08-28 (branche `fix/manga-data-completeness`)
+- **Symptôme** : en prod, sur les cartes de recommandations, l'année et la
+  note en étoiles n'apparaissaient pas pour une partie des mangas — image
+  présente, ligne meta vide. Côté app, `MangaCard` masque volontairement
+  toute la ligne meta quand année ET note manquent (comportement voulu) :
+  le problème était 100 % côté données API.
+- **Cause** : les DTO sont remplis depuis la table locale `manga` avec repli
+  `year = manga.year ?? 0` et `rating = manga.rating !== null ? … : 0`, et
+  l'app traduit ce `0` en « absent ». Trois causes cumulées laissaient ces
+  colonnes à NULL :
+  1. **Écrasement par NULL (latente)** — `getMangaDetails` et
+     `MangaSyncService` faisaient un `SET` inconditionnel sur
+     `year`/`rating`/covers. Un `bayesian_rating: null` MU (titre peu voté)
+     écrasait une valeur déjà correctement remplie par la synchro nocturne.
+  2. **Stubs jamais complétés (dominante)** — `saveRecommendations` crée des
+     stubs `mu_id + title + covers` ; l'endpoint MU « recommendations » ne
+     renvoie NI année NI note, donc ils restaient NULL jusqu'au premier clic.
+  3. **Rattrapage biaisé (aggravante)** — `hydrateMissingGenres` ne voyait
+     que `genres IS NULL` et triait `rating DESC NULLS LAST` : les stubs
+     (rating NULL) passaient derrière ~5000 lignes de catalogue, et une
+     ligne « genres OK / rating NULL » n'était jamais reprise.
+- **Solution** (dans cet ordre) :
+  1. Doctrine null-safe généralisée — `buildProtectedColumnsUpdate`
+     (`manga-completeness.util.ts`) omet du `SET` toute colonne protégée
+     que MU ne fournit pas. Une vraie valeur écrase toujours normalement.
+     `PROTECTED_NULLABLE_COLUMNS` devient la source de vérité unique,
+     partagée avec `catalog-sync.mapper.ts`.
+  2. `hydrateMissingGenres` → `hydrateIncompleteRows` — critère élargi
+     (`genres OR rating OR year OR medium_cover_url IS NULL`), tri par
+     rating supprimé, priorisation par `EXISTS` dans `manga_recommendation`,
+     garde anti-boucle `hydration_attempted_at` (30 j, horodatée après
+     chaque tentative même en échec), budget 200 → 800/nuit.
+  3. Hydratation à la demande fire-and-forget sur le chemin des recos
+     (plafond 8/requête, jamais bloquante, 429 avalé).
+- **⚠️ Piège évité** : sans la garde `hydration_attempted_at`, les titres
+  pour lesquels MU n'a réellement ni note ni année seraient re-sélectionnés
+  chaque nuit et brûleraient tout le budget en boucle. Colonne dédiée
+  plutôt que `updated_at < now() - 30 j` : un stub fraîchement créé a un
+  `updated_at` récent et serait exclu 30 jours alors que c'est exactement
+  la ligne à réparer en priorité.
+- **BDD** : migration `1787875200000-AddHydrationAttemptedAtToManga`.
+- **Tests** : `manga-completeness.util.spec.ts` (17 cas) + 4 cas
+  `mangas.service.spec.ts` + 8 cas `catalog-sync.service.spec.ts` — 153 → 182.
+
+---
+
 ### Recos by-genre : mêmes titres dans toutes les sections + doublons
 - **Module** : recommendations
 - **Résolu le** : 2026-08-25 (branche `fix/recos-by-genre-dedup`)

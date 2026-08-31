@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { normalizeGenres } from './genre.utils';
+import { PROTECTED_NULLABLE_COLUMNS } from './manga-completeness.util';
 import { Manga } from './manga.entity';
 
 /** Item du payload search MU (`/series/search`). */
@@ -46,14 +47,13 @@ const ALWAYS_OVERWRITE_COLUMNS = ['title'] as const;
  * (fréquent en `week_pos`) ne doit pas remettre à null une note déjà hydratée
  * (le manga sortirait de `CatalogCandidateService` rating>=7 / `findSleeperHits`).
  * Idem pour l'année et les covers (et les genres, historiquement protégés).
+ *
+ * La liste est désormais partagée avec `getMangaDetails` / `MangaSyncService`
+ * (cf. `manga-completeness.util.ts`) : la doctrine est la même sur TOUS les
+ * chemins d'écriture de `manga`, pas seulement sur l'upsert catalogue.
+ *
+ * @see PROTECTED_NULLABLE_COLUMNS (importé depuis `manga-completeness.util`)
  */
-const PROTECTED_NULLABLE_COLUMNS = [
-  'year',
-  'rating',
-  'small_cover_url',
-  'medium_cover_url',
-  'genres',
-] as const;
 
 /**
  * Mappe les records d'une page search MU vers des lots d'upsert `manga`,

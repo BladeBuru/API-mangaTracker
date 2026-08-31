@@ -111,7 +111,7 @@ describe('GenreSectionService', () => {
   });
 
   it('retourne {} sans requête si le pool est vide', async () => {
-    const result = await service.buildSections(new Map(), [], 5, 10);
+    const result = await service.buildSections(new Map(), [], 5, 10, new Set());
     expect(result).toEqual({});
     expect(mangaRepo.find).not.toHaveBeenCalled();
   });
@@ -125,6 +125,7 @@ describe('GenreSectionService', () => {
       [makeUserManga('1000', ['Action'])],
       5,
       10,
+      new Set(['1000']),
     );
 
     // Une seule section Action (les variantes trimées fusionnent) et le
@@ -153,6 +154,7 @@ describe('GenreSectionService', () => {
       ],
       5,
       10,
+      new Set(['1000', '1001', '1002']),
     );
 
     expect(result['Action'].map((d) => d.muId)).toEqual([2000]);
@@ -181,6 +183,7 @@ describe('GenreSectionService', () => {
       ],
       5,
       1, // perGenre = 1 → Action pleine avec 2000
+      new Set(['1000', '1001', '1002']),
     );
 
     expect(result['Action'].map((d) => d.muId)).toEqual([2000]);
@@ -203,6 +206,7 @@ describe('GenreSectionService', () => {
       [makeUserManga('1000', ['Action'])],
       5,
       3, // 1 titre pool → déficit de 2
+      new Set(['1000']),
     );
 
     // Pool d'abord (score desc), compléments ensuite (rating desc).
@@ -258,6 +262,7 @@ describe('GenreSectionService', () => {
       ],
       5,
       2, // chaque section a 1 titre pool → déficit de 1 chacune
+      new Set(['1000', '1001', '1002']),
     );
 
     // 2 sections déficitaires → exactement 2 requêtes (pas de N+1).
@@ -301,6 +306,7 @@ describe('GenreSectionService', () => {
       ],
       5,
       10,
+      new Set(['1000', '1001', '1002']),
     );
 
     expect(Object.keys(result)).toEqual(['Romance', 'Action']);
@@ -325,6 +331,7 @@ describe('GenreSectionService', () => {
       [makeUserManga('1000', undefined)], // stub sans genres
       5,
       10,
+      new Set(['1000']),
     );
 
     // Action (2 candidats pool) avant Romance (1).
@@ -340,6 +347,7 @@ describe('GenreSectionService', () => {
       [makeUserManga('1000', ['Action']), makeUserManga('1001', ['Isekai'])],
       5,
       3,
+      new Set(['1000', '1001']),
     );
 
     // Action servie avec son titre pool malgré l'échec du complément ;
@@ -380,6 +388,7 @@ describe('GenreSectionService', () => {
       [makeUserManga('1000', ['Action'])],
       5,
       2,
+      new Set(['1000']),
     );
 
     const dto = result['Action'][0];
@@ -396,5 +405,55 @@ describe('GenreSectionService', () => {
     expect(mangasService.getCommunityRatings).toHaveBeenCalledTimes(1);
     const [idsArg] = mangasService.getCommunityRatings.mock.calls[0];
     expect(idsArg).toEqual(expect.arrayContaining(['2000', '9000']));
+  });
+  /**
+   * Feature « pas intéressé / déjà vu » : le complément catalogue des
+   * sections déficitaires est le chemin par lequel un titre écarté pouvait
+   * revenir par la bande — il ne passe pas par le scoreMap déjà filtré.
+   */
+  it('complément catalogue : un titre écarté part dans le NOT IN de la requête', async () => {
+    registerMangas(makeManga('2000', ['Action']));
+    const qbs = mockCatalogQb([
+      [makeManga('9000', ['Action'], { rating: 8.2 })],
+    ]);
+
+    // Set fourni par RecommendationService = biblio (1000) ∪ rejets (7777).
+    await service.buildSections(
+      new Map([['2000', makeEntry(10)]]),
+      [makeUserManga('1000', ['Action'])],
+      5,
+      3,
+      new Set(['1000', '7777']),
+    );
+
+    const excludeCall = qbs[0].andWhere.mock.calls.find(([sql]) =>
+      (sql as string).includes('excludeMuIds'),
+    );
+    const excluded = (excludeCall![1] as { excludeMuIds: string[] })
+      .excludeMuIds;
+    expect(excluded).toContain('7777');
+  });
+
+  it('défense en profondeur : un titre écarté présent dans le pool est ignoré', async () => {
+    // Le scoreMap est normalement déjà filtré en amont ; on vérifie que la
+    // section ne dépend d'aucune garantie de l'appelant.
+    registerMangas(
+      makeManga('2000', ['Action']),
+      makeManga('7777', ['Action']),
+    );
+    mockCatalogQb([[]]);
+
+    const result = await service.buildSections(
+      new Map([
+        ['7777', makeEntry(100)],
+        ['2000', makeEntry(10)],
+      ]),
+      [makeUserManga('1000', ['Action'])],
+      5,
+      10,
+      new Set(['1000', '7777']),
+    );
+
+    expect(result['Action'].map((d) => d.muId)).toEqual([2000]);
   });
 });

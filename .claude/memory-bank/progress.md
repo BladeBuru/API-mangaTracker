@@ -137,6 +137,44 @@
 
 ---
 
+## 🗂️ Catalogue MangaUpdates — découpage par année (2026-08-28)
+
+Branche `feat/catalog-sharding-by-year` (dépend de la PR #74).
+
+**Bug corrigé** : `CATALOG_SYNC_MAX_PAGES` (50) servait de plafond absolu de pagination — la passe s'arrêtait page 50, se déclarait terminée, remettait le curseur à 0 et réingérait éternellement les mêmes ~5 000 titres. La variable est désormais **dépréciée et ignorée**.
+
+**Découpage** : `total_hits` de `/series/search` est plafonné à 10 000 par requête. Une passe par année (`catalog:year:<AAAA>`, année courante → 1930) ramène chaque requête sous ce plafond. Sous-découpage par genre si une année sature, récursion limitée à 2 niveaux.
+
+**Reprise inter-shards** : une ligne `catalog_sync_state` par shard, curseur jamais réinitialisé globalement. La file exclut les shards terminés encore frais → une nuit reprend là où la précédente s'est arrêtée. Rafraîchissement 30 j (7 j pour les passes globales et les 2 années les plus récentes).
+
+**Découpage du code** : `catalog-sync.service.ts` (468 l.) → orchestration seule (400 l.) + `CatalogShardPlannerService` (planification pure), `CatalogPageIngestService` (MU + backoff + upsert), `CatalogHydrationService`.
+
+**Résultat négatif à ne pas ré-investiguer** : le payload `/series/search` **ne contient pas** `associated` (titres alternatifs). Ils ne sont alimentables que par `getMangaDetails` — d'où 117 mangas sur 5 055 seulement.
+
+---
+
+## 📥 Sorties récentes + titres alternatifs (2026-08-29)
+
+Branche `feat/releases-et-titres-alt` (part de `feat/catalogue-et-recos`).
+
+**JOB 1 — sorties** (`CatalogReleasesService`, cron 02:00) : lit `POST /v1/releases/search` de façon incrémentale et fait monter `manga.total_chapters` en `GREATEST` (invariant A-5). Attaque la cause du « MangaUpdates est en retard sur le nombre de chapitres » : le total n'était alimenté que par l'ouverture d'une fiche ou un signalement, donc uniquement sur les titres déjà consultés. Curseur temporel `catalog_sync_state.cursor_time_added`, qui **n'avance que sur un run intégralement réussi** (parcours récent → ancien : avancer après un échec enterrerait les sorties non traitées). Aucune création de série — la découverte reste le métier du catalogue.
+
+**À ne pas re-sonder — sémantique MU vérifiée le 2026-08-29** :
+- `record.id` de `/releases/search` **n'est PAS le `series_id`** : c'est l'id de la SORTIE (7 chiffres) ; les `series_id` en ont 11, et `GET /v1/series/<release_id>` répond 404. Le vrai id n'arrive qu'avec **`include_metadata: true`**, sous `metadata.series.series_id`.
+- `time_added` est un **objet** `{timestamp, as_rfc3339, as_string}`, pas une chaîne.
+- `orderby` ∈ `{date, time, title, vol, chap}` — `time` est strictement décroissant. `release_date` est **inexploitable** (dates aberrantes `0001-07-05`, `1111-11-11` en base MU).
+- Volume : **267 sorties/jour** → 3 pages de 100 par nuit. `perpage: 100` OK, `total_hits` plafonné à 10 000.
+
+**JOB 2 — titres alternatifs** : le service d'hydratation EXISTANT est étendu (`associated IS NULL` ajouté au critère), **pas de second service**. `/v1/series/{id}` ramène déjà `associated` dans la même réponse que genres/rating/année — un job dédié aurait tapé deux fois la même fiche. Priorisation bibliothèque utilisateur > recommandation > reste du catalogue.
+
+**Dimensionnement** : 131 185 fiches × 2 s ≈ 73 h. À `CATALOG_SYNC_HYDRATION_BUDGET` = 800 (défaut) → 164 nuits ; à 2 000 → 66 nuits (67 min/nuit). Le rythme (1 req / 2 s) ne bouge jamais, seul le nombre de fiches par nuit est ajustable.
+
+**Bug corrigé au passage** : `getMangaDetails` écrivait `associated` sans condition alors que le DTO le remplit avec `[]` quand MU ne renvoie rien — une fiche pouvait **perdre** ses titres alternatifs. Désormais null-safe (`buildAssociatedUpdate`).
+
+**Politique réseau** : backoff extrait dans `mu-backoff.ts` et partagé par les deux jobs. Sorties 02:00, catalogue 03:30 → jamais simultanés (90 min de marge pour un pire cas de 26 min).
+
+---
+
 ## 🐛 Problèmes connus
 
 Voir [.claude/memory-bank/known-issues.md](known-issues.md) — 5 problèmes actifs détectés à l'audit sécurité de mai 2026.
