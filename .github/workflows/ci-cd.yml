@@ -224,6 +224,14 @@ jobs:
                   DEEPL_API_KEY: "{DEEPL_API_KEY}"
                   # Cache disque des covers (mode stream, hotfix-v0-10-1 US-2).
                   COVERS_CACHE_DIR: "/uploads/covers"
+                  # Budget de pages du catalogue par nuit (defaut code : 60).
+                  # 600 pages x 2 s = ~20 min de requetes/nuit, rythme INCHANGE
+                  # (CATALOG_SYNC_DELAY_MS reste a 2000 ms = 30 req/min, soit
+                  # la moitie du plafond MU). Objectif : couvrir les ~1300 pages
+                  # du corpus en ~2 nuits au lieu de ~18. A rebaisser une fois
+                  # le catalogue complet — le regime de croisiere (nouveautes)
+                  # ne demande que quelques pages par nuit.
+                  CATALOG_SYNC_PAGES_PER_RUN: "600"
                 volumes:
                   # Volume Docker nommé : simple cache reconstructible, pas
                   # besoin d'un dataset NAS dédié.
