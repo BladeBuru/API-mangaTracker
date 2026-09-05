@@ -1,6 +1,9 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MangasController } from './mangas.controller';
 import { MangaCoversController } from './manga-covers.controller';
+import { HomeSectionsController } from './home/home-sections.controller';
+import { HomeSectionsService } from './home/home-sections.service';
+import { HomeSectionQueryBuilder } from './home/home-sections.query';
 import { MangasService } from './mangas.service';
 import { HelperService } from './helper.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -23,6 +26,9 @@ import { CatalogHydrationService } from './catalog-hydration.service';
 import { CatalogReleasesService } from './catalog-releases.service';
 import { CatalogPageIngestService } from './catalog-page-ingest.service';
 import { CatalogShardPlannerService } from './catalog-shard-planner.service';
+import { CatalogShardRunnerService } from './catalog-shard-runner.service';
+import { CatalogTypeBackfillService } from './catalog-type-backfill.service';
+import { MuJobLockService } from './mu-job-lock.service';
 import { CatalogSyncState } from './catalog-sync-state.entity';
 import { CoverProxyService } from './cover-proxy.service';
 import { RecoCacheModule } from '../recommendations/reco-cache.module';
@@ -56,7 +62,12 @@ import { GtxProvider } from './translation/gtx.provider';
     // autres chemins. Module autonome → pas de cycle mangas ↔ recommendations.
     DismissalModule,
   ],
-  controllers: [MangasController, MangaCoversController],
+  controllers: [
+    MangasController,
+    MangaCoversController,
+    // Accueil facon Netflix (`/mangas/home/sections`) : lecture BDD seule.
+    HomeSectionsController,
+  ],
   providers: [
     MangasService,
     HelperService,
@@ -72,10 +83,17 @@ import { GtxProvider } from './translation/gtx.provider';
     MangaSyncService,
     CatalogSyncService,
     CatalogShardPlannerService,
+    CatalogShardRunnerService,
     CatalogPageIngestService,
     CatalogHydrationService,
     CatalogReleasesService,
+    // Rattrapage de `manga.type` (bibliothèques au boot + nightly 01:00) et
+    // verrou partagé : un seul job MU à la fois (releases/catalogue/type).
+    CatalogTypeBackfillService,
+    MuJobLockService,
     CoverProxyService,
+    HomeSectionsService,
+    HomeSectionQueryBuilder,
     DescriptionTranslationService,
     DeeplProvider,
     GtxProvider,

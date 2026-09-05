@@ -1,9 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import { Manga } from '@/api/mangas/manga.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { NSFW_GENRES } from '@/api/mangas/constants';
+import {
+  computeTypeProfile,
+  fetchByTypeBuckets,
+  interleaveByTypeMix,
+} from './type-profile';
 
 /**
  * Candidat issu du catalogue local (table `manga` alimentée par
@@ -17,6 +22,8 @@ export interface CatalogCandidate {
    * genre dominant du candidat — alimente `recommendedBecauseOf`.
    */
   sourceMuIds: string[];
+  /** Type de publication (Manga / Manhwa / Manhua…), `null` si inconnu. */
+  type: string | null;
 }
 
 /**
@@ -30,6 +37,14 @@ export interface CatalogCandidate {
  * - `ratingBoost` = clamp((rating − 6.5) / 3.5, 0, 1).
  * Plage effective ~0.5-6 : complète sans jamais doubler une reco MU forte
  * (contributions typiques 2-25).
+ *
+ * **Type de publication (2026-09-05)** : la requête est découpée par type
+ * au prorata du profil de la bibliothèque (`planTypeQueryBuckets`) — un
+ * `ORDER BY rating LIMIT 300` global sur un catalogue à 80 % `Manga` ne
+ * remontait AUCUN manhwa pour un lecteur de manhwa. Le résultat final est
+ * lui aussi rééquilibré (`interleaveByTypeMix`) avant le plafond
+ * `maxCandidates`. Sans profil (bibliothèque non typée) : requête unique et
+ * tri par score, comme avant.
  */
 @Injectable()
 export class CatalogCandidateService {
@@ -73,7 +88,8 @@ export class CatalogCandidateService {
    * Candidats du catalogue local matchant les genres favoris de la biblio.
    *
    * Requête : genres non null, au moins un genre favori (`?|`), aucun genre
-   * NSFW, rating ≥ 7.0, hors bibliothèque, tri rating DESC LIMIT 300.
+   * NSFW, rating ≥ 7.0, hors bibliothèque, tri rating DESC LIMIT 300 —
+   * découpée par bucket de type quand la bibliothèque a un profil.
    */
   async findCandidates(
     userMangas: UserManga[],
@@ -83,27 +99,15 @@ export class CatalogCandidateService {
     const shares = this.computeGenreShares(userMangas);
     if (shares.size === 0) return [];
     const topGenres = Array.from(shares.keys());
+    const profile = computeTypeProfile(userMangas);
 
-    const qb = this.mangaRepository
-      .createQueryBuilder('m')
-      .where('m.genres IS NOT NULL')
-      .andWhere('m.genres::jsonb ?| ARRAY[:...topGenres]', { topGenres })
-      .andWhere('NOT (m.genres::jsonb ?| ARRAY[:...nsfwGenres])', {
-        nsfwGenres: NSFW_GENRES,
-      })
-      .andWhere('m.rating >= :ratingFloor', {
-        ratingFloor: CatalogCandidateService.RATING_FLOOR,
-      });
-    if (excludeMuIds.size > 0) {
-      qb.andWhere('m.mu_id NOT IN (:...excludeMuIds)', {
-        excludeMuIds: Array.from(excludeMuIds),
-      });
-    }
-    const candidates = await qb
-      .orderBy('m.rating', 'DESC')
-      .limit(CatalogCandidateService.QUERY_LIMIT)
-      .getMany();
-
+    // Une requête par bucket de type (une seule, sans filtre, si le profil
+    // est vide), résultats fusionnés et dédupliqués par `mu_id`.
+    const candidates = await fetchByTypeBuckets(
+      () => this.baseQuery(topGenres, excludeMuIds),
+      profile,
+      CatalogCandidateService.QUERY_LIMIT,
+    );
     if (candidates.length === 0) return [];
 
     const sourcesByGenre = this.buildSourcesByGenre(userMangas, topGenres);
@@ -132,6 +136,7 @@ export class CatalogCandidateService {
         mu_id: manga.mu_id,
         score,
         sourceMuIds: sourcesByGenre.get(dominantGenre) ?? [],
+        type: manga.type ?? null,
       });
     }
 
@@ -141,7 +146,35 @@ export class CatalogCandidateService {
         ', ',
       )}]`,
     );
-    return scored.slice(0, maxCandidates);
+    // Prorata du profil de type AVANT le plafond : sans lui, les mangas
+    // (majoritaires et mieux notés en moyenne) évinceraient les manhwa.
+    return interleaveByTypeMix(scored, (c) => c.type, profile).slice(
+      0,
+      maxCandidates,
+    );
+  }
+
+  /** Requête de base (genres favoris, NSFW exclus, note plancher, exclusions). */
+  private baseQuery(
+    topGenres: string[],
+    excludeMuIds: Set<string>,
+  ): SelectQueryBuilder<Manga> {
+    const qb = this.mangaRepository
+      .createQueryBuilder('m')
+      .where('m.genres IS NOT NULL')
+      .andWhere('m.genres::jsonb ?| ARRAY[:...topGenres]', { topGenres })
+      .andWhere('NOT (m.genres::jsonb ?| ARRAY[:...nsfwGenres])', {
+        nsfwGenres: NSFW_GENRES,
+      })
+      .andWhere('m.rating >= :ratingFloor', {
+        ratingFloor: CatalogCandidateService.RATING_FLOOR,
+      });
+    if (excludeMuIds.size > 0) {
+      qb.andWhere('m.mu_id NOT IN (:...excludeMuIds)', {
+        excludeMuIds: Array.from(excludeMuIds),
+      });
+    }
+    return qb;
   }
 
   /**

@@ -11,6 +11,7 @@ import { MU_RELEASES_URL } from './constants';
 import { Manga } from './manga.entity';
 import { ReadingStatusAutoUpdateService } from '@/api/library/reading-status-auto-update.service';
 import { fetchWithMuBackoff } from './mu-backoff';
+import { MuJobLockService } from './mu-job-lock.service';
 import {
   extractReleaseUpdates,
   maxTimeAdded,
@@ -91,8 +92,8 @@ export class CatalogReleasesService {
   private readonly lookbackDays: number;
   private readonly delayMs: number;
 
-  /** Anti-réentrance in-process (même doctrine que `CatalogSyncService`). */
-  private running = false;
+  /** Nom sous lequel ce job prend le verrou MU partagé. */
+  static readonly LOCK_NAME = 'releases';
 
   /** Injectable pour les tests (évite les vrais timers). */
   sleep: (ms: number) => Promise<void> = (ms) =>
@@ -104,6 +105,8 @@ export class CatalogReleasesService {
     private readonly stateRepository: Repository<CatalogSyncState>,
     @InjectRepository(Manga)
     private readonly mangaRepository: Repository<Manga>,
+    private readonly lock: MuJobLockService,
+
     private readonly readingStatusAutoUpdate: ReadingStatusAutoUpdateService,
     config: ConfigService,
   ) {
@@ -134,20 +137,20 @@ export class CatalogReleasesService {
   }
 
   /**
-   * Point d'entrée testable. No-op (warn) si un run est déjà en cours.
+   * Point d'entrée testable. No-op (warn) si un run est déjà en cours ou si
+   * un autre job MU tient le verrou partagé (`MuJobLockService`).
    */
   async runOnce(): Promise<ReleasesSyncOutcome | null> {
-    if (this.running) {
+    if (!this.lock.tryAcquire(CatalogReleasesService.LOCK_NAME)) {
       this.logger.warn(
         'Sync sorties déjà en cours — run ignoré (anti-réentrance)',
       );
       return null;
     }
-    this.running = true;
     try {
       return await this.syncRecentReleases();
     } finally {
-      this.running = false;
+      this.lock.release(CatalogReleasesService.LOCK_NAME);
     }
   }
 

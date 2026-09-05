@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 import { normalizeGenres } from './genre.utils';
 import { PROTECTED_NULLABLE_COLUMNS } from './manga-completeness.util';
+import { normalizeMangaType } from './manga-type';
 import { Manga } from './manga.entity';
 
 /** Item du payload search MU (`/series/search`). */
@@ -15,6 +16,13 @@ export interface MuSearchResult {
       url?: { original?: string | null; thumb?: string | null } | null;
     } | null;
     genres?: unknown;
+    /**
+     * Type de publication (`Manga`, `Manhwa`, `Manhua`…). Présent dans le
+     * payload search (vérifié le 2026-09-05 : clés `series_id, title, url,
+     * description, image, type, year, bayesian_rating, rating_votes,
+     * genres, last_updated`).
+     */
+    type?: string | null;
   };
 }
 
@@ -85,6 +93,11 @@ export function buildCatalogUpsertBatches(
           : null,
       small_cover_url: record.image?.url?.thumb ?? null,
       medium_cover_url: record.image?.url?.original ?? null,
+      // Type de publication : colonne protégée comme les autres — absente du
+      // `overwrite` quand MU ne la fournit pas, écrite sinon (c'est ce qui
+      // permet au catalogue nightly ordinaire de remplir `type` sur toute
+      // ligne revisitée, sans job dédié).
+      type: normalizeMangaType(record.type),
     };
     if (genres && genres.length > 0) row.genres = genres;
 

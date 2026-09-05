@@ -6,6 +6,8 @@ import { of, Subject, throwError } from 'rxjs';
 import { CatalogReleasesService } from './catalog-releases.service';
 import { CatalogSyncState } from './catalog-sync-state.entity';
 import { Manga } from './manga.entity';
+import { MuJobLockService } from './mu-job-lock.service';
+
 import { ReadingStatusAutoUpdateService } from '@/api/library/reading-status-auto-update.service';
 
 /** Un UPDATE `manga` capturé, tel qu'il partirait vers PostgreSQL. */
@@ -158,6 +160,9 @@ describe('CatalogReleasesService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CatalogReleasesService,
+        // Verrou MU réel (in-memory pur) — l'anti-réentrance est testée
+        // contre le vrai mécanisme partagé entre jobs.
+        MuJobLockService,
         { provide: HttpService, useValue: { post: postMock } },
         {
           provide: getRepositoryToken(CatalogSyncState),

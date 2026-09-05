@@ -456,4 +456,87 @@ describe('GenreSectionService', () => {
 
     expect(result['Action'].map((d) => d.muId)).toEqual([2000]);
   });
+
+  describe('type de publication (manga / manhwa / manhua)', () => {
+    function manhwaUserManga(mu_id: string): UserManga {
+      const um = makeUserManga(mu_id, ['Action']);
+      um.manga.type = 'Manhwa';
+      return um;
+    }
+
+    it('une section respecte le profil de type : les manhwa passent devant des mangas mieux scorés', async () => {
+      // Pool : 10 mangas aux MEILLEURS scores, puis 10 manhwa.
+      const scoreMap = new Map<string, ScoredEntry>();
+      for (let i = 0; i < 10; i++) {
+        registerMangas(
+          makeManga(`${2000 + i}`, ['Action'], { type: 'Manga' }),
+          makeManga(`${3000 + i}`, ['Action'], { type: 'Manhwa' }),
+        );
+        scoreMap.set(`${2000 + i}`, makeEntry(100 - i));
+        scoreMap.set(`${3000 + i}`, makeEntry(50 - i));
+      }
+      mockCatalogQb([]);
+
+      const result = await service.buildSections(
+        scoreMap,
+        // Bibliothèque 100 % manhwa (5 titres typés).
+        ['1', '2', '3', '4', '5'].map(manhwaUserManga),
+        5,
+        10,
+        new Set(['1', '2', '3', '4', '5']),
+      );
+
+      const action = result['Action'];
+      expect(action).toHaveLength(10);
+      expect(action[0].type).toBe('Manhwa');
+      const manhwa = action.filter((d) => d.type === 'Manhwa');
+      // 95 % manhwa + 5 % de découverte (un manga hors profil).
+      expect(manhwa.length).toBeGreaterThanOrEqual(9);
+      // Ordre par score conservé à l'intérieur du type.
+      const ids = manhwa.map((d) => d.muId);
+      expect(ids).toEqual([...ids].sort((a, b) => a - b));
+    });
+
+    it('le complément catalogue est interrogé par bucket de type puis rééquilibré', async () => {
+      registerMangas(makeManga('2000', ['Action'], { type: 'Manga' }));
+      // Buckets servis dans l'ordre de planification : manhwa (profil),
+      // puis inconnus, puis découverte (autres types).
+      const qbs = mockCatalogQb([
+        [
+          makeManga('3001', ['Action'], { type: 'Manhwa', rating: 8 }),
+          makeManga('3002', ['Action'], { type: 'Manhwa', rating: 7.9 }),
+        ],
+        [makeManga('4001', ['Action'], { type: null, rating: 8.5 })],
+        [makeManga('5001', ['Action'], { type: 'Manhua', rating: 9 })],
+      ]);
+
+      const result = await service.buildSections(
+        new Map([['2000', makeEntry(10)]]),
+        ['1', '2', '3'].map(manhwaUserManga),
+        5,
+        4,
+        new Set(['1', '2', '3']),
+      );
+
+      const typeClauses = qbs.map((qb) =>
+        qb.andWhere.mock.calls
+          .map(([sql]) => sql as string)
+          .filter((sql) => sql.startsWith('m.type')),
+      );
+      expect(typeClauses[0]).toEqual(['m.type = :bucketType']);
+      expect(typeClauses[1]).toEqual(['m.type IS NULL']);
+      expect(typeClauses[2]).toEqual([
+        'm.type IS NOT NULL',
+        'm.type NOT IN (:...profileTypes)',
+      ]);
+
+      const ids = result['Action'].map((d) => d.muId);
+      // Le manga du pool (2000) d'abord, puis les compléments : les deux
+      // manhwa sont là, jamais évincés par l'inconnu ou le manhua mieux notés.
+      expect(ids[0]).toBe(2000);
+      expect(ids.slice(1)).toContain(3001);
+      expect(ids.slice(1)).toContain(3002);
+      expect(ids).toHaveLength(4);
+    });
+  });
 });

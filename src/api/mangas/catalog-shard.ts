@@ -6,8 +6,10 @@ import { NSFW_GENRES } from './constants';
  * - `year`       : une année de publication (niveau 1).
  * - `year_genre` : une année × un genre (niveau 2, sous-découpage d'une
  *                  année saturée).
+ * - `type_year`  : un type de publication × une année — rattrapage de la
+ *                  colonne `manga.type` (`CatalogTypeBackfillService`).
  */
-export type CatalogShardKind = 'global' | 'year' | 'year_genre';
+export type CatalogShardKind = 'global' | 'year' | 'year_genre' | 'type_year';
 
 /**
  * Unité de travail de la synchronisation catalogue : une requête MU
@@ -30,6 +32,11 @@ export interface CatalogShard {
   year?: number;
   genre?: string;
   /**
+   * Type de publication MU (`Manhwa`, `Manhua`…) — filtre `type` de
+   * `/series/search`. Réservé aux shards `type_year`.
+   */
+  type?: string;
+  /**
    * Plafond de pages propre au shard, quand le tri n'a de sens que sur les
    * premières pages (`week_pos` : le top hebdo, pas tout le catalogue).
    * Absent → le seul plafond est `ceil(total_hits / perpage)` borné par le
@@ -48,6 +55,11 @@ export function yearGenreShardJobName(year: number, genre: string): string {
   return `catalog:year:${year}:genre:${genre}`;
 }
 
+/** `job_name` d'un shard de rattrapage type × année (ex. `type:Manhwa:year:2015`). */
+export function typeYearShardJobName(type: string, year: number): string {
+  return `type:${type}:year:${year}`;
+}
+
 /** Corps POST `/series/search` pour une page d'un shard donné. */
 export function buildSearchBody(
   shard: CatalogShard,
@@ -63,5 +75,8 @@ export function buildSearchBody(
   if (shard.year !== undefined) body.year = shard.year;
   // MU attend un tableau même pour un genre unique.
   if (shard.genre !== undefined) body.genre = [shard.genre];
+  // Idem pour le type (vérifié le 2026-09-05 : `type: ['Manhwa']` +
+  // `year: '2015'` → 200, `total_hits: 561`, chaque `record.type` = Manhwa).
+  if (shard.type !== undefined) body.type = [shard.type];
   return body;
 }

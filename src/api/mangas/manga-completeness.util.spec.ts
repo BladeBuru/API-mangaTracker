@@ -122,6 +122,7 @@ describe('buildProtectedColumnsUpdate — UPDATE null-safe', () => {
       'small_cover_url',
       'medium_cover_url',
       'genres',
+      'type',
     ]);
   });
 });
@@ -302,5 +303,27 @@ describe('buildAssociatedUpdate', () => {
     expect(
       buildAssociatedUpdate('nope' as unknown as { title: string }[]),
     ).toEqual({});
+  });
+});
+
+describe('buildProtectedColumnsUpdate — type de publication (2026-09-05)', () => {
+  it('écrit `type` quand la fiche MU le fournit', () => {
+    const update = buildProtectedColumnsUpdate({ year: 2019, type: 'Manhwa' });
+
+    expect(update).toEqual({ year: 2019, type: 'Manhwa' });
+  });
+
+  it("omet `type` quand il est absent (un type connu n'est jamais remis à NULL)", () => {
+    expect(buildProtectedColumnsUpdate({ year: 2019 })).toEqual({ year: 2019 });
+    expect(buildProtectedColumnsUpdate({ year: 2019, type: null })).toEqual({
+      year: 2019,
+    });
+    expect(buildProtectedColumnsUpdate({ year: 2019, type: '' })).toEqual({
+      year: 2019,
+    });
+  });
+
+  it('`type` fait partie des colonnes protégées partagées', () => {
+    expect(PROTECTED_NULLABLE_COLUMNS).toContain('type');
   });
 });

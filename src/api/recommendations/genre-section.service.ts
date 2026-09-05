@@ -9,6 +9,12 @@ import { CommunityRating } from '@/api/mangas/rating-aggregator';
 import { NSFW_GENRES } from '@/api/mangas/constants';
 import { hydrateIncompleteDtosInBackground } from '@/api/mangas/manga-completeness.util';
 import { ScoredEntry } from './scored-entry.interface';
+import {
+  computeTypeProfile,
+  fetchByTypeBuckets,
+  interleaveByTypeMix,
+  TypeProfile,
+} from './type-profile';
 
 /** Entrée du pool triée par score, prête à être affectée à une section. */
 interface PoolEntry {
@@ -39,7 +45,12 @@ interface PoolEntry {
  *  3. **Complément catalogue** : une section sous `perGenre` est complétée
  *     par le catalogue local (rating ≥ 7, NSFW exclus, hors biblio, hors
  *     titres déjà affichés) avec des titres portant CE genre — au plus une
- *     requête par section déficitaire, jamais de N+1.
+ *     requête par section déficitaire et par bucket de type, jamais de N+1
+ *     sur les titres.
+ *  4. **Type de publication (2026-09-05)** : chaque section est composée au
+ *     prorata du profil de type de la bibliothèque (`interleaveByTypeMix`),
+ *     pool et compléments compris — un lecteur de manhwa ne voyait que des
+ *     mangas dans « Action » ou « Fantasy ».
  *
  * Contrat de réponse inchangé : `Record<genre, MangaQuickViewDto[]>`.
  */
@@ -105,15 +116,17 @@ export class GenreSectionService {
 
     const rankedGenres = this.rankGenres(userMangas, pool, mangaMap, topGenres);
     if (rankedGenres.length === 0) return {};
+    const profile = computeTypeProfile(userMangas);
 
     // Affectation exclusive : un mu_id n'appartient qu'à UNE section — la
     // première (dans l'ordre des genres classés) dont il porte le genre.
+    // Les éligibles d'une section sont d'abord rééquilibrés par type, puis
+    // plafonnés à `perGenre` : sans profil, l'ordre par score est inchangé.
     const assigned = new Set<string>();
     const sections = new Map<string, PoolEntry[]>();
     for (const genre of rankedGenres) {
-      const list: PoolEntry[] = [];
+      const eligible: PoolEntry[] = [];
       for (const entry of pool) {
-        if (list.length >= perGenre) break;
         if (assigned.has(entry.mu_id)) continue;
         // Défense en profondeur : le pool vient d'un scoreMap déjà filtré,
         // mais on ne veut dépendre d'aucune garantie amont pour un rejet.
@@ -121,9 +134,14 @@ export class GenreSectionService {
         if (!this.normalizedGenres(mangaMap.get(entry.mu_id)).has(genre)) {
           continue;
         }
-        list.push(entry);
-        assigned.add(entry.mu_id);
+        eligible.push(entry);
       }
+      const list = interleaveByTypeMix(
+        eligible,
+        (entry) => mangaMap.get(entry.mu_id)?.type,
+        profile,
+      ).slice(0, perGenre);
+      for (const entry of list) assigned.add(entry.mu_id);
       sections.set(genre, list);
     }
 
@@ -140,7 +158,12 @@ export class GenreSectionService {
     for (const [genre, list] of sections) {
       const deficit = perGenre - list.length;
       if (deficit <= 0) continue;
-      const found = await this.findCatalogFillers(genre, excluded, deficit);
+      const found = await this.findCatalogFillers(
+        genre,
+        excluded,
+        deficit,
+        profile,
+      );
       if (found.length === 0) continue;
       fillers.set(genre, found);
       for (const manga of found) {
@@ -216,7 +239,9 @@ export class GenreSectionService {
    * Titres du catalogue local portant `genre` pour compléter une section
    * (pattern `CatalogCandidateService.findCandidates`) : rating ≥ 7, aucun
    * genre NSFW, hors exclusions (biblio + déjà affichés), tri rating DESC.
-   * Une seule requête par section déficitaire — jamais de N+1.
+   * Une requête par bucket de type (une seule sans profil) par section
+   * déficitaire — jamais de N+1 sur les titres ; résultat rééquilibré au
+   * prorata du profil puis plafonné à `limit`.
    *
    * Résilient : une erreur (catalogue indisponible) est loggée et la section
    * reste servie avec ses titres du pool.
@@ -225,26 +250,37 @@ export class GenreSectionService {
     genre: string,
     excludeMuIds: Set<string>,
     limit: number,
+    profile: TypeProfile,
   ): Promise<Manga[]> {
     try {
-      const qb = this.mangaRepository
-        .createQueryBuilder('m')
-        .where('m.genres IS NOT NULL')
-        .andWhere('m.genres::jsonb ?| ARRAY[:...sectionGenres]', {
-          sectionGenres: [genre],
-        })
-        .andWhere('NOT (m.genres::jsonb ?| ARRAY[:...nsfwGenres])', {
-          nsfwGenres: NSFW_GENRES,
-        })
-        .andWhere('m.rating >= :ratingFloor', {
-          ratingFloor: GenreSectionService.CATALOG_RATING_FLOOR,
-        });
-      if (excludeMuIds.size > 0) {
-        qb.andWhere('m.mu_id NOT IN (:...excludeMuIds)', {
-          excludeMuIds: Array.from(excludeMuIds),
-        });
-      }
-      return await qb.orderBy('m.rating', 'DESC').limit(limit).getMany();
+      const merged = await fetchByTypeBuckets(
+        () => {
+          const qb = this.mangaRepository
+            .createQueryBuilder('m')
+            .where('m.genres IS NOT NULL')
+            .andWhere('m.genres::jsonb ?| ARRAY[:...sectionGenres]', {
+              sectionGenres: [genre],
+            })
+            .andWhere('NOT (m.genres::jsonb ?| ARRAY[:...nsfwGenres])', {
+              nsfwGenres: NSFW_GENRES,
+            })
+            .andWhere('m.rating >= :ratingFloor', {
+              ratingFloor: GenreSectionService.CATALOG_RATING_FLOOR,
+            });
+          if (excludeMuIds.size > 0) {
+            qb.andWhere('m.mu_id NOT IN (:...excludeMuIds)', {
+              excludeMuIds: Array.from(excludeMuIds),
+            });
+          }
+          return qb;
+        },
+        profile,
+        limit,
+      );
+      return interleaveByTypeMix(merged, (m) => m.type, profile).slice(
+        0,
+        limit,
+      );
     } catch (err) {
       this.logger.warn(
         `Complément catalogue indisponible pour "${genre}": ${err}`,
@@ -357,13 +393,7 @@ export class GenreSectionService {
     community: Map<string, CommunityRating>,
     recommendedBecauseOf: string[],
   ): MangaQuickViewDto {
-    const dto = new MangaQuickViewDto();
-    dto.muId = Number(manga.mu_id);
-    dto.title = manga.title;
-    dto.year = manga.year ?? 0;
-    dto.mediumCoverUrl = manga.medium_cover_url ?? '';
-    dto.largeCoverUrl = manga.medium_cover_url ?? '';
-    dto.rating = manga.rating !== null ? Number(manga.rating) : 0;
+    const dto = MangaQuickViewDto.fromCatalog(manga);
     if (recommendedBecauseOf.length > 0) {
       dto.recommendedBecauseOf = recommendedBecauseOf;
     }

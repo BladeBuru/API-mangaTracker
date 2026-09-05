@@ -8,6 +8,8 @@ import { RecommendationService } from './recommendation.service';
 import { RecommendationController } from './recommendation.controller';
 import { CatalogCandidateService } from './catalog-candidate.service';
 import { GenreSectionService } from './genre-section.service';
+import { SleeperHitsService } from './sleeper-hits.service';
+import { RecommendationDtoBuilderService } from './recommendation-dto-builder.service';
 import { RecoCacheModule } from './reco-cache.module';
 import { DismissalModule } from './dismissal.module';
 import { DismissalController } from './dismissal.controller';
@@ -30,6 +32,11 @@ import { DismissalThrottlerGuard } from './dismissal-throttler.guard';
     RecommendationService,
     CatalogCandidateService,
     GenreSectionService,
+    // Extraits de RecommendationService (2026-09-05, limite 600 lignes) :
+    // sleepers + cold start, et construction des cartes de la liste plate
+    // (prorata du profil de type).
+    SleeperHitsService,
+    RecommendationDtoBuilderService,
     // Garde de rate-limit par utilisateur des routes de rejet (provider
     // pour bénéficier de l'injection throttler + onModuleInit).
     DismissalThrottlerGuard,

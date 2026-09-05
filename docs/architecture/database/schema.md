@@ -20,7 +20,7 @@
 | `users` | user | `User` | `1700000000000-InitialSchema`, `1746230600000-AddGdprConsentColumns`, `1746230900000-AddCreatedAtToUser`, `1746231000000-AddProfileFieldsToUser`, `1746231500000-AddUsernameUniqueIndex`, `1746231600000-ChangeAvatarUrlToText` |
 | `user_sessions` | auth | `UserSession` | `1700000000000-InitialSchema` |
 | `auth_tokens` | auth/email | `AuthToken` | `1746230700000-CreateAuthTokenAndEmailVerified` |
-| `mangas` | mangas | `Manga` | `1700000000000-InitialSchema`, `1746230500000-AddGenresToManga`, `1746230800000-MakeMangaCoverColumnsNullable`, `1787875200000-AddHydrationAttemptedAtToManga` |
+| `mangas` | mangas | `Manga` | `1700000000000-InitialSchema`, `1746230500000-AddGenresToManga`, `1746230800000-MakeMangaCoverColumnsNullable`, `1787875200000-AddHydrationAttemptedAtToManga`, `1788220800000-AddTypeToManga` |
 | `user_mangas` | library | `UserManga` | `1700000000000-InitialSchema`, `1788048000000-AddReleasesCursorToCatalogSyncState` (index `manga_id`) |
 | `user_manga_chapter_logs` | library | `UserMangaChapterLog` | `1746231100000-CreateUserMangaChapterLog` |
 | `manga_chapter_reports` | library | `MangaChapterReport` | `1753100000000-CreateMangaChapterReport` |
@@ -37,6 +37,20 @@
 ---
 
 ## Détail des tables modifiées récemment
+
+### Table `manga` (MAJ 2026-09-05)
+
+| Colonne ajoutée | Type | Contrainte | Notes |
+|-----------------|------|-----------|-------|
+| `type` | varchar(32) | nullable | Type de publication MangaUpdates (`Manga`, `Manhwa`, `Manhua`, `Novel`, `OEL`, `Doujinshi`…). NULL = inconnu (jamais « pas de type »), **jamais rempli par défaut** — colonne protégée (`PROTECTED_NULLABLE_COLUMNS`) écrite quand MU la fournit, jamais remise à NULL. Alimentée par l'upsert catalogue (`record.type`), `getMangaDetails`, `CatalogTypeBackfillService` |
+
+| Index ajouté | Colonnes | Usage |
+|--------------|----------|-------|
+| `idx_manga_type` | `(type)` | Sections `type:*` de l'accueil, candidats de recommandation par type |
+| `idx_manga_year` | `(year)` | Sections par année, sleepers, rattrapage par année |
+| `idx_manga_rating` | `(rating DESC NULLS LAST)` | Tous les tris par note de l'accueil (parcours ordonné borné par `LIMIT`) |
+
+Migration `1788220800000-AddTypeToManga` — additive et idempotente. `catalog_sync_state` reçoit des lignes `type:<T>:year:<AAAA>` (curseurs du rattrapage), sans changement de schéma.
 
 ### Table `catalog_sync_state` (MAJ 2026-08-29)
 

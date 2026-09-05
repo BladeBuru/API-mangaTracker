@@ -28,9 +28,11 @@ export type CatalogSyncRunStatus = 'completed' | 'partial' | 'failed';
  *                        (`cursor_time_added`), pas une page.
  *
  * La table contient AUSSI des lignes à nom dynamique, une par shard de
- * catalogue, non énumérables ici : `catalog:year:<AAAA>` et
- * `catalog:year:<AAAA>:genre:<Genre>` (cf. `catalog-shard.ts`). C'est
- * pourquoi la colonne `job_name` reste un `string` libre.
+ * catalogue, non énumérables ici : `catalog:year:<AAAA>`,
+ * `catalog:year:<AAAA>:genre:<Genre>` et, pour le rattrapage de
+ * `manga.type` (`CatalogTypeBackfillService`), `type:<Type>:year:<AAAA>`
+ * (cf. `catalog-shard.ts`). C'est pourquoi la colonne `job_name` reste un
+ * `string` libre.
  */
 export type CatalogSyncJobName =
   | 'catalog:rating'

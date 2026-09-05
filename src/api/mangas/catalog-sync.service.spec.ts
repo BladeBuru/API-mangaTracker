@@ -4,9 +4,11 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { CatalogHydrationService } from './catalog-hydration.service';
 import { CatalogPageIngestService } from './catalog-page-ingest.service';
 import { CatalogShardPlannerService } from './catalog-shard-planner.service';
+import { CatalogShardRunnerService } from './catalog-shard-runner.service';
 import { CatalogSyncService } from './catalog-sync.service';
 import { CatalogSyncState } from './catalog-sync-state.entity';
 import { Manga } from './manga.entity';
+import { MuJobLockService } from './mu-job-lock.service';
 
 /** Mercredi 2026-08-26 : jour sans passe hebdo `week_pos`. */
 const WEDNESDAY = new Date('2026-08-26T03:30:00');
@@ -89,6 +91,8 @@ describe('CatalogSyncService', () => {
       providers: [
         CatalogSyncService,
         CatalogShardPlannerService, // vrai planificateur (pur)
+        CatalogShardRunnerService, // vraie passe de shard (curseur, pages)
+        MuJobLockService, // vrai verrou MU partagé (in-memory)
         { provide: ConfigService, useValue: config },
         { provide: getRepositoryToken(CatalogSyncState), useValue: stateRepo },
         { provide: getRepositoryToken(Manga), useValue: {} },
@@ -99,6 +103,9 @@ describe('CatalogSyncService', () => {
 
     const built = module.get<CatalogSyncService>(CatalogSyncService);
     built.sleep = sleepMock;
+    // La cadence 1 req / 2 s vit dans le runner depuis son extraction.
+    module.get<CatalogShardRunnerService>(CatalogShardRunnerService).sleep =
+      sleepMock;
     return built;
   }
 

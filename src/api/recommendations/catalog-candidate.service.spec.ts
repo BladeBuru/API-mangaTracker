@@ -201,4 +201,126 @@ describe('CatalogCandidateService', () => {
       expect(paramsOf('excludeMuIds')).toBeUndefined();
     });
   });
+
+  describe('type de publication (manga / manhwa / manhua)', () => {
+    /** Bibliothèque fidèle à la prod : 8 manhwa, 2 manga — préférence marquée. */
+    function manhwaLibrary() {
+      return [
+        ...Array.from({ length: 8 }, (_, i) =>
+          makeUserManga({
+            id: i + 1,
+            manga: makeManga({ mu_id: `${100 + i}`, type: 'Manhwa' }),
+          }),
+        ),
+        ...Array.from({ length: 2 }, (_, i) =>
+          makeUserManga({
+            id: 20 + i,
+            manga: makeManga({ mu_id: `${200 + i}`, type: 'Manga' }),
+          }),
+        ),
+      ];
+    }
+
+    /** Catalogue simulé : chaque bucket reçoit ses propres lignes. */
+    function mockTypedCatalog(rowsByType: Record<string, Manga[]>) {
+      const created: Array<{ type: string | null; limit: number }> = [];
+      mangaRepo.createQueryBuilder.mockImplementation(() => {
+        const state: { type: string | null; limit: number } = {
+          type: 'all',
+          limit: 0,
+        };
+        const q = {
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn((sql: string, params?: { bucketType?: string }) => {
+            if (sql === 'm.type = :bucketType') {
+              state.type = params?.bucketType ?? null;
+            } else if (sql === 'm.type IS NULL') {
+              state.type = null;
+            } else if (sql === 'm.type IS NOT NULL') {
+              state.type = 'other';
+            }
+            return q;
+          }),
+          orderBy: jest.fn().mockReturnThis(),
+          limit: jest.fn((n: number) => {
+            state.limit = n;
+            return q;
+          }),
+          getMany: jest.fn(async () => {
+            created.push({ ...state });
+            const key = state.type === null ? 'null' : state.type;
+            return rowsByType[key] ?? [];
+          }),
+        };
+        return q;
+      });
+      return created;
+    }
+
+    function catalogRows(prefix: number, type: string | null, n: number) {
+      return Array.from({ length: n }, (_, i) =>
+        makeManga({
+          id: prefix + i,
+          mu_id: `${prefix + i}`,
+          // Les mangas sont mieux notés que les manhwa : sans prorata, un
+          // tri global par note ne remonterait QUE des mangas.
+          rating: type === 'Manga' ? 9 - i * 0.01 : 8 - i * 0.01,
+          genres: ['Action'],
+          type,
+        }),
+      );
+    }
+
+    it('interroge le catalogue par bucket de type au prorata du profil (manhwa, manga, inconnus, découverte)', async () => {
+      const calls = mockTypedCatalog({
+        Manhwa: catalogRows(3000, 'Manhwa', 5),
+        Manga: catalogRows(2000, 'Manga', 5),
+        null: catalogRows(4000, null, 5),
+        other: [],
+      });
+
+      await service.findCandidates(manhwaLibrary(), new Set());
+
+      const byType = new Map(calls.map((c) => [String(c.type), c.limit]));
+      // 8/10 × 300 = 240 manhwa, 2/10 × 300 = 60 mangas, 35 % d'inconnus
+      // (préférence marquée), 10 % de découverte.
+      expect(byType.get('Manhwa')).toBe(240);
+      expect(byType.get('Manga')).toBe(60);
+      expect(byType.get('null')).toBe(105);
+      expect(byType.get('other')).toBe(30);
+      expect(byType.has('all')).toBe(false);
+    });
+
+    it('un lecteur à 80 % manhwa obtient des candidats manhwa en tête et ≈ 80 % de manhwa', async () => {
+      mockTypedCatalog({
+        Manhwa: catalogRows(3000, 'Manhwa', 40),
+        Manga: catalogRows(2000, 'Manga', 40),
+        null: [],
+        other: [],
+      });
+
+      const candidates = await service.findCandidates(
+        manhwaLibrary(),
+        new Set(),
+        20,
+      );
+
+      expect(candidates).toHaveLength(20);
+      expect(candidates[0].type).toBe('Manhwa');
+      expect(candidates.filter((c) => c.type === 'Manhwa')).toHaveLength(16);
+      expect(candidates.filter((c) => c.type === 'Manga')).toHaveLength(4);
+    });
+
+    it('sans type connu en bibliothèque : une seule requête sans filtre (comportement historique)', async () => {
+      const calls = mockTypedCatalog({ all: catalogRows(2000, null, 3) });
+
+      const candidates = await service.findCandidates(
+        [makeUserManga({ manga: makeManga({ mu_id: '1' }) })],
+        new Set(),
+      );
+
+      expect(calls).toEqual([{ type: 'all', limit: 300 }]);
+      expect(candidates.map((c) => c.type)).toEqual([null, null, null]);
+    });
+  });
 });

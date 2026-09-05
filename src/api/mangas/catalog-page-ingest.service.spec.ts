@@ -287,4 +287,53 @@ describe('CatalogPageIngestService', () => {
       expect(insertCalls[0].values[0].year).toBeNull();
     });
   });
+
+  describe('type de publication (manga / manhwa / manhua)', () => {
+    const TYPE_SHARD: CatalogShard = {
+      jobName: 'type:Manhwa:year:2015',
+      kind: 'type_year',
+      level: 1,
+      orderby: 'rating',
+      year: 2015,
+      type: 'Manhwa',
+    };
+
+    it('shard type × année : le payload MU porte `type: [<type>]` et `year`', async () => {
+      postMock.mockReturnValue(of(muPage(1000, 1, 1)));
+
+      await service.ingestPage(TYPE_SHARD, 2);
+
+      const payload = postMock.mock.calls[0][1];
+      expect(payload.type).toEqual(['Manhwa']);
+      expect(payload.year).toBe(2015);
+      expect(payload.page).toBe(2);
+      expect(payload.genre).toBeUndefined();
+    });
+
+    it('`record.type` est persisté (normalisé) et listé dans le ON CONFLICT UPDATE', async () => {
+      const page = muPage(1000, 2, 2);
+      page.data.results[0].record['type'] = 'manhwa';
+      page.data.results[1].record['type'] = 'Manhua';
+      postMock.mockReturnValue(of(page));
+
+      await service.ingestPage(TYPE_SHARD, 1);
+
+      const values = insertCalls.flatMap((c) => c.values);
+      expect(values.map((v) => v.type)).toEqual(['Manhwa', 'Manhua']);
+      for (const call of insertCalls) {
+        expect(call.orUpdateCols).toContain('type');
+      }
+    });
+
+    it("un record sans type n'écrase JAMAIS un type déjà connu en base", async () => {
+      // `muPage` ne renseigne pas `type` → colonne absente du payload MU.
+      postMock.mockReturnValue(of(muPage(1000, 1, 1)));
+
+      await service.ingestPage(RATING_SHARD, 1);
+
+      expect(insertCalls).toHaveLength(1);
+      expect(insertCalls[0].orUpdateCols).not.toContain('type');
+      expect(insertCalls[0].values[0].type).toBeNull();
+    });
+  });
 });
