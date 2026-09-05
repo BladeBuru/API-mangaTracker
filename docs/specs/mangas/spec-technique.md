@@ -86,17 +86,18 @@ La dépendance circulaire avec `LibraryModule` est gérée via `forwardRef()` da
 | `completed` | boolean | nullable | Statut de complétion selon MU |
 | `associated` | json | nullable | Titres alternatifs `[{title: string}]` |
 | `genres` | json | nullable | Genres normalisés `string[]` |
+| `type` | varchar(32) | nullable | Type de publication MU (`Manga`, `Manhwa`, `Manhua`, `Novel`, `OEL`…, cf. `manga-type.ts`). NULL = inconnu, **jamais rempli par défaut** (2026-09-05). Index `idx_manga_type` |
 | `hydration_attempted_at` | timestamptz | nullable | Dernière tentative du job `hydration` (succès OU échec). NULL = jamais tentée → priorité max. Garde anti-boucle : voir « Hydratation des lignes incomplètes » |
 | `created_at` | timestamp | auto | |
 | `updated_at` | timestamp | auto | Utilisé pour détecter les données périmées (> 1 jour) |
 
 **Relation** : `manga` → `user_manga` (OneToMany via `UserManga.manga`)
 
-**Migration** : `1787875200000-AddHydrationAttemptedAtToManga` (ajoute `hydration_attempted_at` + index `idx_manga_recommendation_recommended_mu_id`).
+**Migrations** : `1787875200000-AddHydrationAttemptedAtToManga` (ajoute `hydration_attempted_at` + index `idx_manga_recommendation_recommended_mu_id`) ; `1788220800000-AddTypeToManga` (ajoute `type` + index `idx_manga_type`, `idx_manga_year`, `idx_manga_rating (rating DESC NULLS LAST)`).
 
 #### Doctrine null-safe sur les colonnes nullable
 
-`year`, `rating`, `small_cover_url`, `medium_cover_url` et `genres` sont **protégées sur TOUS les chemins d'écriture** : elles ne sont incluses dans un `SET` que si la source MU fournit une valeur exploitable (ni `null`, ni `undefined`, ni chaîne vide). Une valeur réelle écrase toujours normalement l'ancienne — on refuse le null, on ne fige pas la donnée.
+`year`, `rating`, `small_cover_url`, `medium_cover_url`, `genres` et `type` (2026-09-05) sont **protégées sur TOUS les chemins d'écriture** : elles ne sont incluses dans un `SET` que si la source MU fournit une valeur exploitable (ni `null`, ni `undefined`, ni chaîne vide). Une valeur réelle écrase toujours normalement l'ancienne — on refuse le null, on ne fige pas la donnée.
 
 Liste unique : `PROTECTED_NULLABLE_COLUMNS` dans `manga-completeness.util.ts`, appliquée par :
 
@@ -176,6 +177,15 @@ Liste unique : `PROTECTED_NULLABLE_COLUMNS` dans `manga-completeness.util.ts`, a
 | POST | `/mangas/search` | Recherche textuelle (body SearchMangaDto) | JWT |
 
 **`GET /mangas/:id` — comportement traduction** : lit le header `Accept-Language`. Si la langue primaire est supportée (`fr`, `de`, `es`, `pt`, `ja`, `ko`), la réponse inclut `translated_description` (string). Si la langue est `en` ou absente, le champ est omis. La traduction ne bloque jamais : timeout dépassé ou échec → champ absent, réponse 200 renvoyée normalement. Hash mismatch → stale renvoyé, retraduction en background (SWR).
+
+### HomeSectionsController (`/mangas/home`) — accueil façon Netflix (2026-09-05)
+
+| Méthode | Route | Description | Auth |
+|---------|-------|-------------|------|
+| GET | `/mangas/home/sections?limit=` | Toutes les sections (`limit` 5..40, défaut 20) : `{ generatedAt, sections[{ id, kind, params, items }] }` | JWT |
+| GET | `/mangas/home/sections/:id?page=&limit=` | Une section paginée : `{ id, kind, params, page, limit, total, items }` — 404 si id inconnu | JWT |
+
+Lecture BDD uniquement (aucun appel MU), cache mémoire ~10 min stale-while-revalidate, sections chargées en parallèle, préchauffage 15 s après le boot. Règles par section dans `home/home-sections.query.ts` ; ordre, ids et validation dans `home/home-section.catalog.ts` (pur). Contrat détaillé : `.claude/docs/api-contracts.md`. Script de vérification : `npm run verify:home-contract`.
 
 ### MangaCoversController (`/mangas`)
 
@@ -368,6 +378,17 @@ Vérifié le 2026-08-28 sur la forme de requête **exacte** d'un shard (`orderby
 Conséquence : les titres alternatifs ne sont alimentables **que** par `getMangaDetails` (endpoint `/series/{id}`) — ce qui explique que seuls 117 mangas sur 5 055 en aient en base. La colonne `associated` reste donc volontairement hors du `orUpdate` de l'upsert catalogue : la synchro nocturne ne peut ni la remplir ni l'écraser.
 
 Documenté ici pour éviter de ré-investiguer : ce n'est pas un oubli de mapping, c'est une limite de l'endpoint.
+
+### Rattrapage de `manga.type` (CatalogTypeBackfillService, 2026-09-05)
+
+Deux volets sous le verrou MU partagé (`MuJobLockService`, un seul job MU à la fois) :
+
+- **Volet A — bibliothèques, au démarrage (+60 s) puis en tête de chaque run** : `GET /series/{id}` (`getMangaDetails`) des titres présents dans `user_manga` avec `type IS NULL`, 1 req / `CATALOG_SYNC_DELAY_MS`, plafond `CATALOG_TYPE_BACKFILL_LIBRARY_CAP` (500). Rend le profil de type des recommandations exact dès le premier déploiement (~80 fiches, ~3 min en prod).
+- **Volet B — catalogue, cron 01:00 + jitter 0-10 min** : file `planTypeBackfillQueue` (pure) = pour chaque année de la courante à `CATALOG_TYPE_BACKFILL_YEAR_FLOOR` (1950), un shard par type de `CATALOG_TYPE_BACKFILL_TYPES` (`Manhwa,Manhua`) → `/series/search` avec `type: [<T>]` + `year`, pages de 100 via `CatalogShardRunnerService` (même mécanique que le catalogue : curseur page par page dans `catalog_sync_state` sous `type:<T>:year:<AAAA>`, statut partiel sur échec, backoff 5/10/20/40 s). Budget `CATALOG_TYPE_BACKFILL_PAGES_PER_RUN` (200 pages ≈ 7 min), disjoncteur après 3 shards consécutifs en échec. L'upsert est celui du catalogue : titre présent → `type` écrit, titre absent → ingéré normalement. **Un shard terminé ne repasse jamais** (rattrapage ponctuel) : le catalogue nightly persiste désormais `record.type` sur chaque ligne revisitée et maintient la colonne.
+
+**Pourquoi pas de défaut « Manga » pour les NULL** : le payload `/series/search` contient `record.type` pour toutes les séries (vérifié le 2026-09-05) ; la vraie valeur (y compris `Novel`, `OEL`) arrive au plus tard à la prochaine fenêtre de rafraîchissement du shard annuel (7 j / 30 j). Un défaut fabriquerait une donnée fausse et masquerait l'information « inconnu » que les recommandations savent traiter.
+
+**Créneau** : 01:00 (≈ 10 min) — sorties 02:00, catalogue 03:30 : aucun chevauchement, et le verrou garantit l'exclusion si un run déborde ou si un déploiement tombe pendant un job. Rythme global inchangé (1 req / 2 s).
 
 ### Pattern job nocturne des dernières sorties (CatalogReleasesService)
 

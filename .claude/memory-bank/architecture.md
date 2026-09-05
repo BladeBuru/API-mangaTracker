@@ -43,10 +43,17 @@ src/
 ## Modules métier
 
 ### `mangas`
-- **Entités** : `MangaEntity`, `UserMangaEntity`
+- **Entités** : `MangaEntity` (dont `type` : Manga / Manhwa / Manhua…), `UserMangaEntity`, `CatalogSyncState`
 - **Services** : `MangasService`, `SyncMangaService`, `UpdateMangaService`, `HelperService`
-- **DTOs** : `MangaDetailsDto`, `MangaQuickViewDto`, `SearchMangaDto`, `RetrieveMangaTrendsInternalDto`
-- **Rôle** : Récupération depuis MangaUpdates API, sync, détails
+- **Jobs MU** (un seul à la fois via `MuJobLockService`) : `CatalogTypeBackfillService` (01:00 + boot), `CatalogReleasesService` (02:00), `CatalogSyncService` (03:30) → `CatalogShardRunnerService` (passe de shard partagée), `CatalogPageIngestService`, `CatalogShardPlannerService`, `CatalogHydrationService`
+- **Accueil** (`home/`) : `HomeSectionsController` (`/mangas/home/sections`), `HomeSectionsService` (cache SWR 10 min, dédup), `HomeSectionQueryBuilder` (règles SQL), `home-section.catalog.ts` (définitions pures)
+- **DTOs** : `MangaDetailsDto`, `MangaQuickViewDto` (+ `type`, `genres`), `SearchMangaDto`, `RetrieveMangaTrendsInternalDto`, `home/dto/home-sections.dto.ts`
+- **Rôle** : Récupération depuis MangaUpdates API, sync, détails, catalogue local, accueil
+
+### `recommendations`
+- **Services** : `RecommendationService` (scoring par affinité), `SleeperHitsService` (sleepers + cold start), `RecommendationDtoBuilderService` (pool → cartes, prorata de type), `GenreSectionService`, `CatalogCandidateService`, `DismissalService`, `RecoCacheService`
+- **Pur** : `type-profile.ts` (profil de type, `interleaveByTypeMix`, buckets de requête par type)
+- **Rôle** : `/recommendations`, `/recommendations/by-genre`, `/recommendations/sleepers`, rejets — toutes sensibles au type de publication
 
 ### `library`
 - **Services** : `LibraryService`

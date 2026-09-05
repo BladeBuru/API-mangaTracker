@@ -42,7 +42,43 @@ throw new ConflictException(`Manga '${muId}' is already in the library`);
 | `GET` | `/mangas/trending` | JWT | `page`, `limit` | `MangaQuickViewDto[]` |
 | `GET` | `/mangas/new` | JWT | `page`, `limit` | `MangaQuickViewDto[]` |
 | `GET` | `/mangas/search` | JWT | `q`, `page`, `limit` | `MangaQuickViewDto[]` |
-| `GET` | `/mangas/:muId` | JWT | — | `MangaDetailsDto` |
+| `GET` | `/mangas/:muId` | JWT | — | `MangaDetailsDto` (+ `type` optionnel) |
+
+### Accueil façon Netflix (`/mangas/home`) — contrat figé avec le client (2026-09-05)
+
+| Méthode | Route | Auth | Query | Réponse |
+|---------|-------|------|-------|---------|
+| `GET` | `/mangas/home/sections` | JWT | `limit` (5..40, défaut 20) | `{ generatedAt, sections: HomeSectionDto[] }` |
+| `GET` | `/mangas/home/sections/:id` | JWT | `page` (≥ 1, défaut 1), `limit` (5..40, défaut 40) | `{ id, kind, params, page, limit, total, items }` — 404 si id inconnu |
+
+```typescript
+// GET /mangas/home/sections?limit=20
+{
+  generatedAt: string;                       // ISO, date de génération (cache serveur ~10 min)
+  sections: Array<{
+    id: string;                              // 'latest' | 'popular' | 'community' | 'top_rated' | 'type:Manhwa' | 'genre:Action' | 'year:2014' | 'hidden_gems'
+    kind: 'latest' | 'popular' | 'top_rated' | 'type' | 'genre' | 'year' | 'community' | 'hidden_gems';
+    params: {} | { type: string } | { genre: string } | { year: number };
+    items: MangaQuickViewDto[];              // muId, title, year, mediumCoverUrl, largeCoverUrl, rating (+ type?, genres?)
+  }>;
+}
+```
+
+- Aucun titre de section : le client traduit `kind` + `params`.
+- Ordre décidé côté serveur : `latest`, `popular`, `community`, `top_rated`, `type:Manhwa`, `type:Manhua`, `type:Manga`, `genre:Action|Fantasy|Romance|Comedy|Drama|Adventure`, `year:<courante>`, `year:<précédente>`, `year:<rétro tournante>`, `hidden_gems`.
+- Un titre n'apparaît que dans la première section qui le sélectionne (accueil uniquement) ; les sections de moins de 5 titres sont omises (les `type:*` peuvent manquer tant que `manga.type` n'est pas rattrapé).
+- Ids acceptés en détail : sections fixes, `type:<type MU connu>`, `genre:<genre non NSFW/exclu>`, `year:<1930..courante>`. La page de détail n'est pas dédupliquée : sa première page peut différer de l'extrait de l'accueil.
+- Aucun appel MangaUpdates au moment de la requête ; réponse < 300 ms après le premier appel (préchauffé au démarrage).
+
+### Recommendations (`/recommendations`) — sensibles au type de publication
+
+| Méthode | Route | Auth | Query | Réponse |
+|---------|-------|------|-------|---------|
+| `GET` | `/recommendations` | JWT | `limit`, `offset`, `genre?` | `MangaQuickViewDto[]` |
+| `GET` | `/recommendations/by-genre` | JWT | `topGenres`, `perGenre` | `Record<genre, MangaQuickViewDto[]>` |
+| `GET` | `/recommendations/sleepers` | JWT | `limit` | `MangaQuickViewDto[]` |
+
+Les trois listes respectent le **profil de type** de la bibliothèque (part pondérée de Manga / Manhwa / Manhua…) : un lecteur à 80 % manhwa reçoit ≈ 80 % de manhwa sur chaque page, jamais zéro. Type inconnu (NULL) autorisé mais pénalisé quand la préférence est marquée.
 
 ### Library (`/library`)
 
@@ -72,12 +108,25 @@ throw new ConflictException(`Manga '${muId}' is already in the library`);
 ### `MangaQuickViewDto`
 ```typescript
 {
-  muId: string;
+  muId: number;
   title: string;
-  coverUrl?: string;
-  score?: number;
+  year: number;               // 0 = inconnu
+  mediumCoverUrl: string;     // '' = inconnu
+  largeCoverUrl: string;
+  rating: number;             // 0 = inconnu
+  type?: string;              // 'Manga' | 'Manhwa' | 'Manhua' | 'Novel' | 'OEL' … (absent si inconnu) — 2026-09-05
+  genres?: string[];          // présent sur l'accueil et la bibliothèque — 2026-09-05
+  readChapters?: number;
+  totalChapters?: number;
   readingStatus?: ReadingStatus;
-  readChaptersCount?: number;
+  associated?: { title: string }[];
+  customLink?: string;
+  userRating?: number;
+  recommendedBecauseOf?: string[];
+  communityRating?: number;
+  communityRatingCount?: number;
+  aggregatedRating?: number;
+  userReportedTotalChapters?: number;
 }
 ```
 

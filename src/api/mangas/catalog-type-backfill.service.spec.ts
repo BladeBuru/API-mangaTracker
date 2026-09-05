@@ -61,10 +61,6 @@ describe('CatalogTypeBackfillService', () => {
     return Object.assign(state, overrides);
   }
 
-  function seed(state: CatalogSyncState): void {
-    store.set(state.job_name, state);
-  }
-
   /** `totalHits` constant → chaque shard fait `ceil(totalHits / 100)` pages. */
   function ingestReturns(totalHits: number): void {
     ingestService.ingestPage.mockImplementation(

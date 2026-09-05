@@ -137,10 +137,42 @@ Rejets « pas intéressé / déjà vu ». Détail complet des colonnes et index 
 | `FETCH_TIMEOUT_MS` | 15 000 | Timeout par fetch MU (ms) |
 | `BATCH_DELAY_MS` | 1 000 | Pause inter-batch fetch bloquant (ms) |
 | `RATE_LIMIT_DELAY_MS` | 5 000 | Pause si MU répond 429 avant le batch suivant (ms) |
+| `MARKED_PREFERENCE_SHARE` (type-profile) | 0.6 | Part dominante à partir de laquelle la préférence de type est « marquée » |
+| `MIN_KNOWN_COVERAGE` (type-profile) | 0.5 | Sous ce taux de bibliothèque typée, le profil est ignoré |
+| `UNKNOWN_PENALTY` (type-profile) | 0.5 | Facteur sur la part des types inconnus si préférence marquée |
+| `DISCOVERY_SHARE` (type-profile) | 0.05 | Part réservée aux types hors profil présents dans le pool |
+| `MIN_BUCKET_LIMIT` (type-profile) | 10 | Plancher de lignes par bucket de requête typé |
 
 **Constantes supprimées** (hotfix → feat/recos-chapitres-traductions) :
 - `ADAPTIVE_FALLBACK_CAP` (80) — ancien cap de relax adaptatif, no-op prouvé
 - `MIN_POOL_BEFORE_RELAX` (50) — seuil de déclenchement du relax adaptatif
+
+---
+
+## Type de publication : profil et sélection au prorata (2026-09-05)
+
+**Bug corrigé** : un lecteur dont la bibliothèque est à 73 % manhwa (mesuré en prod, ids masqués) ne recevait QUE des mangas — le scoring et les requêtes catalogue ne connaissaient pas le format (aucune colonne `type` avant la migration `1788220800000`).
+
+`type-profile.ts` (pur, testé seul) :
+
+| Fonction | Rôle |
+|----------|------|
+| `computeTypeProfile(userMangas)` | Part pondérée de chaque type connu (poids = `STATUS_WEIGHT` × note perso / 5, **sans** décroissance temporelle : le goût pour un format est stable). Profil vide (comportement historique) si aucun type connu ou si moins de 50 % (pondéré) de la bibliothèque est typée. `marked` = part dominante ≥ 60 % |
+| `interleaveByTypeMix(items, typeOf, profile)` | Réordonne une liste triée par score : round-robin à déficit — à chaque position, le bucket le plus en retard sur sa part cible est émis ; à égalité le meilleur score. Tout préfixe respecte ≈ les parts, **jamais zéro** tant qu'il reste un candidat, ordre par score conservé dans un type, bucket épuisé → slots aux autres. Inconnus (type NULL) : part réelle dans la liste × 0,5 si préférence marquée. Découverte : 5 % pour les types hors profil présents |
+| `planTypeQueryBuckets` / `fetchByTypeBuckets` | Un budget de requête catalogue par bucket (`type = T` au prorata, plancher 10 ; `type IS NULL` 35 % si marquée sinon 50 % ; autres types 10 %) — sans profil, une seule requête sans filtre |
+
+Application (le profil est calculé une fois par requête depuis `userMangas`) :
+
+| Chemin | Où |
+|--------|----|
+| `GET /recommendations` | `RecommendationDtoBuilderService.build` : interleave sur le pool scoré **avant** la pagination → ordre global déterministe, pages sans trou ni doublon (mis en cache par `RecoCacheService`) |
+| `GET /recommendations/by-genre` | `GenreSectionService.buildSections` : éligibles d'une section interleavés puis plafonnés à `perGenre` ; compléments catalogue par bucket de type puis interleavés |
+| `GET /recommendations/sleepers` | `SleeperHitsService.findSleeperHits` : interleave sur les candidats scorés avant `limit` |
+| Candidats catalogue | `CatalogCandidateService.findCandidates` : requêtes par bucket, interleave avant le plafond `maxCandidates` |
+
+Cold start : neutre (aucun signal personnel).
+
+**Découpage (limite 600 lignes)** : `recommendation.service.ts` 889 → 526 lignes — `SleeperHitsService` (sleepers + cold start + top communauté, délégué par `RecommendationService.findSleeperHits`) et `RecommendationDtoBuilderService` (pool scoré → cartes). Contrat du controller inchangé.
 
 ---
 

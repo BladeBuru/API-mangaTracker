@@ -1,6 +1,6 @@
 # Progrès — Manga Tracker API
 
-> Dernière mise à jour : Mai 2026
+> Dernière mise à jour : Septembre 2026
 
 ---
 
@@ -172,6 +172,26 @@ Branche `feat/releases-et-titres-alt` (part de `feat/catalogue-et-recos`).
 **Bug corrigé au passage** : `getMangaDetails` écrivait `associated` sans condition alors que le DTO le remplit avec `[]` quand MU ne renvoie rien — une fiche pouvait **perdre** ses titres alternatifs. Désormais null-safe (`buildAssociatedUpdate`).
 
 **Politique réseau** : backoff extrait dans `mu-backoff.ts` et partagé par les deux jobs. Sorties 02:00, catalogue 03:30 → jamais simultanés (90 min de marge pour un pire cas de 26 min).
+
+---
+
+## 🧭 Type de publication, recos au prorata, accueil façon Netflix (2026-09-05)
+
+Branche `feat/manga-type-recos-home` (base `master` d7fd6fd).
+
+**Bug corrigé** : les recommandations servaient exclusivement des mangas à des lecteurs de manhwa — la table `manga` n'avait aucune colonne de type. Mesuré en prod (77 titres en bibliothèque, ids masqués) : 73 % Manhwa, 13 % Manhua, 10 % Manga.
+
+**Colonne `manga.type`** (migration `1788220800000`, `varchar(32)` NULL + index type/year/rating) — colonne protégée (`PROTECTED_NULLABLE_COLUMNS`) écrite sur tous les chemins : upsert catalogue (`record.type` est dans le payload `/series/search`), `getMangaDetails`, `MangaSyncService`, `Manga.fromMU`.
+
+**Rattrapage** (`CatalogTypeBackfillService`) : volet A au démarrage (+60 s) — fiches des titres en bibliothèque sans type ; volet B cron 01:00 — `/series/search` filtré Manhwa puis Manhua par année décroissante, curseur `type:<T>:year:<AAAA>`, budget 200 pages/nuit, disjoncteur. **Pas de défaut « Manga »** : le catalogue nightly persiste la vraie valeur sur chaque ligne revisitée (≤ 30 j) ; NULL = inconnu, pénalisé par les recos. `MuJobLockService` = un seul job MU à la fois ; `CatalogShardRunnerService` = passe de shard partagée catalogue/rattrapage.
+
+**Recos** (`type-profile.ts`) : profil pondéré (statut × note) → `interleaveByTypeMix` (round-robin à déficit : tout préfixe ≈ parts du profil, jamais zéro) sur `/recommendations`, `/by-genre`, `/sleepers` + candidats catalogue par bucket de type. `recommendation.service.ts` 889 → 526 lignes (`SleeperHitsService`, `RecommendationDtoBuilderService`).
+
+**Accueil** : `GET /mangas/home/sections?limit=` et `/mangas/home/sections/:id?page=&limit=` — BDD seule, cache 10 min SWR, dédup inter-sections avec lecture progressive, sections < 5 omises. Règles dans `home-sections.query.ts`. Contrat vérifié par `npm run verify:home-contract`.
+
+**À surveiller après déploiement** : (1) logs `[type-backfill]` au boot (≈ 80 fiches, ~3 min) ; (2) les sections `type:*` de l'accueil apparaissent dès que ≥ 5 titres typés ; (3) `hidden_gems` chevauche `popular` sur les pages de détail tant que le graphe `manga_recommendation` est maigre (12 k liens) — la dédup de l'accueil règle le cas sur la home.
+
+**Non fait** : smoke test HTTP local (pas de PostgreSQL local ni Docker) — SQL des sections validé en lecture seule sur la prod (3-216 ms par section sans les nouveaux index).
 
 ---
 
