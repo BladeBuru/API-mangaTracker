@@ -26,6 +26,8 @@ import User from '../user.entity';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RefreshTokenGuard } from '@/api/user/auth/guard/refreshToken.guard';
 import { AuthGuard } from '@nestjs/passport';
+import { GoogleOAuthGuard } from './google-oauth.guard';
+import { GoogleOAuthPopupMiddleware } from './google-oauth-popup.middleware';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { UserInformationDto } from '@/api/user/dto/user-information.dto';
 import { EmailService } from './email/email.service';
@@ -125,7 +127,7 @@ export class AuthController {
 
   @ApiOperation({ summary: 'Connexion via Google — redirige vers Google' })
   @Get('google')
-  @UseGuards(AuthGuard('google'))
+  @UseGuards(GoogleOAuthGuard)
   googleLogin(): void {
     this.logger.log('🔵 GET /auth/google — redirection vers Google initiée');
   }
@@ -133,12 +135,19 @@ export class AuthController {
   @ApiOperation({ summary: 'Callback Google OAuth — retourne les tokens JWT' })
   @ApiResponse({ status: 200, description: 'Tokens JWT', type: TokenDto })
   @Get('google/callback')
-  @UseGuards(AuthGuard('google'))
+  @UseGuards(GoogleOAuthGuard)
   googleCallback(
     @UserDecorator() tokens: TokenDto,
     @Res() res: Response,
   ): void {
     this.logger.log('🟢 GET /auth/google/callback — callback Google reçu');
+    // Ceinture et bretelles : la page de callback DOIT garder son ouvreur
+    // (voir GoogleOAuthPopupMiddleware / GoogleOAuthGuard). Posé ici aussi,
+    // au plus près de l'envoi, pour ne dépendre d'aucun ordre de middleware.
+    res.setHeader(
+      GoogleOAuthPopupMiddleware.HEADER,
+      GoogleOAuthPopupMiddleware.POLICY,
+    );
     if (!tokens?.accessToken) {
       this.logger.error('❌ Aucun token reçu dans le callback Google');
       res.status(500).send('Erreur lors de la récupération des tokens');

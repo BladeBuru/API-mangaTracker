@@ -29,6 +29,9 @@ export class GoogleOAuthPopupMiddleware implements NestMiddleware {
       GoogleOAuthPopupMiddleware.HEADER,
       GoogleOAuthPopupMiddleware.POLICY,
     );
+    // Témoin de diagnostic : permet de vérifier depuis l'extérieur
+    // (`curl -I`) que cette couche s'est bien exécutée en production.
+    res.setHeader('X-MT-Popup-Middleware', '1');
     next();
   }
 }
