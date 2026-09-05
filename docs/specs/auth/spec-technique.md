@@ -21,7 +21,6 @@ auth/
 ├── auth.helper.ts                       — Utilitaires : bcrypt, JWT, CRUD sessions
 ├── auth.dto.ts                          — RegisterDto, LoginDto, TokenDto, GoogleMobileLoginDto
 ├── user-session.entity.ts               — Entité session persistée en base
-├── google-oauth-popup.middleware.ts     — Pose COOP unsafe-none sur GET /auth/google et /callback
 ├── google-oauth.guard.ts                — GoogleOAuthGuard (étend AuthGuard('google')), pose COOP juste avant Passport
 ├── guard/
 │   ├── auth.guard.ts           — JwtAuthGuard (alias @nestjs/passport AuthGuard('jwt'))
@@ -76,12 +75,11 @@ POST /auth/refresh
 |---------|------|--------|
 | `src/api/user/auth/auth.service.ts` | Logique métier : register, login, logout, refresh, Google, issueTokens, revokeSessions | ~257 |
 | `src/api/user/auth/auth.controller.ts` | Routes HTTP : register, login, logout, logout-all, google, google/callback, google/mobile | ~185 |
-| `src/api/user/auth/auth.module.ts` | Module NestModule — configure() câble GoogleOAuthPopupMiddleware sur les routes OAuth | — |
+| `src/api/user/auth/auth.module.ts` | Module (JwtModule, TypeORM User/UserSession, EmailModule en forwardRef) | — |
 | `src/api/user/auth/auth.helper.ts` | Utilitaires bcrypt + JWT + CRUD sessions | ~90 |
 | `src/api/user/auth/user-session.entity.ts` | Entité TypeORM `user_session` | ~29 |
 | `src/api/user/auth/auth.dto.ts` | DTOs d'entrée/sortie | ~57 |
-| `src/api/user/auth/google-oauth-popup.middleware.ts` | Middleware NestJS — pose COOP `unsafe-none` + témoin `X-MT-Popup-Middleware: 1` | ~37 |
-| `src/api/user/auth/google-oauth.guard.ts` | GoogleOAuthGuard — pose COOP juste avant Passport + témoin `X-MT-Popup-Guard: 1` | ~33 |
+| `src/api/user/auth/google-oauth.guard.ts` | GoogleOAuthGuard — étend `AuthGuard('google')`, pose COOP `unsafe-none` juste avant la redirection Passport ; porte les constantes `HEADER`/`POLICY` réutilisées par le handler de callback | ~45 |
 | `src/api/user/auth/strategy/accessTokenStrategy.ts` | Passport strategy 'jwt' | ~24 |
 | `src/api/user/auth/strategy/refreshTokenStrategy.ts` | Passport strategy 'jwt-refresh' | ~29 |
 | `src/api/user/auth/strategy/googleStrategy.ts` | Passport strategy 'google' | ~46 |
@@ -187,7 +185,7 @@ Le `sessionId` sert de référence à la session en base pour la rotation et la 
 - **Helper pattern** : `AuthHelper` regroupe les utilitaires bas niveau (bcrypt, JWT, CRUD sessions) injectés à la fois dans `AuthService` et via les stratégies Passport.
 - **Passport Strategy pattern** : trois stratégies distinctes (`JwtStrategy`, `RefreshTokenStrategy`, `GoogleStrategy`) configurées à l'initialisation du module via `super(config)`.
 - **Guard spécialisé** : `RefreshTokenGuard` étend `AuthGuard('jwt-refresh')` pour surcharger `handleRequest` et transmettre le payload `{user, sessionId}` sans lever d'exception par défaut.
-- **Défense en profondeur COOP** : le COOP `unsafe-none` sur le flux OAuth Google est posé à trois niveaux indépendants — middleware de module (`configure()`), guard (`canActivate`), handler de callback (`res.setHeader`) — pour garantir que la valeur correcte est envoyée quelle que soit l'ordre d'exécution Express/Passport. Les témoins `X-MT-Popup-Middleware: 1` et `X-MT-Popup-Guard: 1` permettent de vérifier via `curl -I` quelle couche s'est exécutée en production.
+- **COOP posé au plus près de l'envoi** : le COOP `unsafe-none` du flux OAuth Google est posé par `GoogleOAuthGuard.canActivate` (juste avant que Passport n'écrive la redirection 302) et par le handler de callback (`res.setHeader`). Un middleware de module (`AuthModule.configure` → `forRoutes(GET auth/google, GET auth/google/callback)`) avait été essayé en premier (PR #78) : il passait un test d'intégration reproduisant le câblage (Helmet global + module), mais **ne s'exécutait jamais en production** — vérifié avec un en-tête témoin après le déploiement de PR #80 (seul le témoin du garde apparaissait). Cause non identifiée ; le middleware, ses tests et les témoins ont été retirés (PR de nettoyage du 2026-09-05).
 - **Create-before-delete pour la rotation** : invariant de robustesse documenté en commentaire dans `auth.service.ts` (lignes 97–108 et 118–136).
 - **Fire-and-forget sur l'email** : `.catch(warn)` pour ne pas bloquer la réponse HTTP sur un échec SMTP.
 - **Anti-énumération** : réponse 200 systématique + `simulateDelay` (100–400ms random) sur `/password/reset/request`.
@@ -232,6 +230,4 @@ Le `sessionId` sert de référence à la session en base pour la rotation et la 
 
 | Fichier | Ce qu'il teste | Statut |
 |---------|---------------|--------|
-| `src/api/user/auth/google-oauth-popup.middleware.spec.ts` | Middleware COOP : en-tête posé, délégation `next()`, écrasement de Helmet | Ajouté (PR #78) |
-| `src/api/user/auth/google-oauth-popup.middleware.e2e.spec.ts` | Câblage réel avec Helmet — 302 `/auth/google`, 200 `/auth/google/callback`, COOP strict sur `/auth/login` | Ajouté (PR #78) |
-| `src/api/user/auth/google-oauth.guard.spec.ts` | Guard COOP : `unsafe-none` posé avant Passport, témoin `X-MT-Popup-Guard`, délégation au parent | Ajouté (PR #80) |
+| `src/api/user/auth/google-oauth.guard.spec.ts` | Guard COOP : `unsafe-none` remplace la valeur Helmet avant délégation à Passport ; constantes exposées | Ajouté (PR #80), ajusté (nettoyage) |

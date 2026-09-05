@@ -78,12 +78,13 @@
 ## ✅ Problèmes Résolus
 
 ### Connexion Google web : la popup perdait `window.opener` (COOP de Helmet)
-- **Module** : `api/user/auth` (`auth.controller.ts` callback Google, `auth.module.ts`)
+- **Module** : `api/user/auth` (`google-oauth.guard.ts`, `auth.controller.ts` callback Google)
 - **Résolu le** : 2026-09-05
 - **Symptôme** : depuis le client web, la connexion Google « ne marche pas hyper bien » : la popup Google se ferme (ou reste ouverte sur « Connexion réussie ») mais l'application n'est jamais connectée.
 - **Cause racine** : `app.use(helmet())` pose `Cross-Origin-Opener-Policy: same-origin` sur toutes les réponses (vérifié en prod : `curl -I https://api.bladeburu.com/auth/google` → `Cross-Origin-Opener-Policy: same-origin`). La popup est ouverte depuis `app.bladeburu.com` (autre origine) ; dès qu'elle reçoit une réponse de l'API portant ce COOP, le navigateur la place dans un nouveau groupe de contextes de navigation et `window.opener` devient `null`. Le script de la page de callback teste `window.opener && !window.opener.closed` → faux → aucun `postMessage` → le client web attend des jetons qui n'arrivent jamais. Ni la CSP (déjà surchargée par un nonce sur cette page) ni la popup elle-même (ouverte sans `noopener`) n'étaient en cause.
-- **Solution** : `GoogleOAuthPopupMiddleware` (COOP `unsafe-none`) appliqué via `AuthModule.configure` à `GET /auth/google` et `GET /auth/google/callback` uniquement. Helmet reste strict partout ailleurs. Test unitaire `google-oauth-popup.middleware.spec.ts`.
-- **À vérifier après déploiement** : `curl -I https://api.bladeburu.com/auth/google` doit renvoyer `Cross-Origin-Opener-Policy: unsafe-none`, puis connexion Google depuis `app.bladeburu.com` (Chrome, Brave, Safari).
+- **Solution** : `GoogleOAuthGuard` (étend `AuthGuard('google')`) pose `Cross-Origin-Opener-Policy: unsafe-none` juste avant que Passport n'écrive la redirection 302 de `GET /auth/google` ; le handler de `GET /auth/google/callback` pose le même en-tête. Helmet reste strict partout ailleurs. Test unitaire `google-oauth.guard.spec.ts`.
+- **Leçon (2026-09-05)** : la première tentative (PR #78) passait par un middleware de module (`AuthModule.configure` + `forRoutes`). Il passait un test d'intégration reproduisant le câblage réel (Helmet global + module + routes), mais **ne s'exécutait jamais en production** : après déploiement de PR #80, l'en-tête témoin du garde apparaissait, celui du middleware jamais (conteneur interrogé en direct via tunnel SSH, hors Cloudflare/NPMplus ; couche `dist` de l'image vérifiée). Cause non identifiée (même Nest 9.4 / Express 4.18 en local et en prod). Règle pratique : pour un en-tête qui doit partir sur une réponse écrite par Passport, le poser dans le garde, pas dans un middleware de module.
+- **Vérifié en prod le 2026-09-05** : `curl -I https://api.bladeburu.com/auth/google` → `Cross-Origin-Opener-Policy: unsafe-none` (et `same-origin` conservé sur `/health`). Reste à confirmer la connexion Google depuis `app.bladeburu.com` (Chrome, Brave, Safari) par un humain.
 
 ### Cartes de recommandations sans année ni note en étoiles
 - **Module** : mangas + recommendations
