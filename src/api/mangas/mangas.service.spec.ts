@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DismissalService } from '@/api/recommendations/dismissal.service';
+import { ReadingStatusAutoUpdateService } from '@/api/library/reading-status-auto-update.service';
 import { MangasService } from './mangas.service';
 import { HttpModule, HttpService } from '@nestjs/axios';
 import { HelperService } from './helper.service';
@@ -50,6 +51,10 @@ describe('MangasService', () => {
         {
           provide: DismissalService,
           useValue: { getDismissedMuIds: jest.fn(async () => new Set()) },
+        },
+        {
+          provide: ReadingStatusAutoUpdateService,
+          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
         },
       ],
       imports: [HttpModule],
@@ -148,6 +153,10 @@ describe('MangasService — getMangaDetails : UPDATE null-safe', () => {
           provide: DismissalService,
           useValue: { getDismissedMuIds: jest.fn(async () => new Set()) },
         },
+        {
+          provide: ReadingStatusAutoUpdateService,
+          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
+        },
       ],
     }).compile();
 
@@ -201,6 +210,64 @@ describe('MangasService — getMangaDetails : UPDATE null-safe', () => {
     const payload = setPayloads[0];
     expect(payload).toHaveProperty('year', '2005');
     expect(payload).not.toHaveProperty('rating');
+  });
+
+  describe('bascule « à jour » → « en cours » quand le total MU monte', () => {
+    let mangaRepoFindOne: jest.Mock;
+    let flip: jest.Mock;
+
+    beforeEach(() => {
+      const mangaRepo = (
+        service as unknown as { mangaRepository: { findOne: jest.Mock } }
+      ).mangaRepository;
+      mangaRepoFindOne = mangaRepo.findOne;
+      flip = (
+        service as unknown as {
+          readingStatusAutoUpdate: { flipCaughtUpToReading: jest.Mock };
+        }
+      ).readingStatusAutoUpdate.flipCaughtUpToReading;
+    });
+
+    it('bascule quand MU annonce plus de chapitres que le total en base (39 → 40)', async () => {
+      mangaRepoFindOne.mockResolvedValue({ total_chapters: 39 });
+      getMock.mockReturnValue(of({ data: muDetail({ latest_chapter: 40 }) }));
+
+      await service.getMangaDetails(123);
+
+      // Le total est lu AVANT l'écriture, par mu_id (index unique).
+      expect(mangaRepoFindOne).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { mu_id: '123' } }),
+      );
+      expect(flip).toHaveBeenCalledTimes(1);
+      expect(flip).toHaveBeenCalledWith(123);
+    });
+
+    it('ne bascule PAS sur un simple rafraîchissement sans nouveau chapitre (40 → 40)', async () => {
+      mangaRepoFindOne.mockResolvedValue({ total_chapters: 40 });
+      getMock.mockReturnValue(of({ data: muDetail({ latest_chapter: 40 }) }));
+
+      await service.getMangaDetails(123);
+
+      expect(flip).not.toHaveBeenCalled();
+    });
+
+    it('ne bascule PAS quand MU annonce MOINS (GREATEST protège le total, rien de neuf)', async () => {
+      mangaRepoFindOne.mockResolvedValue({ total_chapters: 90 });
+      getMock.mockReturnValue(of({ data: muDetail({ latest_chapter: 79 }) }));
+
+      await service.getMangaDetails(123);
+
+      expect(flip).not.toHaveBeenCalled();
+    });
+
+    it('ne bascule PAS pour une fiche encore inconnue en base (aucune entrée bibliothèque possible)', async () => {
+      mangaRepoFindOne.mockResolvedValue(null);
+      getMock.mockReturnValue(of({ data: muDetail({ latest_chapter: 40 }) }));
+
+      await service.getMangaDetails(123);
+
+      expect(flip).not.toHaveBeenCalled();
+    });
   });
 
   it("continue d'écraser title/completed et de faire croître total_chapters", async () => {
@@ -269,6 +336,10 @@ describe('MangasService — searchManga', () => {
         {
           provide: DismissalService,
           useValue: { getDismissedMuIds: jest.fn(async () => new Set()) },
+        },
+        {
+          provide: ReadingStatusAutoUpdateService,
+          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
         },
       ],
     }).compile();
@@ -438,6 +509,10 @@ describe('MangasService — getRecommendationsAsQuickView : exclusion des titres
         },
         { provide: getRepositoryToken(UserManga), useValue: mockRepo() },
         { provide: DismissalService, useValue: { getDismissedMuIds } },
+        {
+          provide: ReadingStatusAutoUpdateService,
+          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
+        },
       ],
     }).compile();
 

@@ -11,6 +11,7 @@ import { Manga } from '@/api/mangas/manga.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { MangaChapterReport } from './manga-chapter-report.entity';
 import { ReportChaptersResultDto } from './dto/report-chapters.dto';
+import { ReadingStatusAutoUpdateService } from './reading-status-auto-update.service';
 
 /**
  * Nombre minimum de rapporteurs distincts concordants pour consolider le
@@ -42,6 +43,7 @@ export class ChapterReportService {
     private readonly mangaRepository: Repository<Manga>,
     @InjectRepository(UserManga)
     private readonly userMangaRepository: Repository<UserManga>,
+    private readonly readingStatusAutoUpdate: ReadingStatusAutoUpdateService,
   ) {}
 
   /**
@@ -202,7 +204,10 @@ export class ChapterReportService {
       Number(row.min_reported) || 0,
     );
 
-    await this.mangaRepository
+    // `total_chapters < :newTotal` : `affected` dit si le total a RÉELLEMENT
+    // monté (un chemin concurrent — refresh 6h, sorties MU — a pu le faire
+    // avant nous, et aura alors déjà déclenché la bascule des statuts).
+    const totalUpdate = await this.mangaRepository
       .createQueryBuilder()
       .update(Manga)
       .set({
@@ -210,7 +215,14 @@ export class ChapterReportService {
       })
       .setParameter('newTotal', newTotal)
       .where('mu_id = :muId', { muId: muId.toString() })
+      .andWhere('total_chapters < :newTotal')
       .execute();
+
+    // Nouveaux chapitres confirmés par la communauté → les lecteurs
+    // « à jour » de ce manga ne le sont plus.
+    if (Number(totalUpdate?.affected ?? 0) > 0) {
+      await this.readingStatusAutoUpdate.flipCaughtUpToReading(muId);
+    }
 
     await this.reportRepository
       .createQueryBuilder()

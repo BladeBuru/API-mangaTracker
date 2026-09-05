@@ -16,6 +16,7 @@ import { ChapterReportService } from './chapter-report.service';
 import { ChapterReportController } from './chapter-report.controller';
 import { UserThrottlerGuard } from './user-throttler.guard';
 import { RecoCacheModule } from '../recommendations/reco-cache.module';
+import { ReadingStatusAutoUpdateService } from './reading-status-auto-update.service';
 
 @Module({
   imports: [
@@ -40,10 +41,19 @@ import { RecoCacheModule } from '../recommendations/reco-cache.module';
     UpdateMangaService,
     ChapterLogService,
     ChapterReportService,
+    // Bascule auto « à jour » → « en cours » quand le total de chapitres
+    // augmente (consolidation communautaire ici ; sorties MU et refresh des
+    // détails côté MangasModule).
+    ReadingStatusAutoUpdateService,
     // Garde de rate-limit par utilisateur pour la route report-chapters
     // (provider pour bénéficier de l'injection throttler + onModuleInit).
     UserThrottlerGuard,
   ],
-  exports: [LibraryService, ChapterLogService, ChapterReportService],
+  exports: [
+    LibraryService,
+    ChapterLogService,
+    ChapterReportService,
+    ReadingStatusAutoUpdateService,
+  ],
 })
 export class LibraryModule {}

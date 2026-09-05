@@ -337,6 +337,8 @@ export class LibraryService {
 
       // A-5 : GREATEST inconditionnel — total_chapters ne régresse jamais
       // (regex status MU peu fiable, cf. decisions.md). completed écrasé.
+      // Bascule « à jour » → « en cours » : déjà déclenchée par
+      // `getMangaDetails` ci-dessus (même `newTotal`) — rien à faire ici.
       await this.mangaRepository
         .createQueryBuilder()
         .update(Manga)

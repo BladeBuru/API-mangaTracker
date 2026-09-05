@@ -13,6 +13,7 @@ import { LibraryModule } from '../library/library.module';
 import { LibraryService } from '../library/library.service';
 import { ChapterLogService } from '../library/chapter-log.service';
 import { ChapterReportService } from '../library/chapter-report.service';
+import { ReadingStatusAutoUpdateService } from '../library/reading-status-auto-update.service';
 import { UserMangaChapterLog } from '../library/user-manga-chapter-log.entity';
 import { MangaChapterReport } from '../library/manga-chapter-report.entity';
 import { UpdateMangaService } from './update-manga.service';
@@ -63,6 +64,10 @@ import { GtxProvider } from './translation/gtx.provider';
     LibraryService,
     ChapterLogService,
     ChapterReportService,
+    // Même doctrine que ChapterReportService : re-déclaré ici pour être
+    // résolu dans CE contexte (MangasService, CatalogReleasesService et
+    // ChapterReportService en dépendent). Stateless → deux instances OK.
+    ReadingStatusAutoUpdateService,
     UpdateMangaService,
     MangaSyncService,
     CatalogSyncService,
