@@ -36,6 +36,9 @@ export const PROTECTED_NULLABLE_COLUMNS = [
   'small_cover_url',
   'medium_cover_url',
   'genres',
+  // 2026-09-05 : type de publication (Manga / Manhwa / Manhua…). Même
+  // doctrine : écrit quand MU le fournit, jamais remis à NULL.
+  'type',
 ] as const;
 
 export type ProtectedNullableColumn =
@@ -51,6 +54,8 @@ export interface MangaDetailValues {
   rating?: number | null;
   smallCoverUrl?: string | null;
   mediumCoverUrl?: string | null;
+  /** Type MU déjà normalisé (`normalizeMangaType`), ou absent. */
+  type?: string | null;
 }
 
 /**
@@ -82,6 +87,7 @@ export function buildProtectedColumnsUpdate(
     small_cover_url: details.smallCoverUrl,
     medium_cover_url: details.mediumCoverUrl,
     genres: normalizedGenres,
+    type: details.type,
   };
 
   const update: Record<string, unknown> = {};

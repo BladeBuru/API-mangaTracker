@@ -1,5 +1,6 @@
 import { plainToClass, classToPlain } from 'class-transformer';
 import { Manga } from '../manga.entity';
+import { normalizeMangaType } from '../manga-type';
 import { IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -62,6 +63,15 @@ export class MangaDetailsDto {
   @ApiProperty()
   @IsBoolean()
   completed: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Type de publication MangaUpdates (Manga, Manhwa, Manhua, Novel, OEL…). ' +
+      'Absent si MangaUpdates ne le fournit pas.',
+  })
+  @IsOptional()
+  @IsString()
+  type?: string;
 
   @ApiPropertyOptional()
   authors: any[];
@@ -356,6 +366,11 @@ export class MangaDetailsDto {
       ({ season, chapters }) => ({ season, chapters }),
     );
     mangaDetailsDto.completed = muObject['completed'];
+    // Type de publication (`/series/{id}` le renvoie comme `type`).
+    // `undefined` plutôt que `null` quand MU ne le fournit pas : le champ est
+    // alors absent de la réponse JSON (additif, non-breaking), et
+    // `buildProtectedColumnsUpdate` l'omet du SET.
+    mangaDetailsDto.type = normalizeMangaType(muObject['type']) ?? undefined;
     mangaDetailsDto.muId = muObject['series_id'];
     mangaDetailsDto.authors = muObject['authors'];
     mangaDetailsDto.genres = muObject['genres'];

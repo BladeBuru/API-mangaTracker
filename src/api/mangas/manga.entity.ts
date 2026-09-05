@@ -58,6 +58,20 @@ export class Manga {
   genres?: string[];
 
   /**
+   * Type de publication MangaUpdates (`Manga`, `Manhwa`, `Manhua`, `Novel`,
+   * `OEL`…) — cf. `manga-type.ts`. NULL = inconnu (ligne pas encore
+   * revisitée par le catalogue ni rattrapée), jamais « pas de type ».
+   *
+   * Colonne protégée (`PROTECTED_NULLABLE_COLUMNS`) : on l'écrit quand MU la
+   * fournit, on n'écrase jamais une valeur connue par null. Alimentée par
+   * l'upsert catalogue (`record.type` du payload search), `getMangaDetails`
+   * (`type` de la fiche) et `CatalogTypeBackfillService`. Migration
+   * `1788220800000`.
+   */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  type: string | null;
+
+  /**
    * Date de la dernière tentative d'hydratation par le job nightly
    * `hydration` (`CatalogSyncService.hydrateIncompleteRows`), qu'elle ait
    * réussi ou échoué.
@@ -117,6 +131,7 @@ export class Manga {
     manga.total_chapters = mangaDetailsDto.totalChapters;
     manga.rating = mangaDetailsDto.rating;
     manga.completed = mangaDetailsDto.completed;
+    manga.type = mangaDetailsDto.type ?? null;
     manga.associated = mangaDetailsDto.associated ?? [];
     // genres : MU les renvoie sous forme `[{genre: "Action"}, {genre: "Romance"}]`
     // ou parfois directement `["Action", ...]`. Normalisation partagée.

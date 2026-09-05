@@ -217,6 +217,22 @@ describe('MangasService — getMangaDetails : UPDATE null-safe', () => {
     expect(payload).toHaveProperty('total_chapters');
     expect(typeof payload.total_chapters).toBe('function'); // GREATEST(...)
   });
+
+  it('persiste le type de publication (normalisé) quand MU le fournit', async () => {
+    getMock.mockReturnValue(of({ data: muDetail({ type: 'manhwa' }) }));
+
+    await service.getMangaDetails(123);
+
+    expect(setPayloads[0]).toHaveProperty('type', 'Manhwa');
+  });
+
+  it('omet la colonne type quand MU ne la fournit pas (valeur connue préservée)', async () => {
+    getMock.mockReturnValue(of({ data: muDetail({ type: null }) }));
+
+    await service.getMangaDetails(123);
+
+    expect(setPayloads[0]).not.toHaveProperty('type');
+  });
 });
 
 describe('MangasService — searchManga', () => {
