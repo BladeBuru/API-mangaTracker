@@ -8,6 +8,8 @@ import {
 } from './catalog-candidate.service';
 import { GenreSectionService } from './genre-section.service';
 import { DismissalService } from './dismissal.service';
+import { SleeperHitsService } from './sleeper-hits.service';
+import { RecommendationDtoBuilderService } from './recommendation-dto-builder.service';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { MangaRecommendation } from '@/api/mangas/manga-recommendation.entity';
 import { Manga } from '@/api/mangas/manga.entity';
@@ -124,6 +126,10 @@ describe('RecommendationService', () => {
         RecoCacheService,
         // Instance réelle — consomme les mêmes mocks repo/MangasService.
         GenreSectionService,
+        // Instances réelles (extraites le 2026-09-05) — sleepers/cold start
+        // et construction des cartes, sur les mêmes mocks.
+        SleeperHitsService,
+        RecommendationDtoBuilderService,
         { provide: getRepositoryToken(UserManga), useValue: userMangaRepo },
         {
           provide: getRepositoryToken(MangaRecommendation),
@@ -811,7 +817,7 @@ describe('RecommendationService', () => {
       score: number,
       sourceMuIds: string[] = ['1000'],
     ): CatalogCandidate {
-      return { mu_id, score, sourceMuIds };
+      return { mu_id, score, sourceMuIds, type: null };
     }
 
     it('fusionne les candidats catalogue sous le seuil : tri global, MU prime (pas d’addition), biblio exclue', async () => {
@@ -1161,6 +1167,132 @@ describe('RecommendationService', () => {
       // rejets de l'utilisateur n'auraient jamais été chargés.
       expect(dismissals.getDismissedMuIds).toHaveBeenCalledWith(42);
       expect(dismissals.getDismissedMuIds).not.toHaveBeenCalledWith(-1);
+    });
+  });
+
+  describe('type de publication (manga / manhwa / manhua)', () => {
+    /** Types déduits de l'id : 3xxx = Manhwa, sinon Manga. */
+    function typeOf(id: string): string {
+      return id.startsWith('3') ? 'Manhwa' : 'Manga';
+    }
+
+    beforeEach(() => {
+      mangaRepo.find.mockImplementation(({ where }) => {
+        const ids = (where as any).mu_id._value as string[];
+        return Promise.resolve(
+          ids.map((id) =>
+            makeManga({ mu_id: id, title: `Manga ${id}`, type: typeOf(id) }),
+          ),
+        );
+      });
+    });
+
+    it('liste plate : un lecteur à 80 % manhwa reçoit ≈ 80 % de manhwa malgré des recos manga mieux scorées', async () => {
+      // Bibliothèque : 4 manhwa + 1 manga (tous « reading »).
+      userMangaRepo.find.mockResolvedValue([
+        ...['1001', '1002', '1003', '1004'].map((id, i) =>
+          makeUserManga({
+            id: i + 1,
+            manga: makeManga({ id: i + 1, mu_id: id, type: 'Manhwa' }),
+          }),
+        ),
+        makeUserManga({
+          id: 9,
+          manga: makeManga({ id: 9, mu_id: '1005', type: 'Manga' }),
+        }),
+      ]);
+      // Chaque source recommande 10 mangas (poids 20) et 10 manhwa (poids 5)
+      // → les mangas dominent TOUT le haut du classement par score.
+      mangasService.getCachedRecommendations.mockImplementation(
+        (muId: number) =>
+          Promise.resolve([
+            ...Array.from({ length: 10 }, (_, i) =>
+              makeReco(String(muId), `${2000 + i}`, 20),
+            ),
+            ...Array.from({ length: 10 }, (_, i) =>
+              makeReco(String(muId), `${3000 + i}`, 5),
+            ),
+          ]),
+      );
+
+      const result = await service.buildUserRecommendations(42, 10, 0);
+
+      expect(result).toHaveLength(10);
+      expect(result[0].type).toBe('Manhwa');
+      expect(result.filter((r) => r.type === 'Manhwa')).toHaveLength(8);
+      expect(result.filter((r) => r.type === 'Manga')).toHaveLength(2);
+      // Page 2 : prolonge sans doublon (ordre global déterministe).
+      const page2 = await service.buildUserRecommendations(42, 10, 10);
+      const all = [...result, ...page2].map((r) => r.muId);
+      expect(new Set(all).size).toBe(all.length);
+      expect(page2.filter((r) => r.type === 'Manhwa')).toHaveLength(2);
+    });
+
+    it('sleepers : la sélection respecte le profil de type de la bibliothèque', async () => {
+      const currentYear = new Date().getFullYear();
+      userMangaRepo.find.mockResolvedValue(
+        ['1001', '1002', '1003'].map((id, i) =>
+          makeUserManga({
+            id: i + 1,
+            manga: makeManga({ id: i + 1, mu_id: id, type: 'Manhwa' }),
+          }),
+        ),
+      );
+      // Candidats : 5 mangas notés 9, 5 manhwa notés 8 → sans prorata, les
+      // mangas occupent tout le top 5.
+      const candidates = [
+        ...Array.from({ length: 5 }, (_, i) =>
+          makeManga({
+            mu_id: `${2000 + i}`,
+            year: currentYear,
+            rating: 9,
+            type: 'Manga',
+          }),
+        ),
+        ...Array.from({ length: 5 }, (_, i) =>
+          makeManga({
+            mu_id: `${3000 + i}`,
+            year: currentYear,
+            rating: 8,
+            type: 'Manhwa',
+          }),
+        ),
+      ];
+      mangaRepo.createQueryBuilder = jest.fn(() => ({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(candidates),
+      })) as any;
+      recoRepo.createQueryBuilder = jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      })) as any;
+
+      const result = await service.findSleeperHits(42, 5);
+
+      expect(result).toHaveLength(5);
+      expect(result[0].type).toBe('Manhwa');
+      // 100 % manhwa au profil + 5 % de découverte → au moins 4 manhwa sur 5.
+      expect(
+        result.filter((r) => r.type === 'Manhwa').length,
+      ).toBeGreaterThanOrEqual(4);
+    });
+
+    it('bibliothèque sans type connu : ordre par score pur (comportement historique)', async () => {
+      userMangaRepo.find.mockResolvedValue([
+        makeUserManga({ manga: makeManga({ mu_id: '1001', type: null }) }),
+      ]);
+      mangasService.getCachedRecommendations.mockResolvedValue([
+        makeReco('1001', '2000', 20),
+        makeReco('1001', '3000', 5),
+      ]);
+
+      const result = await service.buildUserRecommendations(42, 2, 0);
+
+      expect(result.map((r) => r.muId)).toEqual([2000, 3000]);
     });
   });
 });
