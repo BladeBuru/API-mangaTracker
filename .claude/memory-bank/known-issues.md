@@ -77,6 +77,14 @@
 
 ## ✅ Problèmes Résolus
 
+### Connexion Google web : la popup perdait `window.opener` (COOP de Helmet)
+- **Module** : `api/user/auth` (`auth.controller.ts` callback Google, `auth.module.ts`)
+- **Résolu le** : 2026-09-05
+- **Symptôme** : depuis le client web, la connexion Google « ne marche pas hyper bien » : la popup Google se ferme (ou reste ouverte sur « Connexion réussie ») mais l'application n'est jamais connectée.
+- **Cause racine** : `app.use(helmet())` pose `Cross-Origin-Opener-Policy: same-origin` sur toutes les réponses (vérifié en prod : `curl -I https://api.bladeburu.com/auth/google` → `Cross-Origin-Opener-Policy: same-origin`). La popup est ouverte depuis `app.bladeburu.com` (autre origine) ; dès qu'elle reçoit une réponse de l'API portant ce COOP, le navigateur la place dans un nouveau groupe de contextes de navigation et `window.opener` devient `null`. Le script de la page de callback teste `window.opener && !window.opener.closed` → faux → aucun `postMessage` → le client web attend des jetons qui n'arrivent jamais. Ni la CSP (déjà surchargée par un nonce sur cette page) ni la popup elle-même (ouverte sans `noopener`) n'étaient en cause.
+- **Solution** : `GoogleOAuthPopupMiddleware` (COOP `unsafe-none`) appliqué via `AuthModule.configure` à `GET /auth/google` et `GET /auth/google/callback` uniquement. Helmet reste strict partout ailleurs. Test unitaire `google-oauth-popup.middleware.spec.ts`.
+- **À vérifier après déploiement** : `curl -I https://api.bladeburu.com/auth/google` doit renvoyer `Cross-Origin-Opener-Policy: unsafe-none`, puis connexion Google depuis `app.bladeburu.com` (Chrome, Brave, Safari).
+
 ### Cartes de recommandations sans année ni note en étoiles
 - **Module** : mangas + recommendations
 - **Résolu le** : 2026-08-28 (branche `fix/manga-data-completeness`)

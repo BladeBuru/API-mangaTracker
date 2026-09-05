@@ -5,6 +5,11 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ---
 
+## [Unreleased] — fix/google-web-coop
+
+### Fixed
+- **auth** : la connexion Google depuis le **client web** n'aboutissait pas. Helmet pose `Cross-Origin-Opener-Policy: same-origin` sur toutes les réponses ; la popup ouverte depuis `app.bladeburu.com` recevait ce COOP dès la redirection `/auth/google`, le navigateur la plaçait dans un nouveau groupe de contextes et `window.opener` valait `null` sur la page de callback — le `postMessage` des jetons ne partait jamais et l'application attendait indéfiniment. Vérifié en prod (`curl -I https://api.bladeburu.com/auth/google` → `Cross-Origin-Opener-Policy: same-origin`). Nouveau `GoogleOAuthPopupMiddleware` (COOP `unsafe-none`) appliqué **uniquement** à `GET /auth/google` et `GET /auth/google/callback` ; le reste de l'API garde le COOP strict. Test unitaire ajouté (`google-oauth-popup.middleware.spec.ts`)
+
 ## [Unreleased] — feat/releases-et-titres-alt
 
 > Part de `feat/catalogue-et-recos` (sharding par année), non mergée.

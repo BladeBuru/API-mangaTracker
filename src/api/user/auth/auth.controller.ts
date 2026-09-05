@@ -151,7 +151,10 @@ export class AuthController {
     });
 
     // Mobile : deep link intercepté par le WebView de l'app
-    // Web (dev) : page HTML qui transmet les tokens via postMessage ou affiche un code
+    // Web : page HTML qui transmet les tokens à la fenêtre d'origine via
+    // postMessage. Pré-requis : window.opener doit exister dans la popup —
+    // garanti par GoogleOAuthPopupMiddleware (COOP unsafe-none sur ce flux),
+    // sinon le COOP same-origin de Helmet coupe la popup de son ouvreur.
     const ua = (res.req as any).headers['user-agent'] ?? '';
     const isWebBrowser = !ua.includes('Dart') && !ua.includes('Flutter');
 
