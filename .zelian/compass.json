@@ -1,8 +1,30 @@
 {
   "schema_version": 1,
   "generated_by": "zelian-framework@3.16.0",
-  "updated_at": "2026-08-28T10:35:51.477Z",
+  "updated_at": "2026-09-05T10:11:07.382Z",
   "entries": [
+    {
+      "id": "auth",
+      "app": null,
+      "module": "auth",
+      "label": "auth",
+      "spec_dir": "docs/specs/auth",
+      "code": [
+        "src/api/user/auth/auth.module.ts",
+        "src/api/user/auth/auth.controller.ts",
+        "src/api/user/auth/auth.service.ts",
+        "src/api/user/auth/auth.helper.ts",
+        "src/api/user/auth/google-oauth-popup.middleware.ts",
+        "src/api/user/auth/google-oauth.guard.ts",
+        "src/api/user/auth/guard/auth.guard.ts",
+        "src/api/user/auth/guard/refreshToken.guard.ts",
+        "src/api/user/auth/strategy/accessTokenStrategy.ts",
+        "src/api/user/auth/strategy/refreshTokenStrategy.ts",
+        "src/api/user/auth/strategy/googleStrategy.ts"
+      ],
+      "keywords": [],
+      "updated_at": "2026-09-05T00:00:00.000Z"
+    },
     {
       "id": "mangas",
       "app": null,
@@ -22,6 +44,16 @@
       ],
       "keywords": [],
       "updated_at": "2026-08-28T10:35:51.477Z"
+    },
+    {
+      "id": "reader",
+      "app": null,
+      "module": "reader",
+      "label": "reader",
+      "spec_dir": "docs/specs/reader",
+      "code": [],
+      "keywords": [],
+      "updated_at": "2026-09-05T10:11:07.382Z"
     }
   ]
 }
