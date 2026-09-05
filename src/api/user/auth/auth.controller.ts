@@ -27,7 +27,6 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RefreshTokenGuard } from '@/api/user/auth/guard/refreshToken.guard';
 import { AuthGuard } from '@nestjs/passport';
 import { GoogleOAuthGuard } from './google-oauth.guard';
-import { GoogleOAuthPopupMiddleware } from './google-oauth-popup.middleware';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { UserInformationDto } from '@/api/user/dto/user-information.dto';
 import { EmailService } from './email/email.service';
@@ -141,13 +140,9 @@ export class AuthController {
     @Res() res: Response,
   ): void {
     this.logger.log('🟢 GET /auth/google/callback — callback Google reçu');
-    // Ceinture et bretelles : la page de callback DOIT garder son ouvreur
-    // (voir GoogleOAuthPopupMiddleware / GoogleOAuthGuard). Posé ici aussi,
-    // au plus près de l'envoi, pour ne dépendre d'aucun ordre de middleware.
-    res.setHeader(
-      GoogleOAuthPopupMiddleware.HEADER,
-      GoogleOAuthPopupMiddleware.POLICY,
-    );
+    // La page de callback DOIT garder son ouvreur (voir GoogleOAuthGuard).
+    // Posé ici aussi, au plus près de l'envoi.
+    res.setHeader(GoogleOAuthGuard.HEADER, GoogleOAuthGuard.POLICY);
     if (!tokens?.accessToken) {
       this.logger.error('❌ Aucun token reçu dans le callback Google');
       res.status(500).send('Erreur lors de la récupération des tokens');
@@ -162,7 +157,7 @@ export class AuthController {
     // Mobile : deep link intercepté par le WebView de l'app
     // Web : page HTML qui transmet les tokens à la fenêtre d'origine via
     // postMessage. Pré-requis : window.opener doit exister dans la popup —
-    // garanti par GoogleOAuthPopupMiddleware (COOP unsafe-none sur ce flux),
+    // garanti par GoogleOAuthGuard (COOP unsafe-none sur ce flux),
     // sinon le COOP same-origin de Helmet coupe la popup de son ouvreur.
     const ua = (res.req as any).headers['user-agent'] ?? '';
     const isWebBrowser = !ua.includes('Dart') && !ua.includes('Flutter');
