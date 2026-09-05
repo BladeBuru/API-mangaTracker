@@ -51,6 +51,7 @@
 - ✅ Update custom link
 - ✅ **[Phase 5 — Mai 2026]** Table `user_manga_chapter_log` (migration `1746231100000`) : trace les sessions de lecture (replay, skip, bonus, scroll position) en mode additif au pointeur `user_read_chapters`
 - ✅ **[Phase 5 — Mai 2026]** `ChapterLogService` + endpoints `POST /library/:muId/chapter-log` (record session), `GET /library/:muId/chapter-log` (historique), `PUT /library/:muId/chapter/:n/skip` (toggle skip)
+- ✅ **[Bascule auto « à jour » → « en cours » — 2026-09-05]** `ReadingStatusAutoUpdateService.flipCaughtUpToReading(muId)` : quand `manga.total_chapters` **augmente**, toutes les entrées `caughtUp` du manga dont `user_read_chapters < total` passent `reading` (`lastUpdated` mis à jour) en **une requête ensembliste**. Branché sur `CatalogReleasesService.applyUpdates`, `ChapterReportService.consolidate`, `MangasService.getMangaDetails`. Détails ci-dessous
 
 ### Amis (`friends`) — Phase 6
 - ✅ **[Phase 6 — Mai 2026]** Table `user_friendship` (migration `1746231200000`) + entity avec statut `pending|accepted|blocked`, unicité (requester, addressee), 2 index par statut
@@ -192,6 +193,30 @@ Branche `feat/manga-type-recos-home` (base `master` d7fd6fd).
 **À surveiller après déploiement** : (1) logs `[type-backfill]` au boot (≈ 80 fiches, ~3 min) ; (2) les sections `type:*` de l'accueil apparaissent dès que ≥ 5 titres typés ; (3) `hidden_gems` chevauche `popular` sur les pages de détail tant que le graphe `manga_recommendation` est maigre (12 k liens) — la dédup de l'accueil règle le cas sur la home.
 
 **Non fait** : smoke test HTTP local (pas de PostgreSQL local ni Docker) — SQL des sections validé en lecture seule sur la prod (3-216 ms par section sans les nouveaux index).
+
+## 🔁 Bascule auto « à jour » → « en cours » (2026-09-05)
+
+Branche `feat/auto-status-en-cours` (base `d7fd6fd`). Pendant Flutter : même nom de branche.
+
+**Règle produit** : *« si on détecte un nouveau chapitre sur un manga que j'ai marqué "à jour", c'est qu'on n'est plus à jour : on est "en cours" »*. Lu jusqu'au 39, « à jour » ; le 40 paraît → « en cours ».
+
+**Valeurs de statut (vérifiées en prod)** : « à jour » = `caughtUp`, « en cours » = `reading`. Distribution prod : reading 65 · readLater 9 · caughtUp 7 · completed 6. Pas de statut « abandonné » / « en pause » dans l'app.
+
+**Service** : `src/api/library/reading-status-auto-update.service.ts` — `flipCaughtUpToReading(muId)`, UPDATE ensembliste `manga_id = X AND "readingStatus" = 'caughtUp' AND user_read_chapters < (SELECT total_chapters FROM manga …)`, retourne `affected`, log `Logger`, best-effort (erreur BDD → `Logger.error` + 0). Plan vérifié en prod par `EXPLAIN` (index `idx_user_manga_manga_id`). Déclaré dans `LibraryModule` (exporté) **et** re-déclaré dans `MangasModule` (même doctrine que `ChapterReportService` : forwardRef croisé, stateless).
+
+**Points de branchement** (= tous les écrivains de `total_chapters`) :
+1. `CatalogReleasesService.applyUpdates` — garde `.andWhere('total_chapters < :newTotal')` sur le GREATEST → `affected > 0` ⇔ hausse → flip. Compteur `statusFlips` dans `ReleasesSyncOutcome` + log.
+2. `ChapterReportService.consolidate` — même garde, flip si `affected > 0`.
+3. `MangasService.getMangaDetails` — pré-lecture `readCurrentTotal(muId)` (SELECT `total_chapters` par `mu_id`), flip si `newTotal > previousTotal`. Couvre `LibraryService.checkManga` (refresh 6 h — son propre GREATEST reçoit le même total, commenté), `UpdateMangaService` et `MangaSyncService`.
+
+**Décisions** :
+- **Hausse effective uniquement** (pas « état incohérent ») : un lecteur volontairement « à jour » en retard sur MU (scans FR vs raws) ne doit pas être ramené en boucle à « en cours » toutes les 6 h. Conséquence : les 3 lignes prod déjà en retard (22/26/58 chapitres) basculeront à la prochaine parution, pas au déploiement. Pas de migration de données.
+- Seul `caughtUp` bascule ; `completed` et `readLater` intouchés. Réciproque `updateChapter` → `caughtUp`/`completed` inchangée.
+- Best-effort : la bascule ne fait jamais échouer l'appelant.
+
+**Tests** : +15 (282 → 297) — `reading-status-auto-update.service.spec.ts` (6), `catalog-releases.service.spec.ts` (+3), `chapter-report.service.spec.ts` (+2), `mangas.service.spec.ts` (+4).
+
+**Reste à faire** : déployer l'API **avant** l'app ; observer le log `[releases] … N statut(s) « à jour » → « en cours »` après le premier cron.
 
 ---
 

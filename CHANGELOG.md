@@ -50,6 +50,38 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 - +127 tests unitaires (242 → 369), 8 suites ajoutées : normalisation du type, colonne protégée, upsert avec/sans type, payload shard type, rattrapage (planificateur pur, volets A/B, budget et reprise inter-nuits, disjoncteur, verrou), verrou MU, profil de type (pondération, seuils), interleave (80 % → 16/20, jamais zéro, inconnus pénalisés, découverte, épuisement), buckets SQL, liste plate 80 % manhwa + pagination sans doublon, sections par genre et compléments par type, sleepers, candidats catalogue par type, accueil (catalogue pur, ordre, dédup, omission, cache SWR, pagination, 404, résilience, contrat controller)
 - Non fait : smoke test HTTP sur base locale — aucune base PostgreSQL locale n'est configurée (`development.env` absent, Docker Desktop non démarré). Les requêtes SQL des sections ont été validées **en lecture seule sur la prod** (équivalent SQL exécuté via `pg`), pas via TypeORM
 
+## [Unreleased] — feat/auto-status-en-cours
+
+> Base `d7fd6fd`. Dépendance client : l'app Flutter `feat/auto-status-en-cours` (bascule locale + reflet UI). **Déployer l'API avant l'app.**
+
+### Added
+- **library** : **bascule automatique « à jour » → « en cours »**. Le besoin, dans les mots du propriétaire : *« si on détecte un nouveau chapitre sur un manga que j'ai marqué "à jour", c'est qu'on n'est plus à jour : on est "en cours". Le statut doit automatiquement changer. »* Exemple : lu jusqu'au 39, statut « à jour » ; le 40 paraît → « en cours ». Jusqu'ici la sync nocturne des sorties faisait bien monter `total_chapters`, mais **aucun statut ne suivait** : en prod, 3 entrées « à jour » étaient en réalité en retard de 22, 26 et 58 chapitres
+- **library** : `ReadingStatusAutoUpdateService.flipCaughtUpToReading(muId)` — **une seule requête UPDATE ensembliste par manga** (`manga_id = X AND "readingStatus" = 'caughtUp' AND user_read_chapters < total en base`), jamais de boucle par utilisateur. `lastUpdated` mis à jour → l'entrée remonte en tête de bibliothèque. Plan vérifié en prod (`EXPLAIN`, sans écriture) : index `idx_user_manga_manga_id` + sous-requête indexée sur `manga.mu_id`. Best-effort : une erreur BDD est journalisée (`Logger.error`) et renvoie 0 — le total, déjà écrit, reste la source de vérité ; ni la fiche détail, ni le job, ni le signalement n'échouent à cause de cet effet secondaire. Log `Logger` du nombre de lignes basculées
+
+### Changed
+- **Branché sur les trois chemins qui font monter `manga.total_chapters`** — tous, pas un de plus, pour que la règle vaille aussi **app fermée** :
+  1. `CatalogReleasesService.applyUpdates` (sorties MU, cron 02:00) — nouveau compteur `statusFlips` dans le bilan et le log du run
+  2. `ChapterReportService.consolidate` (signalement communautaire ≥ 2 lecteurs)
+  3. `MangasService.getMangaDetails` (rafraîchissement des détails) — couvre par construction `LibraryService.checkManga` (refresh 6 h), `UpdateMangaService` (refresh en lot de la bibliothèque, refresh des covers) et `MangaSyncService`, qui passent tous par lui. Leurs propres écritures `GREATEST` reçoivent le **même** total → aucune double bascule
+- **Déclenchement UNIQUEMENT sur hausse effective du total.** Les UPDATE `GREATEST` des chemins 1 et 2 reçoivent une garde `total_chapters < :newTotal` (sans effet sur le résultat, GREATEST y est déjà idempotent) pour que `affected` dise si le total a **réellement** monté ; le chemin 3 pré-lit le total (SELECT indexé sur `mu_id` unique, négligeable devant l'appel MU). Conséquence voulue : un lecteur qui s'est déclaré « à jour » **volontairement** en retard sur le total MU (scans FR en retard sur les raws, par exemple) n'est **pas** ramené en boucle à « en cours » à chaque refresh 6 h — seule la parution d'un nouveau chapitre le fait. Un chemin concurrent qui a monté le total juste avant a déjà déclenché la bascule (`affected = 0` → rien)
+- Périmètre strict : **seul `caughtUp` bascule**. `completed` (manga terminé ET lu en entier) et `readLater` ne bougent jamais — l'app ne connaît ni « abandonné » ni « en pause ». Le passage inverse (`updateChapter` → `caughtUp` / `completed` quand la progression atteint le total effectif) est **inchangé**
+
+### Vérifié en prod (lecture seule, 2026-09-05)
+- Valeurs de `user_manga."readingStatus"` : `reading` 65 · `readLater` 9 · `caughtUp` 7 · `completed` 6. « À jour » = `caughtUp`, « en cours » = `reading` (enum API `src/api/library/reading-status.enum.ts`, enum Flutter `reading_status.enum.dart`)
+- **3 lignes** (2 utilisateurs, 3 mangas) sont aujourd'hui `caughtUp` avec `user_read_chapters < manga.total_chapters` (retards de 22, 26 et 58 chapitres). Elles basculeront à la **prochaine hausse** de leur total (pas au déploiement : aucune migration de données, par choix — cf. « hausse effective » ci-dessus). Aucune ligne `completed` en retard
+
+### BDD
+- Aucune migration : pas de changement de schéma. L'index `idx_user_manga_manga_id` (migration `1788048000000`) porte la requête
+
+### Tests
+- +15 tests unitaires (282 → 297) : service (requête ensembliste, clauses, `affected` absent, erreur BDD avalée, log), job sorties (garde `total_chapters < :newTotal`, bascule **uniquement** pour les séries dont le total a monté, jamais pour une série inconnue, compteur du bilan), consolidation (bascule quand 1 ligne `manga` touchée, rien quand 0), détails (39 → 40 bascule ; 40 → 40 et 90 → 79 ne basculent pas ; fiche inconnue en base ne bascule pas)
+
+## [Unreleased] — fix/google-web-coop + fix/google-web-coop-2
+
+### Fixed
+- **auth** : la connexion Google depuis le **client web** n'aboutissait pas. Helmet pose `Cross-Origin-Opener-Policy: same-origin` sur toutes les réponses ; la popup ouverte depuis `app.bladeburu.com` recevait ce COOP dès la redirection `/auth/google`, le navigateur la plaçait dans un nouveau groupe de contextes et `window.opener` valait `null` sur la page de callback — le `postMessage` des jetons ne partait jamais et l'application attendait indéfiniment. Vérifié en prod (`curl -I https://api.bladeburu.com/auth/google` → `Cross-Origin-Opener-Policy: same-origin`). Nouveau `GoogleOAuthPopupMiddleware` (COOP `unsafe-none`) appliqué **uniquement** à `GET /auth/google` et `GET /auth/google/callback` ; le reste de l'API garde le COOP strict. Tests ajoutés (`google-oauth-popup.middleware.spec.ts`, `google-oauth-popup.middleware.e2e.spec.ts`) (#78)
+- **auth** : après déploiement de #78, le conteneur en production continuait de renvoyer `Cross-Origin-Opener-Policy: same-origin` sur la redirection 302 de `/auth/google` — le middleware de module s'exécutait bien, mais Passport appelait `res.end()` lui-même avant que la valeur ne parte. Nouveau `GoogleOAuthGuard` (étend `AuthGuard('google')`) qui pose le COOP dans `canActivate` juste avant la délégation à Passport ; le handler `googleCallback` le pose également directement sur la réponse. Témoins de diagnostic : `X-MT-Popup-Middleware: 1` (middleware) et `X-MT-Popup-Guard: 1` (guard), vérifiables via `curl -I`. Test unitaire ajouté (`google-oauth.guard.spec.ts`) (#80)
+
 ## [Unreleased] — feat/releases-et-titres-alt
 
 > Part de `feat/catalogue-et-recos` (sharding par année), non mergée.

@@ -8,11 +8,15 @@ import { CatalogSyncState } from './catalog-sync-state.entity';
 import { Manga } from './manga.entity';
 import { MuJobLockService } from './mu-job-lock.service';
 
+import { ReadingStatusAutoUpdateService } from '@/api/library/reading-status-auto-update.service';
+
 /** Un UPDATE `manga` capturé, tel qu'il partirait vers PostgreSQL. */
 interface UpdateCall {
   setPayload: Record<string, unknown>;
   newTotal: number;
   muId: string;
+  /** Clauses `andWhere` brutes (garde « le total a-t-il vraiment monté ? »). */
+  andWheres: string[];
 }
 
 /** Réponse `releases/search` : `count` sorties, time_added décroissant. */
@@ -63,9 +67,15 @@ describe('CatalogReleasesService', () => {
   let postMock: jest.Mock;
   let stateRepo: { findOneBy: jest.Mock; create: jest.Mock; save: jest.Mock };
   let mangaRepo: { find: jest.Mock; createQueryBuilder: jest.Mock };
+  let statusAutoUpdate: { flipCaughtUpToReading: jest.Mock };
   let updateCalls: UpdateCall[];
   let sleepMock: jest.Mock;
   let savedState: CatalogSyncState;
+  /**
+   * Lignes `manga` touchées par le prochain UPDATE, par mu_id. Par défaut 1
+   * (le total monte) ; 0 simule une sortie déjà connue (GREATEST sans effet).
+   */
+  let affectedByMuId: Record<string, number>;
 
   /** Déclare les mu_id que la base est censée connaître. */
   function dbKnows(...muIds: string[]): void {
@@ -75,7 +85,7 @@ describe('CatalogReleasesService', () => {
   }
 
   function makeUpdateQb() {
-    const captured: Partial<UpdateCall> = {};
+    const captured: Partial<UpdateCall> = { andWheres: [] };
     const qb = {
       update: jest.fn(() => qb),
       set: jest.fn((payload: Record<string, unknown>) => {
@@ -90,13 +100,19 @@ describe('CatalogReleasesService', () => {
         captured.muId = params.muId;
         return qb;
       }),
+      andWhere: jest.fn((sql: string) => {
+        captured.andWheres.push(sql);
+        return qb;
+      }),
       execute: jest.fn(() => {
+        const muId = captured.muId ?? '';
         updateCalls.push({
           setPayload: captured.setPayload ?? {},
           newTotal: captured.newTotal ?? -1,
-          muId: captured.muId ?? '',
+          muId,
+          andWheres: captured.andWheres,
         });
-        return Promise.resolve({ affected: 1 });
+        return Promise.resolve({ affected: affectedByMuId[muId] ?? 1 });
       }),
     };
     return qb;
@@ -104,8 +120,10 @@ describe('CatalogReleasesService', () => {
 
   async function build(config: Record<string, string> = {}): Promise<void> {
     updateCalls = [];
+    affectedByMuId = {};
     postMock = jest.fn();
     sleepMock = jest.fn().mockResolvedValue(undefined);
+    statusAutoUpdate = { flipCaughtUpToReading: jest.fn(async () => 0) };
 
     savedState = Object.assign(new CatalogSyncState(), {
       job_name: 'releases',
@@ -151,6 +169,7 @@ describe('CatalogReleasesService', () => {
           useValue: stateRepo,
         },
         { provide: getRepositoryToken(Manga), useValue: mangaRepo },
+        { provide: ReadingStatusAutoUpdateService, useValue: statusAutoUpdate },
         {
           provide: ConfigService,
           useValue: {
@@ -325,6 +344,17 @@ describe('CatalogReleasesService', () => {
       ]);
     });
 
+    it('should guard the UPDATE with total_chapters < :newTotal to learn whether the total really grew', async () => {
+      dbKnows('111');
+      postMock.mockReturnValue(
+        of(muReleasesPage({ seriesIds: [111], startTs: 5000 })),
+      );
+
+      await service.runOnce();
+
+      expect(updateCalls[0].andWheres).toEqual(['total_chapters < :newTotal']);
+    });
+
     it('should send the HIGHEST chapter when a series released several times', async () => {
       dbKnows('111');
       postMock.mockReturnValue(
@@ -341,6 +371,48 @@ describe('CatalogReleasesService', () => {
 
       expect(updateCalls).toHaveLength(1);
       expect(updateCalls[0].newTotal).toBe(12);
+    });
+  });
+
+  describe('bascule « à jour » → « en cours » (nouveaux chapitres)', () => {
+    it('should flip caught-up readers ONLY for series whose total actually grew', async () => {
+      dbKnows('111', '222');
+      // 111 : total monte (1 ligne touchée). 222 : sortie d'un chapitre déjà
+      // couvert par le total en base → GREATEST sans effet (0 ligne).
+      affectedByMuId = { '111': 1, '222': 0 };
+      statusAutoUpdate.flipCaughtUpToReading.mockResolvedValue(2);
+      postMock.mockReturnValue(
+        of(
+          muReleasesPage({
+            seriesIds: [111, 222],
+            chapters: ['40', '7'],
+            startTs: 5000,
+          }),
+        ),
+      );
+
+      const outcome = await service.runOnce();
+
+      expect(statusAutoUpdate.flipCaughtUpToReading).toHaveBeenCalledTimes(1);
+      expect(statusAutoUpdate.flipCaughtUpToReading).toHaveBeenCalledWith(
+        '111',
+      );
+      // Une requête ensembliste par série, comptée dans le bilan du run.
+      expect(outcome?.statusFlips).toBe(2);
+      // Les deux séries restent « mises à jour » au sens du job (connues).
+      expect(outcome?.seriesUpdated).toBe(2);
+    });
+
+    it('should never flip for an unknown series (no UPDATE at all)', async () => {
+      dbKnows();
+      postMock.mockReturnValue(
+        of(muReleasesPage({ seriesIds: [999], startTs: 5000 })),
+      );
+
+      const outcome = await service.runOnce();
+
+      expect(statusAutoUpdate.flipCaughtUpToReading).not.toHaveBeenCalled();
+      expect(outcome?.statusFlips).toBe(0);
     });
   });
 
