@@ -9,6 +9,7 @@ import {
 import { MangaChapterReport } from './manga-chapter-report.entity';
 import { Manga } from '@/api/mangas/manga.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
+import { ReadingStatusAutoUpdateService } from './reading-status-auto-update.service';
 
 /** Query builder chainable générique — chaque appel retourne le même mock. */
 const createQb = () => {
@@ -47,6 +48,7 @@ describe('ChapterReportService', () => {
   };
   let mangaRepo: { findOneBy: jest.Mock; createQueryBuilder: jest.Mock };
   let userMangaRepo: { findOne: jest.Mock };
+  let statusAutoUpdate: { flipCaughtUpToReading: jest.Mock };
 
   const mangaWithTotal = (total: number) => ({
     mu_id: '42',
@@ -62,6 +64,7 @@ describe('ChapterReportService', () => {
     };
     mangaRepo = { findOneBy: jest.fn(), createQueryBuilder: jest.fn() };
     userMangaRepo = { findOne: jest.fn() };
+    statusAutoUpdate = { flipCaughtUpToReading: jest.fn(async () => 0) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -72,6 +75,7 @@ describe('ChapterReportService', () => {
         },
         { provide: getRepositoryToken(Manga), useValue: mangaRepo },
         { provide: getRepositoryToken(UserManga), useValue: userMangaRepo },
+        { provide: ReadingStatusAutoUpdateService, useValue: statusAutoUpdate },
       ],
     }).compile();
 
@@ -223,6 +227,50 @@ describe('ChapterReportService', () => {
         { newTotal: 95 },
       );
       expect(deleteQb.execute).toHaveBeenCalled();
+    });
+
+    it('bascule les lecteurs « à jour » en « en cours » quand le total a réellement monté', async () => {
+      mangaRepo.findOneBy.mockResolvedValue(mangaWithTotal(90));
+      const selectQb = createQb();
+      selectQb.getRawOne.mockResolvedValue({
+        reporters: '2',
+        min_reported: '95',
+      });
+      reportRepo.createQueryBuilder
+        .mockReturnValueOnce(selectQb)
+        .mockReturnValueOnce(createQb());
+      const updateQb = createQb();
+      // 1 ligne `manga` touchée = le total est passé de 90 à 95.
+      updateQb.execute.mockResolvedValue({ affected: 1 });
+      mangaRepo.createQueryBuilder.mockReturnValue(updateQb);
+
+      await service.consolidate(42);
+
+      // La clause de garde permet de savoir si le total a VRAIMENT monté.
+      expect(updateQb.andWhere).toHaveBeenCalledWith(
+        'total_chapters < :newTotal',
+      );
+      expect(statusAutoUpdate.flipCaughtUpToReading).toHaveBeenCalledTimes(1);
+      expect(statusAutoUpdate.flipCaughtUpToReading).toHaveBeenCalledWith(42);
+    });
+
+    it('ne bascule rien si un chemin concurrent avait déjà monté le total (0 ligne touchée)', async () => {
+      mangaRepo.findOneBy.mockResolvedValue(mangaWithTotal(90));
+      const selectQb = createQb();
+      selectQb.getRawOne.mockResolvedValue({
+        reporters: '2',
+        min_reported: '95',
+      });
+      reportRepo.createQueryBuilder
+        .mockReturnValueOnce(selectQb)
+        .mockReturnValueOnce(createQb());
+      const updateQb = createQb();
+      updateQb.execute.mockResolvedValue({ affected: 0 });
+      mangaRepo.createQueryBuilder.mockReturnValue(updateQb);
+
+      await service.consolidate(42);
+
+      expect(statusAutoUpdate.flipCaughtUpToReading).not.toHaveBeenCalled();
     });
   });
 

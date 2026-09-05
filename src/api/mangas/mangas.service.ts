@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { MangaQuickViewDto } from './dto/manga-quick-view.dto';
 import { DismissalService } from '@/api/recommendations/dismissal.service';
+import { ReadingStatusAutoUpdateService } from '@/api/library/reading-status-auto-update.service';
 import { catchError, firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
 import { MU_DETAIL_URL, MU_TRENDS_URL, NSFW_GENRES } from './constants';
@@ -42,6 +43,7 @@ export class MangasService {
     @InjectRepository(UserManga)
     private readonly userMangaRepository: Repository<UserManga>,
     private readonly dismissals: DismissalService,
+    private readonly readingStatusAutoUpdate: ReadingStatusAutoUpdateService,
   ) {}
 
   /**
@@ -148,6 +150,13 @@ export class MangasService {
     // Normalise les genres MU (forme `[{genre: "Action"}]` ou `["Action"]`)
     // avant stockage en BDD pour requêtage uniforme (helper partagé).
     const normalizedGenres = normalizeGenres((details as any).genres);
+    const newTotal = Number(details.totalChapters) || 0;
+
+    // Total AVANT écriture : seule une hausse effective doit basculer les
+    // lecteurs « à jour » en « en cours » (cf. ReadingStatusAutoUpdateService).
+    // Une fiche inconnue en base n'a aucune entrée bibliothèque (FK) → rien à
+    // basculer. Lecture indexée (mu_id unique), négligeable devant l'appel MU.
+    const previousTotal = await this.readCurrentTotal(muId);
 
     // A-5 : GREATEST inconditionnel sur total_chapters — un refresh MU ne
     // fait JAMAIS régresser le total (regex status MU peu fiable, un user à
@@ -175,9 +184,16 @@ export class MangasService {
         ...buildAssociatedUpdate(details.associated),
         ...buildProtectedColumnsUpdate(details, normalizedGenres),
       })
-      .setParameter('newTotal', Number(details.totalChapters) || 0)
+      .setParameter('newTotal', newTotal)
       .where('mu_id = :muId', { muId: muId.toString() })
       .execute();
+
+    // Nouveaux chapitres côté MU → « à jour » n'est plus vrai pour ceux qui
+    // n'ont pas lu jusqu'au nouveau total. Couvre aussi `checkManga` (refresh
+    // 6h), `UpdateMangaService` et `MangaSyncService`, qui passent tous ici.
+    if (previousTotal !== null && newTotal > previousTotal) {
+      await this.readingStatusAutoUpdate.flipCaughtUpToReading(muId);
+    }
 
     // Sauvegarde des recommandations en arrière-plan (fire-and-forget)
     if (details.muRecommendations?.length) {
@@ -187,6 +203,15 @@ export class MangasService {
     }
 
     return details;
+  }
+
+  /** Total officiel en base, ou `null` si la fiche n'existe pas encore. */
+  private async readCurrentTotal(muId: number): Promise<number | null> {
+    const row = await this.mangaRepository.findOne({
+      where: { mu_id: muId.toString() },
+      select: ['total_chapters'],
+    });
+    return row ? Number(row.total_chapters) || 0 : null;
   }
 
   async returnMangaIfExist(muId: string): Promise<Manga> {

@@ -9,6 +9,7 @@ import { CatalogSyncState } from './catalog-sync-state.entity';
 import { intFromConfig } from './catalog-sync.mapper';
 import { MU_RELEASES_URL } from './constants';
 import { Manga } from './manga.entity';
+import { ReadingStatusAutoUpdateService } from '@/api/library/reading-status-auto-update.service';
 import { fetchWithMuBackoff } from './mu-backoff';
 import {
   extractReleaseUpdates,
@@ -29,6 +30,11 @@ export interface ReleasesSyncOutcome {
   seriesUpdated: number;
   /** Séries inconnues de la base — ignorées, JAMAIS créées. */
   seriesUnknown: number;
+  /**
+   * Entrées bibliothèque « à jour » basculées en « en cours » parce que le
+   * total de leur manga a augmenté (cf. `ReadingStatusAutoUpdateService`).
+   */
+  statusFlips: number;
   /** Le run s'est arrêté sur un échec → le curseur n'avance pas. */
   failed: boolean;
 }
@@ -98,6 +104,7 @@ export class CatalogReleasesService {
     private readonly stateRepository: Repository<CatalogSyncState>,
     @InjectRepository(Manga)
     private readonly mangaRepository: Repository<Manga>,
+    private readonly readingStatusAutoUpdate: ReadingStatusAutoUpdateService,
     config: ConfigService,
   ) {
     const enabledRaw = config.get<string>('RELEASES_SYNC_ENABLED');
@@ -157,6 +164,7 @@ export class CatalogReleasesService {
       releasesSeen: 0,
       seriesUpdated: 0,
       seriesUnknown: 0,
+      statusFlips: 0,
       failed: false,
     };
     /** Plus grand `time_added` vu sur l'ENSEMBLE du run — futur curseur. */
@@ -194,6 +202,7 @@ export class CatalogReleasesService {
           const applied = await this.applyUpdates(updates);
           outcome.seriesUpdated += applied.updated;
           outcome.seriesUnknown += applied.unknown;
+          outcome.statusFlips += applied.statusFlips;
         } catch (err) {
           this.logger.warn(
             `[releases] échec d'écriture sur la page ${page} : ${
@@ -230,7 +239,8 @@ export class CatalogReleasesService {
     this.logger.log(
       `[releases] ${outcome.pagesFetched} page(s), ${outcome.releasesSeen} ` +
         `sortie(s) exploitable(s), ${outcome.seriesUpdated} série(s) mise(s) à ` +
-        `jour, ${outcome.seriesUnknown} inconnue(s) ignorée(s)`,
+        `jour, ${outcome.seriesUnknown} inconnue(s) ignorée(s), ` +
+        `${outcome.statusFlips} statut(s) « à jour » → « en cours »`,
     );
     return outcome;
   }
@@ -292,8 +302,8 @@ export class CatalogReleasesService {
    */
   private async applyUpdates(
     updates: ReleaseUpdate[],
-  ): Promise<{ updated: number; unknown: number }> {
-    if (updates.length === 0) return { updated: 0, unknown: 0 };
+  ): Promise<{ updated: number; unknown: number; statusFlips: number }> {
+    if (updates.length === 0) return { updated: 0, unknown: 0, statusFlips: 0 };
 
     // Un seul SELECT pour savoir lesquelles existent, plutôt qu'un UPDATE à
     // vide par série inconnue (la grande majorité du flux MU).
@@ -304,22 +314,35 @@ export class CatalogReleasesService {
     const knownIds = new Set(known.map((m) => String(m.mu_id)));
 
     let updated = 0;
+    let statusFlips = 0;
     for (const update of updates) {
       if (!knownIds.has(update.muId)) continue;
       // Invariant A-5 : `total_chapters` est monotone croissant. Une sortie
       // isolée d'un vieux chapitre (rescan, retraduction) ne doit JAMAIS faire
       // régresser un total déjà plus élevé — d'où GREATEST plutôt qu'une
-      // affectation directe.
-      await this.mangaRepository
+      // affectation directe. La clause `total_chapters < :newTotal` ne change
+      // pas le résultat (GREATEST y est déjà idempotent) : elle sert à savoir,
+      // via `affected`, si le total a RÉELLEMENT monté.
+      const result = await this.mangaRepository
         .createQueryBuilder()
         .update(Manga)
         .set({ total_chapters: () => 'GREATEST(total_chapters, :newTotal)' })
         .setParameter('newTotal', update.chapter)
         .where('mu_id = :muId', { muId: update.muId })
+        .andWhere('total_chapters < :newTotal')
         .execute();
       updated += 1;
+
+      // Nouveau chapitre paru → les lecteurs « à jour » de cette série ne le
+      // sont plus. Une requête ensembliste par série dont le total a monté,
+      // jamais par utilisateur.
+      if (Number(result?.affected ?? 0) > 0) {
+        statusFlips += await this.readingStatusAutoUpdate.flipCaughtUpToReading(
+          update.muId,
+        );
+      }
     }
-    return { updated, unknown: updates.length - updated };
+    return { updated, unknown: updates.length - updated, statusFlips };
   }
 
   /**
