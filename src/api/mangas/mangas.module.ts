@@ -22,6 +22,9 @@ import { CatalogHydrationService } from './catalog-hydration.service';
 import { CatalogReleasesService } from './catalog-releases.service';
 import { CatalogPageIngestService } from './catalog-page-ingest.service';
 import { CatalogShardPlannerService } from './catalog-shard-planner.service';
+import { CatalogShardRunnerService } from './catalog-shard-runner.service';
+import { CatalogTypeBackfillService } from './catalog-type-backfill.service';
+import { MuJobLockService } from './mu-job-lock.service';
 import { CatalogSyncState } from './catalog-sync-state.entity';
 import { CoverProxyService } from './cover-proxy.service';
 import { RecoCacheModule } from '../recommendations/reco-cache.module';
@@ -67,9 +70,14 @@ import { GtxProvider } from './translation/gtx.provider';
     MangaSyncService,
     CatalogSyncService,
     CatalogShardPlannerService,
+    CatalogShardRunnerService,
     CatalogPageIngestService,
     CatalogHydrationService,
     CatalogReleasesService,
+    // Rattrapage de `manga.type` (bibliothèques au boot + nightly 01:00) et
+    // verrou partagé : un seul job MU à la fois (releases/catalogue/type).
+    CatalogTypeBackfillService,
+    MuJobLockService,
     CoverProxyService,
     DescriptionTranslationService,
     DeeplProvider,

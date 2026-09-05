@@ -235,7 +235,11 @@ describe('DescriptionTranslationService', () => {
       // Aucun cache existant ; gtx échoue → null.
       gtx.translate.mockResolvedValue(null);
 
-      const first = await service.getTranslatedDescription(42, DESCRIPTION, 'fr');
+      const first = await service.getTranslatedDescription(
+        42,
+        DESCRIPTION,
+        'fr',
+      );
       expect(first).toBeNull();
       expect(gtx.translate).toHaveBeenCalledTimes(1);
 
@@ -260,7 +264,11 @@ describe('DescriptionTranslationService', () => {
       gtx.translate.mockResolvedValue(null); // le refresh de fond échoue
 
       // 1er appel : SWR sert le stale et lance un refresh de fond qui échoue.
-      const first = await service.getTranslatedDescription(42, DESCRIPTION, 'fr');
+      const first = await service.getTranslatedDescription(
+        42,
+        DESCRIPTION,
+        'fr',
+      );
       expect(first).toBe('Périmée.');
       await new Promise((r) => setTimeout(r, 0)); // laisse le refresh échouer
       expect(gtx.translate).toHaveBeenCalledTimes(1);
