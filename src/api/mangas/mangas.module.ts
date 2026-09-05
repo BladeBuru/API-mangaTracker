@@ -1,6 +1,9 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MangasController } from './mangas.controller';
 import { MangaCoversController } from './manga-covers.controller';
+import { HomeSectionsController } from './home/home-sections.controller';
+import { HomeSectionsService } from './home/home-sections.service';
+import { HomeSectionQueryBuilder } from './home/home-sections.query';
 import { MangasService } from './mangas.service';
 import { HelperService } from './helper.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -58,7 +61,12 @@ import { GtxProvider } from './translation/gtx.provider';
     // autres chemins. Module autonome → pas de cycle mangas ↔ recommendations.
     DismissalModule,
   ],
-  controllers: [MangasController, MangaCoversController],
+  controllers: [
+    MangasController,
+    MangaCoversController,
+    // Accueil facon Netflix (`/mangas/home/sections`) : lecture BDD seule.
+    HomeSectionsController,
+  ],
   providers: [
     MangasService,
     HelperService,
@@ -79,6 +87,8 @@ import { GtxProvider } from './translation/gtx.provider';
     CatalogTypeBackfillService,
     MuJobLockService,
     CoverProxyService,
+    HomeSectionsService,
+    HomeSectionQueryBuilder,
     DescriptionTranslationService,
     DeeplProvider,
     GtxProvider,
