@@ -114,6 +114,37 @@ export class MangaQuickViewDto {
   })
   userReportedTotalChapters?: number;
 
+  @IsNumber()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description:
+      'Chapitre en cours de lecture (reprise inter-appareils). Distinct de ' +
+      '`readChapters`, qui est le dernier chapitre TERMINÉ : on peut avoir ' +
+      'terminé 12 chapitres et être à 40 % du 13e. Absent quand aucune ' +
+      "lecture n'est en cours. Présent uniquement sur la bibliothèque.",
+    example: 13,
+  })
+  currentChapter?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @ApiPropertyOptional({
+    description:
+      'Avancement dans `currentChapter`, en pourcentage (0-100). Toujours ' +
+      "présent quand `currentChapter` l'est.",
+    example: 42,
+  })
+  currentPositionPercent?: number;
+
+  @IsOptional()
+  @ApiPropertyOptional({
+    description:
+      'Horodatage ISO 8601 de la dernière écriture de position acceptée. ' +
+      'Permet au client de départager sa position locale et celle du serveur.',
+    example: '2026-09-06T12:34:56.000Z',
+  })
+  currentPositionUpdatedAt?: string;
+
   static fromMu(data: any) {
     const dto = new MangaQuickViewDto();
     dto.muId = data['record']['series_id'];
@@ -193,6 +224,21 @@ export class MangaQuickViewDto {
       userManga.manga.genres.length > 0
     ) {
       dto.genres = userManga.manga.genres;
+    }
+    // Reprise de lecture : champs OPTIONNELS, ajoutés en bloc ou pas du tout.
+    // Les colonnes viennent de la ligne `user_manga` déjà chargée — aucune
+    // requête supplémentaire, aucun N+1. Un consommateur qui les ignore voit
+    // exactement la réponse d'avant.
+    if (
+      userManga.currentChapter !== null &&
+      userManga.currentChapter !== undefined &&
+      userManga.currentPositionUpdatedAt
+    ) {
+      dto.currentChapter = userManga.currentChapter;
+      dto.currentPositionPercent = userManga.currentPositionPercent ?? 0;
+      dto.currentPositionUpdatedAt = new Date(
+        userManga.currentPositionUpdatedAt,
+      ).toISOString();
     }
     return dto;
   }
