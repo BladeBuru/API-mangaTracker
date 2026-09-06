@@ -243,6 +243,49 @@ describe('LibraryService — updateChapter (chantiers A & B)', () => {
       95,
     );
   });
+
+  // ─────── Reprise de lecture : invalidation de la position en cours ───────
+
+  it('should clear the in-progress reading position in the SAME update as the pointer', async () => {
+    givenUserWithEntry(90);
+    mangasService.returnMangaIfExist.mockResolvedValue(freshManga(100));
+    chapterReportService.getEffectiveTotal.mockResolvedValue(100);
+
+    await service.updateChapter(1, 42, 95);
+
+    // Un seul UPDATE (celui de la transaction) porte les deux effets : pas de
+    // requête supplémentaire, donc pas de N+1.
+    expect(managerQb.set).toHaveBeenCalledTimes(1);
+    const fields = managerQb.set.mock.calls[0][0];
+
+    for (const column of [
+      'current_chapter',
+      'current_position_percent',
+      'current_position_updated_at',
+    ]) {
+      const property = column.replace(/_(.)/g, (_, c) => c.toUpperCase());
+      expect(typeof fields[property]).toBe('function');
+      expect(fields[property]()).toBe(
+        `CASE WHEN "current_chapter" IS NOT NULL AND :newReadChapters >= ` +
+          `"current_chapter" THEN NULL ELSE "${column}" END`,
+      );
+    }
+
+    // La comparaison se fait sur la NOUVELLE valeur du pointeur.
+    expect(managerQb.setParameter).toHaveBeenCalledWith('newReadChapters', 95);
+  });
+
+  it('should carry the same position invalidation on the sequential fallback path', async () => {
+    givenUserWithEntry(90);
+    mangasService.returnMangaIfExist.mockResolvedValue(freshManga(100));
+    chapterReportService.getEffectiveTotal.mockResolvedValue(100);
+    dataSource.transaction.mockRejectedValue(new Error('tx unavailable'));
+
+    await service.updateChapter(1, 42, 95);
+
+    expect(typeof repoQb.set.mock.calls[0][0].currentChapter).toBe('function');
+    expect(repoQb.setParameter).toHaveBeenCalledWith('newReadChapters', 95);
+  });
 });
 
 describe('LibraryService — checkManga (A-5 GREATEST)', () => {
@@ -390,5 +433,64 @@ describe('LibraryService — getMangas (exposition des reports)', () => {
     expect(result[0].totalChapters).toBe(120);
     expect(result[0].userReportedTotalChapters).toBe(120);
     expect(result[0].readChapters).toBe(90);
+  });
+
+  /** Entrée de bibliothèque minimale, avec ou sans position en cours. */
+  const libraryEntryWithPosition = (position?: {
+    chapter: number;
+    percent: number;
+    updatedAt: Date;
+  }) => ({
+    manga: {
+      mu_id: '42',
+      title: 'Test Manga',
+      year: 2020,
+      medium_cover_url: 'cover.jpg',
+      rating: 7,
+      total_chapters: 100,
+      associated: [],
+    },
+    user_read_chapters: 12,
+    readingStatus: ReadingStatus.Reading,
+    user_rating: 0,
+    custom_link: null,
+    lastUpdated: new Date(),
+    currentChapter: position?.chapter ?? null,
+    currentPositionPercent: position?.percent ?? null,
+    currentPositionUpdatedAt: position?.updatedAt ?? null,
+  });
+
+  it('should expose the in-progress reading position on the library cards', async () => {
+    userRepo.findOne.mockResolvedValue({
+      id: 1,
+      user_mangas: [
+        libraryEntryWithPosition({
+          chapter: 13,
+          percent: 42,
+          updatedAt: new Date('2026-09-06T12:34:56.000Z'),
+        }),
+      ],
+    });
+
+    const result = await service.getMangas(1);
+
+    expect(result[0].currentChapter).toBe(13);
+    expect(result[0].currentPositionPercent).toBe(42);
+    expect(result[0].currentPositionUpdatedAt).toBe('2026-09-06T12:34:56.000Z');
+    // La position est une notion DISTINCTE du dernier chapitre terminé.
+    expect(result[0].readChapters).toBe(12);
+  });
+
+  it('should omit the reading-position fields when no reading is in progress', async () => {
+    userRepo.findOne.mockResolvedValue({
+      id: 1,
+      user_mangas: [libraryEntryWithPosition()],
+    });
+
+    const result = await service.getMangas(1);
+
+    expect(result[0]).not.toHaveProperty('currentChapter');
+    expect(result[0]).not.toHaveProperty('currentPositionPercent');
+    expect(result[0]).not.toHaveProperty('currentPositionUpdatedAt');
   });
 });
