@@ -96,6 +96,16 @@ Un utilisateur authentifié poste `{ muId }` sur `POST /library/save`. Le systè
 ### CU-010 — Marquer un chapitre comme skippé (Phase 5)
 `PUT /library/:muId/chapter/:n/skip` avec `{ skipped: true/false }` bascule le flag skip sur le chapitre sans créer de doublon (upsert sur la ligne skip existante).
 
+### CU-011 — Reprendre sa lecture sur un autre appareil (2026-09-06)
+
+L'utilisateur s'arrête en plein milieu d'un chapitre sur son téléphone, puis rouvre le même manga sur sa tablette : le lecteur doit lui proposer de reprendre au même endroit.
+
+1. Pendant la lecture, le client envoie périodiquement (il throttle lui-même) `PUT /library/reading-position` avec `{ muId, chapter, positionPercent }` — un **pourcentage** d'avancement dans le chapitre, jamais des pixels : la hauteur rendue d'un chapitre dépend de l'écran.
+2. À l'ouverture du lecteur, le client appelle `GET /library/:muId/reading-position` — `204` s'il n'y a rien à reprendre, sinon `{ chapter, positionPercent, updatedAt }`. Les mêmes champs sont aussi servis en bloc par `GET /library/all` pour afficher la reprise directement sur les cartes de bibliothèque.
+3. Quand l'utilisateur **termine** le chapitre, c'est `PUT /library/chapter` qui fait foi : le pointeur `readChapters` avance et la position en cours est effacée — on ne propose jamais de reprendre au milieu d'un chapitre déjà terminé.
+
+**Règles** : la position est de la télémétrie de confort — elle n'est jamais bloquante (hors bornes invalides et manga absent de la bibliothèque) et **n'écrase jamais la progression** (`readChapters`), qui reste la donnée durable. Un appareil resté hors ligne qui vide sa file d'attente ne fait pas reculer l'appareil sur lequel on lit.
+
 ## Dépendances
 
 - **MangasModule** (`MangasService`, `UpdateMangaService`) — résolution et rafraîchissement des métadonnées manga depuis MangaUpdates

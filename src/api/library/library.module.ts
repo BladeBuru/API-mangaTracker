@@ -17,6 +17,9 @@ import { ChapterReportController } from './chapter-report.controller';
 import { UserThrottlerGuard } from './user-throttler.guard';
 import { RecoCacheModule } from '../recommendations/reco-cache.module';
 import { ReadingStatusAutoUpdateService } from './reading-status-auto-update.service';
+import { ReadingPositionController } from './reading-position.controller';
+import { ReadingPositionService } from './reading-position.service';
+import { ReadingPositionThrottlerGuard } from './reading-position-throttler.guard';
 
 @Module({
   imports: [
@@ -34,7 +37,13 @@ import { ReadingStatusAutoUpdateService } from './reading-status-auto-update.ser
       MangaChapterReport,
     ]),
   ],
-  controllers: [LibraryController, ChapterReportController],
+  controllers: [
+    LibraryController,
+    ChapterReportController,
+    // Reprise de lecture inter-appareils — sous-controller dédié :
+    // LibraryController dépasse déjà les 200 lignes.
+    ReadingPositionController,
+  ],
   providers: [
     UserService,
     LibraryService,
@@ -45,15 +54,19 @@ import { ReadingStatusAutoUpdateService } from './reading-status-auto-update.ser
     // augmente (consolidation communautaire ici ; sorties MU et refresh des
     // détails côté MangasModule).
     ReadingStatusAutoUpdateService,
-    // Garde de rate-limit par utilisateur pour la route report-chapters
-    // (provider pour bénéficier de l'injection throttler + onModuleInit).
+    // Position de lecture en cours (reprise téléphone ↔ tablette).
+    ReadingPositionService,
+    // Gardes de rate-limit par utilisateur (providers pour bénéficier de
+    // l'injection throttler + onModuleInit).
     UserThrottlerGuard,
+    ReadingPositionThrottlerGuard,
   ],
   exports: [
     LibraryService,
     ChapterLogService,
     ChapterReportService,
     ReadingStatusAutoUpdateService,
+    ReadingPositionService,
   ],
 })
 export class LibraryModule {}

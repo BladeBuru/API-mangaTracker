@@ -25,6 +25,10 @@ import {
 import { RecoCacheService } from '@/api/recommendations/reco-cache.service';
 import { ChapterLogService } from './chapter-log.service';
 import { ChapterReportService } from './chapter-report.service';
+import {
+  NEW_READ_CHAPTERS_PARAM,
+  readingPositionInvalidationSet,
+} from './reading-position-invalidation';
 
 @Injectable()
 export class LibraryService {
@@ -246,7 +250,11 @@ export class LibraryService {
     }
   }
 
-  /** UPDATE du pointeur de progression (transactionnel si manager fourni). */
+  /**
+   * UPDATE du pointeur de progression (transactionnel si manager fourni).
+   * Invalide au passage la position de lecture devenue caduque, dans le MÊME
+   * UPDATE — cf. `readingPositionInvalidationSet`.
+   */
   private async applyChapterPointer(
     userId: number,
     muId: number,
@@ -263,7 +271,9 @@ export class LibraryService {
         user_read_chapters: readChapters,
         readingStatus,
         lastUpdated: new Date(),
+        ...readingPositionInvalidationSet(),
       })
+      .setParameter(NEW_READ_CHAPTERS_PARAM, readChapters)
       .where('user_id = :id', { id: userId })
       .andWhere('manga_id = :muId', { muId: muId.toString() })
       .execute();
