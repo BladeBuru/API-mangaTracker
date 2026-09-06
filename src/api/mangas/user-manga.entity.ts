@@ -40,4 +40,42 @@ export class UserManga {
 
   @Column({ type: 'varchar', nullable: true, default: null })
   custom_link: string | null;
+
+  // ─────── Reprise de lecture inter-appareils (2026-09) ───────
+  // État « lecture EN COURS », singleton par (user, manga). À NE PAS
+  // confondre avec `user_read_chapters`, qui est le dernier chapitre
+  // TERMINÉ : on peut avoir terminé 12 chapitres ET être à 40 % du 13e.
+  // Les trois colonnes vont toujours ensemble (toutes nulles ou toutes
+  // renseignées) — cf. migration 1788393600000.
+
+  /** Chapitre en cours de lecture. NULL = aucune lecture en cours. */
+  @Column({
+    name: 'current_chapter',
+    type: 'int',
+    nullable: true,
+    default: null,
+  })
+  currentChapter: number | null;
+
+  /**
+   * Avancement DANS `currentChapter`, en pourcentage (0-100).
+   * Un pourcentage et non des pixels : la hauteur rendue d'un chapitre
+   * dépend de l'écran, seul un ratio se transporte d'un appareil à l'autre.
+   */
+  @Column({
+    name: 'current_position_percent',
+    type: 'smallint',
+    nullable: true,
+    default: null,
+  })
+  currentPositionPercent: number | null;
+
+  /** Horodatage serveur de la dernière écriture de position acceptée. */
+  @Column({
+    name: 'current_position_updated_at',
+    type: 'timestamptz',
+    nullable: true,
+    default: null,
+  })
+  currentPositionUpdatedAt: Date | null;
 }
