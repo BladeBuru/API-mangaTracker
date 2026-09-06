@@ -91,6 +91,12 @@ Les trois listes respectent le **profil de type** de la bibliothèque (part pond
 | `PATCH` | `/library/:muId/status` | JWT | `{ readingStatus }` | `UserMangaEntity` |
 | `PATCH` | `/library/:muId/chapter` | JWT | `{ readChaptersCount }` | `UserMangaEntity` |
 | `PATCH` | `/library/:muId/custom-link` | JWT | `{ customLink }` | `UserMangaEntity` |
+| `PUT` | `/library/reading-position` | JWT | `{ muId, chapter, positionPercent }` | `{ ok: true }` — 400 hors bornes, 404 hors bibliothèque |
+| `GET` | `/library/:muId/reading-position` | JWT | — | `{ chapter, positionPercent, updatedAt }` ou **204** si aucune position |
+
+> ⚠️ Les lignes `PATCH /library/:muId/...` de ce tableau datent de la rétro-ingénierie et ne correspondent plus aux routes réelles (`PUT /library/chapter`, `/status`, `/custom-link`, `/rating`, corps portant `muId`). La référence à jour du module est [docs/specs/library/spec-technique.md](../../docs/specs/library/spec-technique.md).
+>
+> `PUT /library/reading-position` = position DANS un chapitre (reprise téléphone ↔ tablette). Elle n'écrit jamais `user_read_chapters` : « dernier chapitre terminé » et « endroit où l'on lit » sont deux notions distinctes.
 
 ### Users (`/users`)
 
