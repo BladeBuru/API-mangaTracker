@@ -29,6 +29,8 @@ import { CatalogShardPlannerService } from './catalog-shard-planner.service';
 import { CatalogShardRunnerService } from './catalog-shard-runner.service';
 import { CatalogTypeBackfillService } from './catalog-type-backfill.service';
 import { MuJobLockModule } from './mu-job-lock.module';
+import { RecoGraphIngestService } from './reco-graph-ingest.service';
+import { RecoGraphBackfillService } from './reco-graph-backfill.service';
 import { CatalogSyncState } from './catalog-sync-state.entity';
 import { CoverProxyService } from './cover-proxy.service';
 import { RecoCacheModule } from '../recommendations/reco-cache.module';
@@ -95,6 +97,14 @@ import { GtxProvider } from './translation/gtx.provider';
     // ci-dessus) : le re-déclarer ici en fabriquerait une seconde instance
     // dès qu'un autre module porte un job MU.
     CatalogTypeBackfillService,
+    // Graphe de voisinage MangaUpdates (2026-09-09) : l'ingestion est
+    // branchée sur les fiches `/series/{id}` déjà téléchargées (coût réseau
+    // nul), le rattrapage a son propre créneau nocturne (07:00) et partage
+    // le verrou MU — fourni par `MuJobLockModule` (importé), et NON déclaré
+    // ici : un second provider créerait une seconde instance et le verrou ne
+    // verrouillerait plus rien.
+    RecoGraphIngestService,
+    RecoGraphBackfillService,
     CoverProxyService,
     HomeSectionsService,
     HomeSectionQueryBuilder,
