@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { MuJobLockService } from '@/api/mangas/mu-job-lock.service';
 import { DiscoveredReader, PublicListRef } from './mu-lists.mapper';
 import { ReaderSignalCollectService } from './reader-signal-collect.service';
+import { ReaderSignalExtractionService } from './reader-signal-extraction.service';
 import { DiscoveryTarget } from './reader-signal-priority.service';
 import { PersistableSignalRow } from './reader-signal-writer.service';
 import { READER_LIST_TYPES } from './reader-signal-weights';
@@ -122,11 +123,19 @@ describe('ReaderSignalCollectService', () => {
       }),
     };
     lock = new MuJobLockService();
+    // L'étage d'extraction est le VRAI service : le job orchestre, il ne
+    // duplique pas la logique de lecture des listes.
+    const extraction = new ReaderSignalExtractionService(
+      client as never,
+      writer as never,
+      config(overrides),
+    );
     service = new ReaderSignalCollectService(
       client as never,
       hasher as never,
       priority as never,
       writer as never,
+      extraction,
       lock,
       config(overrides),
     );
@@ -317,10 +326,10 @@ describe('ReaderSignalCollectService', () => {
       build({ READER_SIGNAL_READER_TTL_DAYS: '7' });
       similarByKey['complete:42'] = [{ userId: '900', rating: null }];
       await service.runOnce();
-      const writer = (
+      const spy = (
         service as unknown as { writer: { findFreshReaders: jest.Mock } }
       ).writer;
-      expect(writer.findFreshReaders).toHaveBeenCalledWith(
+      expect(spy.findFreshReaders).toHaveBeenCalledWith(
         ['hash-900'],
         7,
         expect.any(Number),

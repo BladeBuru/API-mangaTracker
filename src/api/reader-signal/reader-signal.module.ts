@@ -9,6 +9,7 @@ import { ReaderHashService } from './reader-hash.service';
 import { ReaderProfile } from './reader-profile.entity';
 import { ReaderSignalAggregateService } from './reader-signal-aggregate.service';
 import { ReaderSignalCollectService } from './reader-signal-collect.service';
+import { ReaderSignalExtractionService } from './reader-signal-extraction.service';
 import { ReaderSignalPriorityService } from './reader-signal-priority.service';
 import { ReaderSignalWriterService } from './reader-signal-writer.service';
 import { ReaderSignal } from './reader-signal.entity';
@@ -42,6 +43,7 @@ import { ReaderSignal } from './reader-signal.entity';
     ReaderHashService,
     ReaderSignalPriorityService,
     ReaderSignalWriterService,
+    ReaderSignalExtractionService,
     ReaderSignalCollectService,
     ReaderSignalAggregateService,
   ],

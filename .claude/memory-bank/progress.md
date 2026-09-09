@@ -235,7 +235,7 @@ Relevé en prod le 2026-09-09 : **6 comptes, 87 lignes de bibliothèque, 4 notes
 - ✅ **Job de collecte** `ReaderSignalCollectService` — cron **05:30** + jitter, budget 1 000 requêtes/nuit, verrou MU partagé, backoff `mu-backoff.ts`, disjoncteur, curseurs dans `catalog_sync_state`
 - ✅ **Job d'agrégation** `ReaderSignalAggregateService` — cron **06:30**, purement local (aucune requête réseau), recalcul intégral en une transaction
 - ✅ **Pseudonymisation fail-closed** `ReaderHashService` — HMAC-SHA256 salé, sans sel valide rien n'est écrit et aucun appel réseau n'est fait
-- ✅ **132 tests** ajoutés (412 → 544), 8 suites
+- ✅ **138 tests** ajoutés (412 → 550), 9 suites
 
 #### Créneaux MU et partage du quota
 

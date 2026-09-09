@@ -4,46 +4,27 @@ import { Cron } from '@nestjs/schedule';
 import { intFromConfig } from '@/api/mangas/catalog-sync.mapper';
 import { NSFW_GENRES } from '@/api/mangas/constants';
 import { MuJobLockService } from '@/api/mangas/mu-job-lock.service';
-import { MU_LIST_MAX_PER_PAGE, MuListsClient } from './mu-lists.client';
-import { pagesNeeded, RawSignalRow } from './mu-lists.mapper';
+import { MuListsClient } from './mu-lists.client';
 import { ReaderHashService } from './reader-hash.service';
+import { ReaderSignalExtractionService } from './reader-signal-extraction.service';
 import {
   DiscoveryTarget,
   ReaderSignalPriorityService,
 } from './reader-signal-priority.service';
 import {
+  accumulate,
+  emptyOutcome,
+  formatCounts,
+  ReaderSignalOutcome,
+  ReaderSignalRunBudget,
+} from './reader-signal-run';
+import {
   PersistableSignalRow,
   ReaderSignalWriterService,
-  WriteOutcome,
 } from './reader-signal-writer.service';
 import { READER_LIST_TYPES } from './reader-signal-weights';
 
-/** Bilan d'un run — c'est ce que les logs et les tests observent. */
-export interface ReaderSignalOutcome {
-  /** Requêtes `/lists/similar` envoyées. */
-  discoveryProbes: number;
-  /** Sondes par seau de priorité (`library`, `Manhwa`, `Manhua`, `Manga`). */
-  probesByBucket: Record<string, number>;
-  /** Lecteurs distincts vus par la découverte. */
-  readersDiscovered: number;
-  /** … écartés parce que déjà collectés dans la fenêtre de fraîcheur. */
-  readersSkippedFresh: number;
-  /** … effectivement extraits (au moins une liste publique lue). */
-  readersExtracted: number;
-  /** … sans aucune liste publique. */
-  readersEmpty: number;
-  /** … dont l'extraction a échoué côté MU. */
-  readersFailed: number;
-  rowsWritten: number;
-  rowsWithRating: number;
-  /** Lignes écartées : série absente du catalogue. */
-  rowsUnknownSeries: number;
-  /** Ventilation des lignes écrites par `manga.type`. */
-  rowsByMangaType: Record<string, number>;
-  requestsUsed: number;
-  budget: number;
-  circuitBroken: boolean;
-}
+export { ReaderSignalOutcome } from './reader-signal-run';
 
 /**
  * Collecte nocturne du signal de lecture PUBLIC de MangaUpdates.
@@ -58,14 +39,15 @@ export interface ReaderSignalOutcome {
  *
  * ## Deux étages, un seul run
  *
- * 1. **Découverte** — `GET /lists/similar/{type}/{mu_id}` sur les séries
- *    prioritaires (`ReaderSignalPriorityService`). Chaque réponse est déjà
- *    du signal exploitable : elle donne, pour la série sondée, jusqu'à 100
- *    lecteurs avec leur note. Une requête de découverte n'est donc jamais
- *    « perdue », même si l'extraction ne suit pas.
- * 2. **Extraction** — pour les lecteurs découverts et non encore collectés :
- *    `GET /lists/public/{uid}` puis une requête par liste publique
- *    (`perpage` à 1000, une seule page suffit presque toujours).
+ * 1. **Découverte** (ici) — `GET /lists/similar/{type}/{mu_id}` sur les
+ *    séries prioritaires (`ReaderSignalPriorityService`). Chaque réponse est
+ *    déjà du signal exploitable : elle donne, pour la série sondée, jusqu'à
+ *    100 lecteurs avec leur note. Une requête de découverte n'est donc
+ *    jamais « perdue », même si l'extraction ne suit pas. Mesuré le
+ *    2026-09-09 : 43,9 lignes et 35,5 lecteurs uniques par requête.
+ * 2. **Extraction** (`ReaderSignalExtractionService`) — pour les lecteurs
+ *    découverts et non encore collectés, leurs listes publiques et leur
+ *    contenu. 4,38 requêtes par lecteur.
  *
  * **Les deux étages sont couplés dans un même run, par conception RGPD** :
  * l'identifiant MangaUpdates en clair n'est jamais persisté, il n'existe que
@@ -102,8 +84,6 @@ export class ReaderSignalCollectService {
   private readonly discoveryShare: number;
   private readonly typeDepth: number;
   private readonly readerTtlDays: number;
-  private readonly maxListPages: number;
-  private readonly perPage: number;
   private readonly maxFailures: number;
   private readonly readerMaxFailures: number;
   private readonly delayMs: number;
@@ -117,6 +97,7 @@ export class ReaderSignalCollectService {
     private readonly hasher: ReaderHashService,
     private readonly priority: ReaderSignalPriorityService,
     private readonly writer: ReaderSignalWriterService,
+    private readonly extraction: ReaderSignalExtractionService,
     private readonly lock: MuJobLockService,
     config: ConfigService,
   ) {
@@ -127,10 +108,10 @@ export class ReaderSignalCollectService {
         : config.get<string>('NODE_ENV') !== 'test';
     this.budget = intFromConfig(config, 'READER_SIGNAL_BUDGET_PER_RUN', 1000);
     const share = Number(config.get<string>('READER_SIGNAL_DISCOVERY_SHARE'));
-    // 0,4 : la découverte rapporte ~70 lignes/requête et alimente le vivier
-    // de lecteurs ; l'extraction ~90 lignes/requête mais élargit le vecteur
-    // de chaque lecteur, sans quoi il n'y a pas de co-occurrence. Les deux
-    // sont nécessaires, la découverte est prioritaire au démarrage.
+    // 0,4 : la découverte alimente le vivier de lecteurs, l'extraction
+    // élargit le vecteur de chacun — sans quoi il n'y a pas de
+    // co-occurrence. Les deux sont nécessaires, la découverte est
+    // prioritaire au démarrage (le vivier part de zéro).
     this.discoveryShare =
       Number.isFinite(share) && share > 0 && share < 1 ? share : 0.4;
     this.typeDepth = intFromConfig(config, 'READER_SIGNAL_TYPE_DEPTH', 1500);
@@ -138,15 +119,6 @@ export class ReaderSignalCollectService {
       config,
       'READER_SIGNAL_READER_TTL_DAYS',
       30,
-    );
-    this.maxListPages = intFromConfig(
-      config,
-      'READER_SIGNAL_MAX_LIST_PAGES',
-      3,
-    );
-    this.perPage = Math.min(
-      intFromConfig(config, 'READER_SIGNAL_PER_PAGE', MU_LIST_MAX_PER_PAGE),
-      MU_LIST_MAX_PER_PAGE,
     );
     this.maxFailures = intFromConfig(config, 'READER_SIGNAL_MAX_FAILURES', 5);
     this.readerMaxFailures = intFromConfig(
@@ -173,8 +145,8 @@ export class ReaderSignalCollectService {
   }
 
   /**
-   * Point d'entrée testable. `null` si le job est désactivé, si le sel de
-   * pseudonymisation manque, ou si un autre job MU tient le verrou.
+   * Point d'entrée testable. `null` si le sel de pseudonymisation manque ou
+   * si un autre job MU tient le verrou.
    */
   async runOnce(): Promise<ReaderSignalOutcome | null> {
     if (!this.hasher.isConfigured) {
@@ -196,7 +168,12 @@ export class ReaderSignalCollectService {
 
   private async collect(): Promise<ReaderSignalOutcome> {
     const outcome = emptyOutcome(this.budget);
-    const state = new RunState(this.budget, this.maxFailures);
+    const budget = new ReaderSignalRunBudget(
+      this.budget,
+      this.maxFailures,
+      this.delayMs,
+      (ms) => this.sleep(ms),
+    );
 
     /**
      * Identifiants MU BRUTS des lecteurs vus cette nuit, associés à leur
@@ -205,12 +182,12 @@ export class ReaderSignalCollectService {
      */
     const seen = new Map<string, string>();
 
-    await this.runDiscovery(outcome, state, seen);
-    await this.runExtraction(outcome, state, seen);
+    await this.runDiscovery(outcome, budget, seen);
+    await this.runExtraction(outcome, budget, seen);
 
     seen.clear();
-    outcome.requestsUsed = state.used;
-    outcome.circuitBroken = state.circuitBroken;
+    outcome.requestsUsed = budget.used;
+    outcome.circuitBroken = budget.circuitBroken;
     this.report(outcome);
     return outcome;
   }
@@ -219,7 +196,7 @@ export class ReaderSignalCollectService {
 
   private async runDiscovery(
     outcome: ReaderSignalOutcome,
-    state: RunState,
+    budget: ReaderSignalRunBudget,
     seen: Map<string, string>,
   ): Promise<void> {
     const discoveryBudget = Math.floor(this.budget * this.discoveryShare);
@@ -232,10 +209,8 @@ export class ReaderSignalCollectService {
 
     const consumedByBucket: Record<string, number> = {};
     for (const target of targets) {
-      if (state.circuitBroken || state.remaining <= 0) break;
-      if (state.used >= discoveryBudget) break;
-      const done = await this.probeSeries(target, outcome, state, seen);
-      if (!done) break;
+      if (!budget.canContinue || budget.used >= discoveryBudget) break;
+      if (!(await this.probeSeries(target, outcome, budget, seen))) break;
       consumedByBucket[target.bucket] =
         (consumedByBucket[target.bucket] ?? 0) + 1;
     }
@@ -252,32 +227,37 @@ export class ReaderSignalCollectService {
   /**
    * Sonde une série sur les cinq types de liste et persiste immédiatement le
    * signal obtenu. Retourne `false` si le run doit s'arrêter.
+   *
+   * Les cinq types sont bien nécessaires : sur une série en cours, `read`
+   * sature à 100 lecteurs là où `complete` s'effondre (mesuré sur Nano
+   * Machine : `complete=4`, `read=100`). Et `unfinished` / `hold` sont la
+   * seule source du signal négatif qui manque au produit.
    */
   private async probeSeries(
     target: DiscoveryTarget,
     outcome: ReaderSignalOutcome,
-    state: RunState,
+    budget: ReaderSignalRunBudget,
     seen: Map<string, string>,
   ): Promise<boolean> {
     const known = new Map<string, string | null>([
       [target.muId, target.mangaType],
     ]);
     for (const listType of READER_LIST_TYPES) {
-      if (state.remaining <= 0 || state.circuitBroken) return false;
+      if (!budget.canContinue) return false;
       let readers;
       try {
-        readers = await this.spend(state, () =>
+        readers = await budget.spend(() =>
           this.client.fetchSimilarReaders(listType, target.muId),
         );
       } catch (err) {
-        state.recordFailure();
+        budget.recordFailure();
         this.logger.warn(
           `[reader-signal] découverte ${listType}/${target.muId} en échec : ` +
             `${(err as Error)?.message ?? err}`,
         );
         continue;
       }
-      state.recordSuccess();
+      budget.recordSuccess();
       outcome.discoveryProbes += 1;
       outcome.probesByBucket[target.bucket] =
         (outcome.probesByBucket[target.bucket] ?? 0) + 1;
@@ -303,12 +283,21 @@ export class ReaderSignalCollectService {
 
   // ───────────────────────────── Extraction ─────────────────────────────
 
+  /**
+   * Extrait les lecteurs découverts qui ne l'ont pas été récemment.
+   *
+   * La fenêtre de fraîcheur est indispensable : `/lists/similar` renvoie
+   * toujours les 100 `user_id` les plus anciens d'une série, donc la
+   * découverte re-propose massivement des lecteurs déjà vus. Sans ce filtre,
+   * le job dépenserait chaque nuit son budget sur les mêmes comptes. Leur
+   * signal de découverte est tout de même écrit : il est déjà payé.
+   */
   private async runExtraction(
     outcome: ReaderSignalOutcome,
-    state: RunState,
+    budget: ReaderSignalRunBudget,
     seen: Map<string, string>,
   ): Promise<void> {
-    if (state.remaining <= 0 || state.circuitBroken || seen.size === 0) return;
+    if (!budget.canContinue || seen.size === 0) return;
 
     const fresh = await this.writer.findFreshReaders(
       [...seen.values()],
@@ -316,133 +305,13 @@ export class ReaderSignalCollectService {
       this.readerMaxFailures,
     );
     for (const [userId, userHash] of seen) {
-      if (state.remaining <= 0 || state.circuitBroken) break;
+      if (!budget.canContinue) break;
       if (fresh.has(userHash)) {
         outcome.readersSkippedFresh += 1;
         continue;
       }
-      await this.extractReader(userId, userHash, outcome, state);
+      await this.extraction.extractReader(userId, userHash, outcome, budget);
     }
-  }
-
-  /** Lit les listes publiques d'un lecteur et persiste leur contenu. */
-  private async extractReader(
-    userId: string,
-    userHash: string,
-    outcome: ReaderSignalOutcome,
-    state: RunState,
-  ): Promise<void> {
-    let lists;
-    try {
-      lists = await this.spend(state, () =>
-        this.client.fetchPublicLists(userId),
-      );
-    } catch (err) {
-      state.recordFailure();
-      // Aucun identifiant dans le message : ni `userId`, ni `userHash`.
-      this.logger.warn(
-        `[reader-signal] listes publiques illisibles : ${
-          (err as Error)?.message ?? err
-        }`,
-      );
-      await this.writer.recordProfile(userHash, 'failed', 0, 0);
-      outcome.readersFailed += 1;
-      return;
-    }
-    state.recordSuccess();
-    if (lists.length === 0) {
-      await this.writer.recordProfile(userHash, 'empty', 0, 0);
-      outcome.readersEmpty += 1;
-      return;
-    }
-
-    const collected: RawSignalRow[] = [];
-    let failed = false;
-    for (const list of lists) {
-      if (state.remaining <= 0 || state.circuitBroken) break;
-      try {
-        collected.push(...(await this.readList(userId, list, state)));
-      } catch (err) {
-        failed = true;
-        state.recordFailure();
-        this.logger.warn(
-          `[reader-signal] liste ${list.listType} illisible : ${
-            (err as Error)?.message ?? err
-          }`,
-        );
-        break;
-      }
-      state.recordSuccess();
-    }
-
-    const known = await this.writer.knownSeries(collected.map((r) => r.muId));
-    const written = await this.writer.writeSignal(
-      collected.map((row) => ({ userHash, ...row })),
-      known,
-    );
-    accumulate(outcome, written);
-    if (failed && written.written === 0) {
-      await this.writer.recordProfile(userHash, 'failed', lists.length, 0);
-      outcome.readersFailed += 1;
-      return;
-    }
-    await this.writer.recordProfile(
-      userHash,
-      'collected',
-      lists.length,
-      written.written,
-    );
-    outcome.readersExtracted += 1;
-  }
-
-  /** Toutes les pages d'une liste publique, dans la limite du budget. */
-  private async readList(
-    userId: string,
-    list: { listId: string; listType: RawListType },
-    state: RunState,
-  ): Promise<RawSignalRow[]> {
-    const first = await this.spend(state, () =>
-      this.client.fetchListPage(
-        userId,
-        list.listId,
-        list.listType,
-        1,
-        this.perPage,
-      ),
-    );
-    const rows = [...first.rows];
-    // `per_page` renvoyé ≠ demandé ⇒ MU a coercé (mesuré : > 1000 → 25).
-    const effective = first.perPageEcho > 0 ? first.perPageEcho : this.perPage;
-    const pages = pagesNeeded(first.totalHits, effective, this.maxListPages);
-    for (let page = 2; page <= pages; page++) {
-      if (state.remaining <= 0) break;
-      const next = await this.spend(state, () =>
-        this.client.fetchListPage(
-          userId,
-          list.listId,
-          list.listType,
-          page,
-          this.perPage,
-        ),
-      );
-      rows.push(...next.rows);
-    }
-    return rows;
-  }
-
-  // ─────────────────────────────── Plomberie ────────────────────────────
-
-  /**
-   * Décompte une requête du budget, respecte la cadence MU, puis exécute.
-   *
-   * Le délai est appliqué AVANT l'appel et non après : un run interrompu en
-   * plein milieu (redémarrage, disjoncteur) ne laisse alors jamais deux
-   * requêtes séparées de moins de `delayMs`, même à cheval sur deux runs.
-   */
-  private async spend<T>(state: RunState, call: () => Promise<T>): Promise<T> {
-    if (state.used > 0) await this.sleep(this.delayMs);
-    state.used += 1;
-    return call();
   }
 
   /** Bilan de run, sans aucune donnée personnelle. */
@@ -468,74 +337,4 @@ export class ReaderSignalCollectService {
         (outcome.circuitBroken ? ' | DISJONCTEUR déclenché' : ''),
     );
   }
-}
-
-/** Type de liste, ré-exporté localement pour alléger la signature. */
-type RawListType = RawSignalRow['listType'];
-
-/**
- * Budget, disjoncteur et compteur de requêtes d'un run.
- *
- * Le disjoncteur compte les échecs CONSÉCUTIFS (remis à 0 par tout succès) :
- * MU qui répond mal ponctuellement ne doit pas arrêter la nuit, MU qui ne
- * répond plus du tout doit l'arrêter immédiatement plutôt que de consommer
- * 1 000 requêtes en pure perte — et de ressembler à une attaque.
- */
-class RunState {
-  used = 0;
-  circuitBroken = false;
-  private consecutiveFailures = 0;
-
-  constructor(
-    private readonly budget: number,
-    private readonly maxFailures: number,
-  ) {}
-
-  get remaining(): number {
-    return this.budget - this.used;
-  }
-
-  recordSuccess(): void {
-    this.consecutiveFailures = 0;
-  }
-
-  recordFailure(): void {
-    this.consecutiveFailures += 1;
-    if (this.consecutiveFailures >= this.maxFailures) this.circuitBroken = true;
-  }
-}
-
-function emptyOutcome(budget: number): ReaderSignalOutcome {
-  return {
-    discoveryProbes: 0,
-    probesByBucket: {},
-    readersDiscovered: 0,
-    readersSkippedFresh: 0,
-    readersExtracted: 0,
-    readersEmpty: 0,
-    readersFailed: 0,
-    rowsWritten: 0,
-    rowsWithRating: 0,
-    rowsUnknownSeries: 0,
-    rowsByMangaType: {},
-    requestsUsed: 0,
-    budget,
-    circuitBroken: false,
-  };
-}
-
-function accumulate(outcome: ReaderSignalOutcome, written: WriteOutcome): void {
-  outcome.rowsWritten += written.written;
-  outcome.rowsWithRating += written.withRating;
-  outcome.rowsUnknownSeries += written.unknownSeries;
-  for (const [type, count] of Object.entries(written.byMangaType)) {
-    outcome.rowsByMangaType[type] =
-      (outcome.rowsByMangaType[type] ?? 0) + count;
-  }
-}
-
-function formatCounts(counts: Record<string, number>): string {
-  const entries = Object.entries(counts);
-  if (entries.length === 0) return 'aucune';
-  return entries.map(([key, value]) => `${key}=${value}`).join(' ');
 }
