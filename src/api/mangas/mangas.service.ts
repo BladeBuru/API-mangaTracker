@@ -27,6 +27,8 @@ import {
   buildAssociatedUpdate,
   buildProtectedColumnsUpdate,
 } from './manga-completeness.util';
+import { RecoGraphIngestService } from './reco-graph-ingest.service';
+import { RecoLinkKind } from './reco-graph.mapper';
 
 /** Durée de vie du cache des recommandations : 7 jours en ms */
 const RECO_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -44,6 +46,7 @@ export class MangasService {
     private readonly userMangaRepository: Repository<UserManga>,
     private readonly dismissals: DismissalService,
     private readonly readingStatusAutoUpdate: ReadingStatusAutoUpdateService,
+    private readonly recoGraph: RecoGraphIngestService,
   ) {}
 
   /**
@@ -195,12 +198,17 @@ export class MangasService {
       await this.readingStatusAutoUpdate.flipCaughtUpToReading(muId);
     }
 
-    // Sauvegarde des recommandations en arrière-plan (fire-and-forget)
-    if (details.muRecommendations?.length) {
-      this.saveRecommendations(muId, details.muRecommendations).catch((err) =>
-        this.logger.warn(`Erreur sauvegarde recos pour manga ${muId}: ${err}`),
+    // Graphe de voisinage MU en arrière-plan (fire-and-forget) — **coût
+    // réseau nul** : `data` contient DÉJÀ les trois champs de voisinage
+    // (`recommendations`, `category_recommendations`, `related_series`), on
+    // n'en lisait que le premier. Ce point est aussi celui qu'emprunte
+    // l'hydratation nocturne (800 fiches/nuit), qui alimente donc le graphe
+    // sans une requête de plus. Cf. `RecoGraphIngestService`.
+    this.recoGraph
+      .ingestSeriesPayload(muId, data)
+      .catch((err) =>
+        this.logger.warn(`Erreur ingestion graphe pour manga ${muId}: ${err}`),
       );
-    }
 
     return details;
   }
@@ -221,17 +229,11 @@ export class MangasService {
   }
 
   /**
-   * Upsert les recommandations MU en BDD pour un manga source.
-   *
-   * Côté `manga_recommendation` : insère les liens (source → recommandé,
-   * weight). Côté `manga` : insère un *stub* (mu_id + title, autres champs
-   * nullable) pour chaque manga recommandé absent — sans ça, ils seraient
-   * filtrés silencieusement de `buildDtoFromScoreMap` (cf. migration
-   * 1746230800000).
-   *
-   * `ON CONFLICT DO NOTHING` sur le stub : on n'écrase JAMAIS un manga
-   * complet existant. Les détails complets sont remplis lazy par
-   * `getMangaDetails` au premier clic user.
+   * Upsert des recommandations MU **manuelles** (`recommendations`) pour un
+   * manga source. Conservé comme point d'entrée public (fiche détail,
+   * tests) ; l'écriture elle-même est déléguée à `RecoGraphIngestService`,
+   * qui porte désormais les trois origines du graphe — stubs `manga`,
+   * rattrapage des covers et upsert des liens compris.
    */
   async saveRecommendations(
     sourceMuId: number,
@@ -243,81 +245,41 @@ export class MangasService {
       medium_cover_url?: string | null;
     }[],
   ): Promise<void> {
-    const sourceId = sourceMuId.toString();
-
-    // 1. Stubs `manga` pour les recommandés absents — ON CONFLICT DO NOTHING
-    //    pour ne jamais écraser un manga existant.
-    //
-    //    On pré-remplit les covers depuis `series_image` (nouveau format MU
-    //    2026) quand elles sont disponibles : ça évite que la dialog
-    //    "Mangas recommandés" reste sur des placeholders gris au premier
-    //    affichage (perçu comme "Impossible de récupérer les recos"
-    //    par les users). Le background refresh `getMangaDetails` complétera
-    //    rating/year/total_chapters au premier clic sur le manga.
-    if (recos.length > 0) {
-      await this.mangaRepository
-        .createQueryBuilder()
-        .insert()
-        .into(Manga)
-        .values(
-          recos.map((reco) => ({
-            mu_id: reco.series_id.toString(),
-            title: reco.series_name || `Manga ${reco.series_id}`,
-            small_cover_url: reco.small_cover_url ?? null,
-            medium_cover_url: reco.medium_cover_url ?? null,
-            // total_chapters a un DEFAULT 0 ; rating/year restent nullable.
-          })),
-        )
-        .orIgnore() // PG : ON CONFLICT (mu_id) DO NOTHING
-        .execute();
-
-      // Rétro-fix : si MU vient de fournir des covers pour des stubs déjà
-      // créés sans cover (situation héritée du déploiement précédent qui ne
-      // lisait pas `series_image`), on les complète sans toucher aux mangas
-      // déjà détaillés (filtre `medium_cover_url IS NULL`).
-      const recosAvecCover = recos.filter((r) => r.medium_cover_url);
-      for (const reco of recosAvecCover) {
-        await this.mangaRepository
-          .createQueryBuilder()
-          .update(Manga)
-          .set({
-            small_cover_url: reco.small_cover_url ?? null,
-            medium_cover_url: reco.medium_cover_url ?? null,
-          })
-          .where('mu_id = :muId', { muId: reco.series_id.toString() })
-          .andWhere('medium_cover_url IS NULL')
-          .execute();
-      }
-    }
-
-    // 2. Liens reco eux-mêmes
-    for (const reco of recos) {
-      await this.recoRepository
-        .createQueryBuilder()
-        .insert()
-        .into(MangaRecommendation)
-        .values({
-          source_mu_id: sourceId,
-          recommended_mu_id: reco.series_id.toString(),
-          recommended_title: reco.series_name,
-          weight: reco.weight,
-        })
-        .orUpdate(
-          ['weight', 'recommended_title', 'updated_at'],
-          ['source_mu_id', 'recommended_mu_id'],
-        )
-        .execute();
-    }
+    await this.recoGraph.saveManualLinks(
+      sourceMuId,
+      recos.map((reco) => ({
+        seriesId: reco.series_id,
+        title: reco.series_name ?? '',
+        weight: reco.weight,
+        smallCoverUrl: reco.small_cover_url ?? null,
+        mediumCoverUrl: reco.medium_cover_url ?? null,
+      })),
+    );
   }
 
-  /** Retourne les recommandations en cache pour un manga source */
+  /**
+   * Liens du graphe en cache pour un manga source.
+   *
+   * **`kind = 'manual'` par défaut, et c'est essentiel** : depuis
+   * l'ingestion des trois voisinages MU (2026-09-09), la table contient
+   * aussi des liens `category` dont les poids sont d'un ordre de grandeur
+   * mille fois supérieur (27 000-38 000 contre 1-220). Les rendre ici les
+   * ferait entrer tels quels dans `RecommendationService.scoreRecos` et dans
+   * les recos de la fiche détail, où ils écraseraient tout. Leur exploitation
+   * passe par `RecoGraphCandidateService`, qui les normalise d'abord.
+   */
   async getCachedRecommendations(
     sourceMuId: number,
+    kinds: RecoLinkKind[] = ['manual'],
   ): Promise<MangaRecommendation[]> {
-    return this.recoRepository.find({
-      where: { source_mu_id: sourceMuId.toString() },
-      order: { weight: 'DESC' },
-    });
+    return this.recoRepository
+      .createQueryBuilder('mr')
+      .where('mr.source_mu_id = :sourceMuId', {
+        sourceMuId: sourceMuId.toString(),
+      })
+      .andWhere('mr.kind IN (:...kinds)', { kinds })
+      .orderBy('mr.weight', 'DESC')
+      .getMany();
   }
 
   /**
@@ -385,33 +347,12 @@ export class MangasService {
           }),
         ),
       );
-      // Format MU 2026-05 : voir commentaire détaillé dans
-      // `MangaDetailsDto.fromMU` — flat `series_id` + `series_image.url.*`.
-      // Le fallback nested reste là par sécurité.
-      const rawRecos: any[] = data['recommendations'] ?? [];
-      const recos = rawRecos
-        .filter((r) => r.weight > 0 && (r.series_id?.series_id ?? r.series_id))
-        .map((r) => {
-          const isNested =
-            typeof r.series_id === 'object' && r.series_id !== null;
-          const img = r.series_image?.url ?? r.series_id?.image?.url ?? null;
-          return {
-            series_id: isNested
-              ? Number(r.series_id.series_id)
-              : Number(r.series_id),
-            series_name: isNested
-              ? r.series_id.title ?? r.series_id.series_name ?? ''
-              : r.series_name ?? '',
-            weight: Number(r.weight),
-            small_cover_url: img?.thumb ?? null,
-            medium_cover_url: img?.original ?? null,
-          };
-        })
-        .filter((r) => !isNaN(r.series_id) && r.series_id > 0);
-
-      if (recos.length) {
-        await this.saveRecommendations(muId, recos);
-      }
+      // La réponse contient les TROIS voisinages : on les persiste tous
+      // (`RecoGraphIngestService` fait le mapping plat/imbriqué du « format
+      // MU 2026-05 » décrit dans `MangaDetailsDto.fromMU`), pour zéro requête
+      // supplémentaire. Seuls les liens `manual` sont rendus à l'appelant —
+      // le contrat de cette méthode est inchangé.
+      await this.recoGraph.ingestSeriesPayload(muId, data);
       return this.getCachedRecommendations(muId);
     } catch (err) {
       if ((err as AxiosError)?.response?.status === 429) {
