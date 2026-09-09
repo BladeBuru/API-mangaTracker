@@ -3,6 +3,7 @@ import {
   isDiscoverableRelation,
   RecoLinkKind,
 } from '@/api/mangas/reco-graph.mapper';
+import { computeAffinityMultiplier } from './library-affinity';
 import { byValueDescThenId, compareIdAsc } from './reco-ordering';
 
 /**
@@ -101,15 +102,6 @@ const FINISHED_STATUSES = ['completed', 'caughtUp'];
 /** Note perso à partir de laquelle une œuvre compte, quel que soit le statut. */
 export const APPRECIATED_RATING_FLOOR = 7;
 
-const STATUS_MULTIPLIER: Record<string, number> = {
-  completed: 1.5,
-  caughtUp: 1.3,
-  reading: 1.2,
-  readLater: 0.8,
-};
-
-const RECENCY_HALF_LIFE_DAYS = 365;
-
 /**
  * Contextes des œuvres **appréciées** de la bibliothèque — les seules
  * autorisées à propager leur voisinage.
@@ -133,17 +125,9 @@ export function buildGraphSourceContexts(
       rating >= APPRECIATED_RATING_FLOOR;
     if (!appreciated) continue;
 
-    const ratingMultiplier = rating > 0 ? rating / 5.0 : 1.0;
-    const statusMultiplier = STATUS_MULTIPLIER[um.readingStatus] ?? 1.0;
-    const ageDays = um.adding_date
-      ? (now - um.adding_date.getTime()) / 86_400_000
-      : 0;
     contexts.set(muId, {
       muId,
-      multiplier:
-        ratingMultiplier *
-        statusMultiplier *
-        Math.exp(-ageDays / RECENCY_HALF_LIFE_DAYS),
+      multiplier: computeAffinityMultiplier(um, now),
       finished: FINISHED_STATUSES.includes(um.readingStatus),
     });
   }

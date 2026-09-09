@@ -4,6 +4,7 @@ import { Repository, SelectQueryBuilder } from 'typeorm';
 import { Manga } from '@/api/mangas/manga.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { NSFW_GENRES } from '@/api/mangas/constants';
+import { computeAffinityMultiplier } from './library-affinity';
 import {
   byValueDescThenId,
   compareEntryValueDescThenKey,
@@ -68,20 +69,6 @@ export class CatalogCandidateService {
 
   /** Nombre de mangas sources exposés par candidat (explicabilité). */
   private static readonly SOURCES_PER_CANDIDATE = 2;
-
-  /**
-   * Miroir de `RecommendationService.STATUS_MULTIPLIER` /
-   * `RECENCY_HALF_LIFE_DAYS` — utilisé uniquement pour choisir les mangas
-   * sources les plus représentatifs (pas pour le score du candidat).
-   */
-  private static readonly STATUS_MULTIPLIER: Record<string, number> = {
-    completed: 1.5,
-    caughtUp: 1.3,
-    reading: 1.2,
-    readLater: 0.8,
-  };
-
-  private static readonly RECENCY_HALF_LIFE_DAYS = 365;
 
   constructor(
     @InjectRepository(Manga)
@@ -228,7 +215,7 @@ export class CatalogCandidateService {
         .filter((um) => (um.manga?.genres ?? []).includes(genre))
         .sort(
           byValueDescThenId<UserManga>(
-            (um) => this.computeMultiplier(um),
+            (um) => computeAffinityMultiplier(um),
             (um) => um.manga.mu_id,
           ),
         )
@@ -237,17 +224,5 @@ export class CatalogCandidateService {
       result.set(genre, sources);
     }
     return result;
-  }
-
-  /** Miroir de `RecommendationService.computeMultiplier` (voir doc statique). */
-  private computeMultiplier(um: UserManga): number {
-    const ratingMultiplier = um.user_rating > 0 ? um.user_rating / 5.0 : 1.0;
-    const statusMultiplier =
-      CatalogCandidateService.STATUS_MULTIPLIER[um.readingStatus] ?? 1.0;
-    const ageDays = (Date.now() - um.adding_date.getTime()) / 86_400_000;
-    const recencyMultiplier = Math.exp(
-      -ageDays / CatalogCandidateService.RECENCY_HALF_LIFE_DAYS,
-    );
-    return ratingMultiplier * statusMultiplier * recencyMultiplier;
   }
 }
