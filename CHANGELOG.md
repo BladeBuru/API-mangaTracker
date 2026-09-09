@@ -5,6 +5,88 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ---
 
+## [Unreleased] — feat/reader-signal-collect
+
+> Basée sur `master` (0c32a8c). **Aucune route exposée, moteur de recommandation NON modifié** : ce chantier s'arrête à la donnée collectée et agrégée, prête à être branchée. Une session parallèle travaille sur le graphe de recommandations et ajoute elle aussi un job MU nocturne — le verrou `MuJobLockService` garantit qu'un seul job MangaUpdates tourne à la fois.
+
+### Contexte
+
+Le moteur de recommandation n'a presque aucun signal : **6 comptes, 87 lignes de bibliothèque, 4 notes, 0 rejet** (relevé en prod le 2026-09-09). Aucun filtrage collaboratif n'est possible là-dessus. MangaUpdates expose des listes de lecture **publiques** dont les `series_id` **sont déjà nos `mu_id`** — aucune table de correspondance à construire.
+
+### Added
+
+- **reader-signal** : **collecte nocturne du signal de lecture public MangaUpdates, anonymisée à l'ingestion**. Cron **05:30** (+ jitter 0-10 min), budget `READER_SIGNAL_BUDGET_PER_RUN` (1 000 requêtes ≈ 33 min à 1 req / 2 s), verrou MU partagé, backoff `mu-backoff.ts`, disjoncteur après 5 échecs consécutifs, curseurs persistants dans `catalog_sync_state` (`reader-signal:disc:<seau>`)
+- **reader-signal** : **étage de découverte** — `GET /v1/lists/similar/{type}/{mu_id}` sur les cinq types de liste. Chaque réponse est **déjà du signal exploitable** (jusqu'à 100 lecteurs avec leur note pour la série sondée) : une requête de découverte n'est jamais perdue, même si l'extraction ne suit pas
+- **reader-signal** : **étage d'extraction** — `GET /v1/lists/public/{uid}` puis une requête par liste publique (`perpage` 1000, une page suffit presque toujours). Fenêtre de rafraîchissement `READER_SIGNAL_READER_TTL_DAYS` (30 j) : un lecteur déjà collecté n'est pas ré-extrait
+- **reader-signal** : **ciblage prioritaire équilibré par type** — bibliothèques utilisateurs d'abord (les seuls titres depuis lesquels le moteur aura à recommander demain), puis la tête de chaque type en **round-robin à part égale**, manhwa et manhua servis en premier
+- **reader-signal** : **agrégation locale des co-occurrences œuvre↔œuvre** (`ReaderSignalAggregateService`, cron 06:30, **aucune requête réseau**). Recalcul intégral `TRUNCATE` + `INSERT` dans une transaction, score cosinus dans [-1, 1], les deux sens de chaque paire stockés
+- **reader-signal** : `purgeRawSignal` (`READER_SIGNAL_RAW_TTL_DAYS`, **désactivée par défaut**) — purge des lignes brutes une fois les agrégats calculés. C'est le geste qui matérialise la minimisation RGPD ; les agrégats y survivent
+- **mangas** : `MuJobLockModule` — le verrou MU partagé extrait de `MangasModule` dans son propre module. Tant qu'il était un simple provider, tout module qui le re-déclarait en obtenait une **seconde instance** et le verrou ne verrouillait plus rien
+
+### RGPD — conçu dès le départ, pas ajouté après
+
+- **Hachage à l'ingestion.** Le `user_id` MangaUpdates est transformé en **HMAC-SHA256 salé** (`READER_SIGNAL_HASH_SALT`, secret d'environnement, jamais versionné, jamais loggé) **avant toute écriture ET avant toute lecture en base**. HMAC et non SHA-256 nu : les `user_id` MU forment un espace énumérable, un hash non salé se casserait par table arc-en-ciel et la pseudonymisation serait cosmétique
+- **Fail-closed.** Sans sel valide (absent ou < 32 caractères), le job se désactive et **aucun appel réseau n'est fait**. Pas de sel par défaut : il serait dans le dépôt
+- **Aucun champ identifiant persisté.** `user_name`, l'URL de profil, `series_title` et `series_url` sont présents dans les payloads MU et sont écartés **dès le mapper** — ni lus, ni copiés, ni loggés. Test explicite sur l'ensemble EXACT des colonnes écrites
+- **Le `user_id` en clair ne quitte jamais la mémoire du run.** C'est pourquoi les deux étages sont couplés dans un même run : il ne peut pas exister de file d'attente de lecteurs persistée entre deux nuits
+- **Chemin de sortie du champ des données personnelles** : lignes brutes → agrégats œuvre↔œuvre (plus aucun individu représenté) → purge possible des lignes brutes
+- **Usage MangaUpdates** : 1 req / 2 s, verrou partagé avec tous les autres jobs MU, écritures idempotentes (rien n'est re-demandé sans raison), fenêtre de rafraîchissement pour ne pas re-collecter les mêmes comptes chaque nuit
+
+### Pondération (justifiée dans `reader-signal-weights.ts` et `decisions.md`)
+
+| Type de liste | Affinité | Pourquoi |
+|---|---|---|
+| `complete` | **+1,00** | Le lecteur est allé au bout : intérêt ET persévérance. Type le plus dense |
+| `read` | **+0,60** | Engagement réel, aucun verdict — il peut abandonner demain |
+| `wish` | **+0,25** | Intention seule, fortement biaisée par la hype |
+| `hold` | **-0,25** | Pause : négatif mais ambigu, il peut reprendre |
+| `unfinished` | **-0,50** | Abandon assumé — **le signal qui manque totalement au produit** |
+
+Les négatifs sont plus petits en valeur absolue parce qu'ils sont ~5× moins nombreux (mesuré sur Solo Leveling : complete 100 / read 100 / wish 56 / unfinished 32 / hold 18) et plus bruités (scanlation arrêtée, temps disponible, changement de plateforme).
+
+Quand une note existe : **`w = min(affinité de la note, affinité du type)`**. Un `min` et non un produit : un produit ferait basculer « abandonné + mal noté » en POSITIF. Le `min` permet à une note basse de rendre n'importe quelle ligne négative (un `complete` noté 2/10 est un rejet) sans jamais rendre positif un abandon ni hisser une intention.
+
+Contribution d'un lecteur à une paire : `w(a) × w(b)`, **sauf quand les deux affinités sont négatives, où elle vaut 0**. Sinon deux négatifs se multiplieraient en positif : « il a abandonné les deux » deviendrait une raison de recommander. La version SQL est **générée** depuis les mêmes constantes, jamais recopiée.
+
+### BDD
+
+- Migration `1788566400000-CreateReaderSignalTables` — additive et idempotente (`hasTable` / `CREATE INDEX IF NOT EXISTS`), trois tables qui démarrent vides, aucune migration de data :
+  - `reader_signal` — `user_hash char(64)`, `mu_id bigint`, `list_type varchar(16)`, `rating numeric(4,2) NULL`, `collected_at timestamptz`. Unicité `(user_hash, mu_id, list_type)` (support de l'`ON CONFLICT`), index sur `mu_id` et sur `user_hash`. **Pas de clé étrangère vers `manga`** : le job n'ingère que des séries déjà connues (filtrage applicatif), mais une purge du catalogue ne doit pas supprimer en cascade du signal déjà agrégé
+  - `reader_profile` — fenêtre de rafraîchissement par lecteur (hash + compteurs, rien d'autre)
+  - `reader_cooccurrence` — `mu_id_a`, `mu_id_b`, `co_readers`, `weight`, `score`, `computed_at`. Index `(mu_id_a, score DESC)` : l'ordre exact de la lecture du moteur
+- Le `down()` nettoie aussi les lignes `catalog_sync_state` en `reader-signal:%`
+
+### Sonde réelle MangaUpdates (2026-09-09, ~60 requêtes espacées de 2 s)
+
+- Les trois endpoints répondent **200 sans authentification**
+- `/lists/similar/{type}/{mu_id}` : `{total_hits, users:[{user_id, user_name, user_rating, intersect_count, percent_match}]}`. **`total_hits` vaut le nombre RENVOYÉ, pas le nombre de lecteurs** — plafonné à 100, tri `user_id` croissant, aucune pagination. `intersect_count` et `percent_match` sont toujours `null` en anonyme. **404** sur type invalide ou série inconnue
+- `/lists/public/{user_id}` : tableau des listes **publiques** uniquement, `[]` si aucune. Un compte peut exposer **plusieurs listes du même type** (listes personnalisées : un compte observé expose `read` / `complete` / `read`)
+- `POST /lists/public/{uid}/search/{lid}` : `{total_hits, page, per_page, list, results:[{series_id, series_title, series_url, metadata}]}`. **`metadata.user_rating` n'existe que si le propriétaire a activé `list.options.show_rating`** (4 comptes sur 6 dans l'échantillon) — son absence ne veut donc PAS dire « non noté ». **404** si la liste n'est plus publique
+- **`perpage` accepte jusqu'à 1000** (écho `per_page: 1000`, 926 résultats rendus) ; **2000 et 5000 sont silencieusement coercés à 25** — l'écho `per_page` fait foi
+- **Densité par type** (`similar/complete`, top-3 notés de chaque type) : Manga 100 / 100 / 100 · Manhwa 100 / 59 / 55 · Manhua 100 / 32 / 7. Part notée entre 20 et 60 %
+- **Coût d'extraction** (8 lecteurs tirés au hasard parmi 561 découverts) : **3,38 listes publiques par lecteur en moyenne**, 0 compte sans liste publique → **4,38 requêtes par lecteur**
+- **Rendement de la file réelle** (découverte 5 types sur les 3 premières cibles du seau bibliothèque, 15 requêtes) : **659 lignes de signal, 532 lecteurs uniques, 21 % notées** → **43,9 lignes et 35,5 lecteurs uniques par requête**. Sur une série en cours, `read` sature à 100 là où `complete` s'effondre (Nano Machine : `complete=4`, `read=100`) — les cinq types sont bien nécessaires
+
+### Vérifié en prod (lecture seule, 2026-09-09)
+
+- Les trois tables et les sept noms d'index sont **libres** ; le timestamp `1788566400000` n'est pas dans `typeorm_migrations` (dernière appliquée : `1788393600000-AddReadingPositionToUserManga`) ; aucune ligne `catalog_sync_state` en `reader-signal:%`
+- Types de jointure conformes : `manga.mu_id` et `user_manga.manga_id` sont tous deux `bigint`, `manga.genres` est `json` (d'où `json_array_elements_text` plutôt que l'opérateur `jsonb ?|`)
+- Filtre NSFW validé sur la vraie colonne (165 lignes concernées) ; plan d'exécution de la requête de ciblage sur `idx_manga_type`
+- **Focus set réel : 4 526 œuvres — 1 516 manhwa, 1 504 manhua, 1 503 manga**, plus 77 titres de bibliothèque. Soit ~10 M de paires possibles au lieu de 147 261² sans cette borne
+
+### Tests
+
+- +132 tests (412 → **544**), 8 suites ajoutées. Couverture : hachage (même entrée → même hash, sel différent → hash différent, refus sans sel, aucune fuite de l'identifiant d'origine), **ensemble EXACT des colonnes écrites** et absence de pseudo / URL / `user_id` dans tout ce qui part en base, mapping des réponses MU réelles (avec et sans `show_rating`, listes multiples du même type, type inconnu ignoré), idempotence (`ON CONFLICT`, `COALESCE` sur la note, SQL identique entre deux agrégations), budget jamais dépassé et part réservée à la découverte, verrou MU (retrait, libération, libération sur échec), fenêtre de rafraîchissement, **série sans aucun lecteur**, 404 traités comme cas nominaux, disjoncteur (échecs consécutifs, remise à zéro sur succès), équilibre par type du round-robin, remise à zéro des curseurs, pondération (chaque cas de signe, monotonie, bornes) et sémantique de l'agrégat
+
+### Non fait — délibérément
+
+- **Aucun endpoint public, moteur de recommandation non modifié** : la session parallèle y travaille. Le branchement se fait par une seule lecture indexée (voir `progress.md`)
+- **Migration non appliquée** : aucune base PostgreSQL locale accessible. La prod n'a été utilisée qu'en **lecture seule** ; la première application se fera par `migrationsRun` au déploiement
+- **Purge des lignes brutes désactivée par défaut** (`READER_SIGNAL_RAW_TTL_DAYS=0`) : tant que la pondération et le périmètre peuvent bouger, il faut pouvoir recalculer les agrégats depuis le brut
+- **Points de conformité restants à trancher** (juridique, hors compétence de cette session) : base légale et test de mise en balance de l'intérêt légitime, information des personnes concernées, durée de conservation à fixer, inscription au registre des traitements, position sur les données sensibles révélées indirectement. Détail dans `progress.md`
+
+---
+
 ## [Unreleased] — feat/reading-position
 
 > Basée sur `master` (3e76e55). **Déployer l'API AVANT le client Flutter** : une session Flutter code contre le contrat ci-dessous en parallèle.
