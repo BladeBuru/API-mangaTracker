@@ -135,6 +135,15 @@ export class RecoGraphCandidateService {
         .addSelect('mr.weight', 'weight')
         .where('mr.source_mu_id IN (:...sourceMuIds)', { sourceMuIds: batch })
         .andWhere('mr.kind IN (:...kinds)', { kinds: ['category', 'related'] })
+        // `ORDER BY` explicite : sans lui Postgres est libre de rendre les
+        // lignes dans n'importe quel ordre, et `scoreCategoryLinks` en
+        // tronque 12 par source — le sous-ensemble retenu, donc le pool de
+        // candidats, changeait d'une requête à l'autre. L'ordre reproduit
+        // celui du tri applicatif (poids décroissant, id croissant).
+        .orderBy('mr.source_mu_id', 'ASC')
+        .addOrderBy('mr.kind', 'ASC')
+        .addOrderBy('mr.weight', 'DESC')
+        .addOrderBy('mr.recommended_mu_id', 'ASC')
         .getRawMany<GraphLinkRow>();
       rows.push(
         ...batchRows.map((row) => ({ ...row, weight: Number(row.weight) })),

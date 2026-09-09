@@ -5,6 +5,10 @@ import { Manga } from '@/api/mangas/manga.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { NSFW_GENRES } from '@/api/mangas/constants';
 import {
+  byValueDescThenId,
+  compareEntryValueDescThenKey,
+} from './reco-ordering';
+import {
   computeTypeProfile,
   fetchByTypeBuckets,
   interleaveByTypeMix,
@@ -140,7 +144,16 @@ export class CatalogCandidateService {
       });
     }
 
-    scored.sort((a, b) => b.score - a.score);
+    // Ordre TOTAL avant le plafond `maxCandidates` : à score égal (fréquent,
+    // le score ne dépend que des genres et de la note), le `mu_id` croissant
+    // décide — sinon l'ordre des lignes rendues par Postgres, non garanti,
+    // choisissait quels candidats survivaient à la troncature.
+    scored.sort(
+      byValueDescThenId<CatalogCandidate>(
+        (c) => c.score,
+        (c) => c.mu_id,
+      ),
+    );
     this.logger.log(
       `Catalogue : ${scored.length} candidat(s) pour genres [${topGenres.join(
         ', ',
@@ -192,8 +205,11 @@ export class CatalogCandidateService {
       }
     }
     if (total === 0) return new Map();
+    // Départage alphabétique : deux genres à égalité d'occurrences ne
+    // doivent pas se disputer la 5e place au gré de l'ordre d'insertion —
+    // le jeu de genres favoris pilote toute la requête catalogue.
     const top = Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
+      .sort(compareEntryValueDescThenKey)
       .slice(0, CatalogCandidateService.TOP_GENRES);
     return new Map(top.map(([genre, count]) => [genre, count / total]));
   }
@@ -210,7 +226,12 @@ export class CatalogCandidateService {
     for (const genre of genres) {
       const sources = userMangas
         .filter((um) => (um.manga?.genres ?? []).includes(genre))
-        .sort((a, b) => this.computeMultiplier(b) - this.computeMultiplier(a))
+        .sort(
+          byValueDescThenId<UserManga>(
+            (um) => this.computeMultiplier(um),
+            (um) => um.manga.mu_id,
+          ),
+        )
         .slice(0, CatalogCandidateService.SOURCES_PER_CANDIDATE)
         .map((um) => um.manga.mu_id);
       result.set(genre, sources);

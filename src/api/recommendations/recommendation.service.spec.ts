@@ -170,6 +170,7 @@ describe('RecommendationService', () => {
       groupBy: jest.fn().mockReturnThis(),
       having: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       getRawMany: jest.fn().mockResolvedValue([]),
     })) as any;
@@ -196,6 +197,7 @@ describe('RecommendationService', () => {
       groupBy: jest.fn().mockReturnThis(),
       having: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       getRawMany: jest.fn().mockResolvedValue([
         { manga_id: '5000', avg: '9.0', count: '10' },
@@ -596,6 +598,7 @@ describe('RecommendationService', () => {
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue([]),
       })) as any;
@@ -887,6 +890,7 @@ describe('RecommendationService', () => {
         groupBy: jest.fn().mockReturnThis(),
         having: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         getRawMany: jest.fn().mockResolvedValue([]),
       })) as any;
@@ -910,6 +914,7 @@ describe('RecommendationService', () => {
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue([]),
       })) as any;
@@ -1127,6 +1132,7 @@ describe('RecommendationService', () => {
         groupBy: jest.fn().mockReturnThis(),
         having: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         getRawMany: jest.fn().mockResolvedValue([
           { manga_id: '5000', avg: '9.0', count: '10' },
@@ -1164,6 +1170,7 @@ describe('RecommendationService', () => {
         groupBy: jest.fn().mockReturnThis(),
         having: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         getRawMany: jest.fn().mockResolvedValue([]),
       })) as any;

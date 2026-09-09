@@ -8,6 +8,7 @@ import { MangasService } from '@/api/mangas/mangas.service';
 import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
 import { CommunityRating } from '@/api/mangas/rating-aggregator';
 import { DismissalService } from './dismissal.service';
+import { byValueDescThenId } from './reco-ordering';
 import { computeTypeProfile, interleaveByTypeMix } from './type-profile';
 
 /**
@@ -155,7 +156,15 @@ export class SleeperHitsService {
         return { manga, score, community: c };
       })
       .filter((s): s is Scored => s !== null);
-    scored.sort((a, b) => b.score - a.score);
+    // Ordre TOTAL avant la troncature à `effectiveLimit` : à score sleeper
+    // égal (fréquent — même note agrégée, même année, zéro vote local), le
+    // `mu_id` croissant décide, plutôt que l'ordre de lecture des lignes.
+    scored.sort(
+      byValueDescThenId<Scored>(
+        (s) => s.score,
+        (s) => s.manga.mu_id,
+      ),
+    );
 
     // 7. Prorata du profil de type, puis top N → DTO (null-safe sur stubs)
     const balanced = interleaveByTypeMix(scored, (s) => s.manga.type, profile);
@@ -240,6 +249,10 @@ export class SleeperHitsService {
           min: SleeperHitsService.COLD_START_MIN_VOTES,
         })
         .orderBy('AVG(um.user_rating)', 'DESC')
+        // Départage : `LIMIT` tronque le classement communautaire, et les
+        // moyennes ex æquo sont la norme sur peu de votes. Sans cet ordre,
+        // le vivier du démarrage à froid changeait à chaque appel.
+        .addOrderBy('um.manga_id', 'ASC')
         .limit(maxRows)
         .getRawMany();
     if (rows.length === 0) return [];
@@ -268,7 +281,12 @@ export class SleeperHitsService {
         return m ? this.toDto(m, community.get(muId)) : null;
       })
       .filter((d): d is MangaQuickViewDto => d !== null)
-      .sort((a, b) => (b.aggregatedRating ?? 0) - (a.aggregatedRating ?? 0));
+      .sort(
+        byValueDescThenId<MangaQuickViewDto>(
+          (d) => d.aggregatedRating ?? 0,
+          (d) => d.muId,
+        ),
+      );
   }
 
   /** Carte null-safe (stubs) + enrichissement communautaire. */

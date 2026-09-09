@@ -7,6 +7,10 @@ import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
 import { hydrateIncompleteDtosInBackground } from '@/api/mangas/manga-completeness.util';
 import { ScoredEntry } from './scored-entry.interface';
 import {
+  byValueDescThenId,
+  compareEntryValueDescThenKey,
+} from './reco-ordering';
+import {
   interleaveByTypeMix,
   isEmptyTypeProfile,
   TypeProfile,
@@ -66,7 +70,16 @@ export class RecommendationDtoBuilderService {
         score: entry.score,
         sources: entry.sources,
       }))
-      .sort((a, b) => b.score - a.score);
+      // Ordre TOTAL : à score égal, `mu_id` croissant. Sans ce départage,
+      // l'ordre d'entrée (= ordre d'insertion du `scoreMap`, issu d'une
+      // course `Promise.all`) décidait du classement des ex æquo, et deux
+      // requêtes voisines ne rendaient pas la même liste.
+      .sort(
+        byValueDescThenId<RankedEntry>(
+          (e) => e.score,
+          (e) => e.mu_id,
+        ),
+      );
     if (sorted.length === 0) return [];
 
     const mangaMap = new Map<string, Manga>();
@@ -130,7 +143,7 @@ export class RecommendationDtoBuilderService {
         // n'a pas été appelé — repli 0 / '' (contrat DTO inchangé).
         const dto = MangaQuickViewDto.fromCatalog(manga);
         const topSources = Array.from(scored.sources.entries())
-          .sort((a, b) => b[1] - a[1])
+          .sort(compareEntryValueDescThenKey)
           .slice(0, 3)
           .map(([muId]) => sourceTitleMap.get(muId))
           .filter((t): t is string => Boolean(t));

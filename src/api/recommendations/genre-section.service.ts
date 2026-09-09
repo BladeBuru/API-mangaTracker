@@ -10,6 +10,10 @@ import { NSFW_GENRES } from '@/api/mangas/constants';
 import { hydrateIncompleteDtosInBackground } from '@/api/mangas/manga-completeness.util';
 import { ScoredEntry } from './scored-entry.interface';
 import {
+  byValueDescThenId,
+  compareEntryValueDescThenKey,
+} from './reco-ordering';
+import {
   computeTypeProfile,
   fetchByTypeBuckets,
   interleaveByTypeMix,
@@ -107,7 +111,12 @@ export class GenreSectionService {
         score: entry.score,
         sources: entry.sources,
       }))
-      .sort((a, b) => b.score - a.score);
+      .sort(
+        byValueDescThenId<PoolEntry>(
+          (p) => p.score,
+          (p) => p.mu_id,
+        ),
+      );
 
     const mangas = await this.mangaRepository.find({
       where: { mu_id: In(pool.map((p) => p.mu_id)) },
@@ -378,7 +387,7 @@ export class GenreSectionService {
     sourceTitleMap: Map<string, string>,
   ): string[] {
     return Array.from(entry.sources.entries())
-      .sort((a, b) => b[1] - a[1])
+      .sort(compareEntryValueDescThenKey)
       .slice(0, 3)
       .map(([id]) => sourceTitleMap.get(id))
       .filter((t): t is string => Boolean(t));

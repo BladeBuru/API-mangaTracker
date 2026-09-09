@@ -3,6 +3,7 @@ import {
   isDiscoverableRelation,
   RecoLinkKind,
 } from '@/api/mangas/reco-graph.mapper';
+import { byValueDescThenId, compareIdAsc } from './reco-ordering';
 
 /**
  * Normalisation et agrégation du **graphe de voisinage MangaUpdates** —
@@ -172,8 +173,13 @@ export function scoreGraphLinks(
     else bySource.set(row.source_mu_id, [row]);
   }
 
+  // Les contributions sont ensuite ADDITIONNÉES au score d'un candidat.
+  // L'addition flottante n'étant pas associative, l'ordre d'émission doit
+  // être fixe : on parcourt les sources par `mu_id` croissant plutôt que
+  // dans l'ordre d'arrivée des lignes.
   const contributions: GraphContribution[] = [];
-  for (const [sourceMuId, links] of bySource) {
+  for (const sourceMuId of [...bySource.keys()].sort(compareIdAsc)) {
+    const links = bySource.get(sourceMuId) as GraphLinkRow[];
     const context = contexts.get(sourceMuId) as GraphSourceContext;
     contributions.push(...scoreCategoryLinks(sourceMuId, links, context));
     contributions.push(...scoreRelatedLinks(sourceMuId, links, context));
@@ -187,9 +193,18 @@ function scoreCategoryLinks(
   links: GraphLinkRow[],
   context: GraphSourceContext,
 ): GraphContribution[] {
+  // Ordre TOTAL avant la troncature : à poids égal, `recommended_mu_id`
+  // croissant. Sans lui, le sous-ensemble des 12 voisins retenus dépendait
+  // de l'ordre de lecture des lignes (`getRawMany` sans `ORDER BY`) — donc
+  // les candidats injectés dans le pool changeaient d'une requête à l'autre.
   const category = links
     .filter((row) => row.kind === 'category' && row.weight > 0)
-    .sort((a, b) => b.weight - a.weight)
+    .sort(
+      byValueDescThenId<GraphLinkRow>(
+        (row) => row.weight,
+        (row) => row.recommended_mu_id,
+      ),
+    )
     .slice(0, MAX_CATEGORY_LINKS_PER_SOURCE);
   if (category.length === 0) return [];
 
@@ -215,6 +230,7 @@ function scoreRelatedLinks(
       (row) =>
         row.kind === 'related' && isDiscoverableRelation(row.relation_type),
     )
+    .sort((a, b) => compareIdAsc(a.recommended_mu_id, b.recommended_mu_id))
     .map((row) => ({
       muId: row.recommended_mu_id,
       sourceMuId,

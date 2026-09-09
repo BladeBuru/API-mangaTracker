@@ -15,6 +15,7 @@ import { GenreSectionService } from './genre-section.service';
 import { DismissalService } from './dismissal.service';
 import { RecoGraphCandidateService } from './reco-graph-candidate.service';
 import { RecommendationDtoBuilderService } from './recommendation-dto-builder.service';
+import { byValueDescThenId } from './reco-ordering';
 import { ScoredEntry } from './scored-entry.interface';
 import { SleeperHitsService } from './sleeper-hits.service';
 import { computeTypeProfile } from './type-profile';
@@ -496,7 +497,12 @@ export class RecommendationService {
     scoreMap: Map<string, ScoredEntry>,
   ): void {
     const topRecos = [...recos]
-      .sort((a, b) => b.weight - a.weight)
+      .sort(
+        byValueDescThenId<MangaRecommendation>(
+          (reco) => reco.weight,
+          (reco) => reco.recommended_mu_id,
+        ),
+      )
       .slice(0, RecommendationService.MAX_RECOS_PER_SOURCE);
 
     for (const reco of topRecos) {
