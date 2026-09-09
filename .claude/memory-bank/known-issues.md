@@ -126,7 +126,7 @@
   : pool 202/232/224 candidats, **21/51/42 positions ex æquo** (10 à 22 % du
   classement était arbitraire), cache canonique 91/104/101 Kio par
   utilisateur.
-- **Tests** : 615 → 627. Reproduction du symptôme exact (écriture en tâche de
+- **Tests** : 606 → 642. Reproduction du symptôme exact (écriture en tâche de
   fond entre les deux écrans : 7 des 10 premières cartes déplacées) — en
   échec sur `452ea39`, vert sur la branche.
 - **Non couvert** : `RecoCacheService` est en mémoire et mono-instance

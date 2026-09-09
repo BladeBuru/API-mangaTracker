@@ -377,7 +377,7 @@ Branche `fix/reco-order-stable` (base `master` `452ea39`). **Aucune migration.**
 
 **Ce qui n'a PAS changé** : aucun algorithme de scoring ni de sélection. À vivier identique, le classement est le même — seuls les ex æquo sont départagés. Un seul changement de comportement visible : au-delà de `offset + limit > 500`, la réponse est vide là où l'ancienne pagination pouvait rendre des titres (pool réel : 202-232, la borne n'est pas atteinte ; le client Flutter s'arrête proprement sur une page incomplète).
 
-**Tests** : 615 → 627. 12 cas de stabilité + 9 sur les comparateurs. Dont la reproduction du symptôme exact : une écriture en tâche de fond remplissant `type` entre les deux écrans déplaçait **7 des 10 premières cartes** — en échec sur `452ea39`, vert sur la branche.
+**Tests** : 606 → 642. 12 cas de stabilité, 9 sur les comparateurs, 15 sur le bornage de fenêtre. Dont la reproduction du symptôme exact : une écriture en tâche de fond remplissant `type` entre les deux écrans déplaçait **7 des 10 premières cartes** — en échec sur `452ea39`, vert sur la branche.
 
 **Reste à faire après déploiement** : (1) confirmer sur appareil que l'ordre accueil / « Voir tout » coïncide ; (2) côté Flutter, l'atténuation `feat/reco-order-dismiss` (page canonique partagée) devient redondante mais reste inoffensive — décider si on la garde ; (3) surveiller la mémoire du cache si le nombre de comptes actifs grandit (`RECO_CANONICAL_MAX_ITEMS` permet de la borner) ; (4) `RecoCacheService` reste **en mémoire, mono-instance** : une seconde instance d'API redonnerait deux ordres différents (tech-design D5).
 

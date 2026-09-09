@@ -49,7 +49,7 @@ Une carte de recommandation pèse ≈ 378 o en JSON, ≈ 460 o en tas Node. `Rec
 
 ### Tests
 
-627 tests verts (615 → 627). 12 cas de stabilité (`recommendation.service.spec.ts`) + 9 cas sur `reco-ordering.spec.ts`. Dont un test qui reproduit le symptôme exact : une écriture en tâche de fond remplissant `type` entre l'accueil et « Voir tout » déplaçait **7 des 10 premières cartes** — vérifié en échec sur `452ea39`, vert sur la branche.
+642 tests verts (606 → 642). 12 cas de stabilité (`recommendation.service.spec.ts`), 9 cas sur `reco-ordering.spec.ts`, 15 sur `reco-pagination.spec.ts`. Dont un test qui reproduit le symptôme exact : une écriture en tâche de fond remplissant `type` entre l'accueil et « Voir tout » déplaçait **7 des 10 premières cartes** — vérifié en échec sur `452ea39`, vert sur la branche.
 
 ---
 
