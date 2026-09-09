@@ -1580,7 +1580,7 @@ describe('RecommendationService', () => {
      * l'accueil déclenchait ces écritures et la requête de « Voir tout »,
      * quelques secondes plus tard, recalculait tout sur une base modifiée.
      */
-    it("une écriture en tâche de fond entre les deux écrans ne réordonne plus la liste", async () => {
+    it('une écriture en tâche de fond entre les deux écrans ne réordonne plus la liste', async () => {
       // Bibliothèque 100 % manhwa → profil marqué, l'entrelacement s'applique.
       userMangaRepo.find.mockResolvedValue(
         ['1000', '1001'].map((muId, index) =>
