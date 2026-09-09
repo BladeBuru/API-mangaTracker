@@ -221,6 +221,118 @@ Branche `feat/auto-status-en-cours` (base `d7fd6fd`). Pendant Flutter : même no
 
 ---
 
+## 🤝 Signal de lecture public MangaUpdates — collecte anonymisée (2026-09-09)
+
+> Branche `feat/reader-signal-collect`. **Aucune route exposée, moteur de recommandation NON modifié.** Le livrable s'arrête à la donnée collectée et agrégée.
+
+#### Pourquoi
+
+Relevé en prod le 2026-09-09 : **6 comptes, 87 lignes de bibliothèque, 4 notes, 0 rejet**. Aucun filtrage collaboratif n'est possible là-dessus. MangaUpdates expose des listes de lecture **publiques** dont les `series_id` **sont déjà nos `mu_id`** — aucune table de correspondance à construire.
+
+#### Ce qui est fait
+
+- ✅ **3 tables** (migration `1788566400000`, additive et idempotente) : `reader_signal` (brut pseudonymisé, unicité `user_hash` + `mu_id` + `list_type`), `reader_profile` (fenêtre de rafraîchissement), `reader_cooccurrence` (agrégats œuvre↔œuvre, index `(mu_id_a, score DESC)`)
+- ✅ **Job de collecte** `ReaderSignalCollectService` — cron **05:30** + jitter, budget 1 000 requêtes/nuit, verrou MU partagé, backoff `mu-backoff.ts`, disjoncteur, curseurs dans `catalog_sync_state`
+- ✅ **Job d'agrégation** `ReaderSignalAggregateService` — cron **06:30**, purement local (aucune requête réseau), recalcul intégral en une transaction
+- ✅ **Pseudonymisation fail-closed** `ReaderHashService` — HMAC-SHA256 salé, sans sel valide rien n'est écrit et aucun appel réseau n'est fait
+- ✅ **138 tests** ajoutés (412 → 550), 9 suites
+
+#### Créneaux MU et partage du quota
+
+| Heure | Job | Budget |
+|---|---|---|
+| 01:00 | `CatalogTypeBackfillService` (type) | 200 pages |
+| 02:00 | `CatalogReleasesService` (sorties) | ~3 pages en régime établi |
+| 03:30 | `CatalogSyncService` (catalogue) | 60 pages |
+| ~04:00 | Hydratation | 800 appels détail |
+| **05:30** | **`ReaderSignalCollectService`** | **1 000 requêtes ≈ 33 min** |
+| 06:30 | Agrégation des co-occurrences | **0 requête MU** |
+
+05:30 laisse 90 min de marge après l'hydratation et finit vers 06:05 au pire. Le job nocturne de la session parallèle (graphe de recommandations) prendra un autre créneau ; en cas de chevauchement, le **verrou `MuJobLockService` partagé** fait sauter le run perdant — les curseurs sont persistés, rien n'est perdu, la reprise se fait au créneau suivant. Débit global inchangé : **1 requête / 2 s, un seul job MU à la fois**.
+
+#### Rendement mesuré (sonde réelle du 2026-09-09)
+
+- **Découverte** : 43,9 lignes de signal et 35,5 lecteurs uniques **par requête** (15 requêtes sur les 3 premières cibles du seau bibliothèque → 659 lignes, 532 lecteurs, 21 % notées)
+- **Extraction** : 4,38 requêtes par lecteur (1 `GET /lists/public` + 3,38 listes en moyenne), 0 compte sans liste publique sur l'échantillon
+- Projection à budget par défaut (400 découverte / 600 extraction) : **~17 500 lignes/nuit de découverte + ~137 lecteurs extraits**, soit plusieurs dizaines de milliers de lignes par nuit
+
+#### Comment brancher le moteur de recommandation (chantier suivant)
+
+`reader_cooccurrence` est conçue pour être lue **sans jointure et sans `OR`** — les deux sens de chaque paire sont stockés :
+
+```sql
+-- Voisines d'une œuvre, meilleures d'abord (index IDX_reader_cooccurrence_a_score)
+SELECT mu_id_b, score, co_readers
+  FROM reader_cooccurrence
+ WHERE mu_id_a = $1
+   AND co_readers >= 5          -- seuil de confiance à régler côté moteur
+ ORDER BY score DESC
+ LIMIT 20;
+```
+
+Points d'attention pour l'intégration :
+1. **`score < 0` est exploitable tel quel comme MALUS** (« les lecteurs qui aiment A abandonnent B ») — c'est le signal négatif qui manque au produit, ne pas le filtrer par un `score > 0` réflexe
+2. **`co_readers` est l'indicateur de confiance**, indépendant du score : un 0,9 sur 3 lecteurs ne vaut pas un 0,6 sur 400. Pondérer, ou seuiller
+3. Pour un profil complet, sommer les voisines de toute la bibliothèque de l'utilisateur en pondérant par son propre engagement, puis exclure ce qu'il a déjà et ce qu'il a écarté (`user_manga_dismissal`)
+4. Le prorata par type (`interleaveByTypeMix`) reste applicable **après** ce scoring — la co-occurrence ne remplace pas la composition, elle alimente le pool de candidats
+5. `ReaderSignalAggregateService` est **exporté** par `ReaderSignalModule` : le moteur peut déclencher un recalcul sans dépendre du cron
+
+#### Conformité — points restant à trancher (juridique, hors compétence de cette session)
+
+Ce qui est **traité par la conception** : pseudonymisation avant écriture, aucun champ identifiant persisté ni loggé, minimisation (5 colonnes), chemin d'anonymisation par agrégation, purge des lignes brutes outillée, cadence et cache respectueux de MangaUpdates.
+
+Ce qui reste à **faire valider par un juriste**, avant toute exploitation en production :
+
+1. **Base légale.** L'intérêt légitime (art. 6.1.f) est le candidat naturel, mais il exige un **test de mise en balance documenté** : finalité, nécessité, et attentes raisonnables des personnes concernées — des lecteurs MangaUpdates qui n'ont jamais entendu parler de Manga Tracker. À écrire et à conserver.
+2. **Information des personnes concernées** (art. 14, collecte indirecte). En pratique impossible à notifier individuellement ; l'article 14.5.b prévoit une exemption pour effort disproportionné, mais elle **doit être motivée** et compensée par une information publique — section dédiée dans `legal/PRIVACY_POLICY.md`, à rédiger.
+3. **Données sensibles (art. 9).** Une liste de lecture peut révéler indirectement une orientation sexuelle (BL/yaoi). Trancher : la pseudonymisation suffit-elle, ou faut-il exclure certains genres de la collecte ? Le filtre NSFW existant réduit l'exposition mais ne la supprime pas.
+4. **Durée de conservation.** Fixer une valeur pour `READER_SIGNAL_RAW_TTL_DAYS` (90 jours est un point de départ raisonnable) et l'activer une fois la pondération stabilisée. Aujourd'hui à `0` = pas de purge.
+5. **Droits des personnes** (accès, effacement, opposition). Sans identifiant en clair, retrouver un lecteur suppose de re-calculer son hash depuis un `user_id` fourni — techniquement possible, procédure à écrire. Décider aussi ce qu'on répond à une demande visant des agrégats déjà calculés.
+6. **Registre des traitements** (art. 30) : inscrire ce traitement, ses finalités, ses catégories de données et sa durée de conservation.
+7. **AIPD** (art. 35) : évaluer si elle est requise — traitement à grande échelle de données pouvant révéler des données sensibles, personnes non informées. À trancher, pas à supposer.
+8. **Conditions d'utilisation de MangaUpdates** : vérifier que la collecte automatisée de listes publiques y est admise, et à quelles conditions (attribution, cadence).
+
+**Tant que ces points ne sont pas tranchés**, le job peut rester désactivé (`READER_SIGNAL_ENABLED=false`, ou simplement pas de `READER_SIGNAL_HASH_SALT` : le fail-closed suffit).
+
+#### Requête SQL de bilan (à jouer après quelques nuits)
+
+Répond à « est-ce que ce chemin produit assez de signal sur le manhwa/manhua ? » :
+
+```sql
+SELECT COALESCE(m.type, 'inconnu')                        AS type_oeuvre,
+       COUNT(*)                                           AS lignes,
+       COUNT(DISTINCT s.user_hash)                        AS lecteurs,
+       COUNT(DISTINCT s.mu_id)                            AS oeuvres,
+       ROUND(100.0 * COUNT(s.rating) / COUNT(*), 1)       AS pct_notees,
+       COUNT(*) FILTER (WHERE s.list_type = 'complete')   AS complete,
+       COUNT(*) FILTER (WHERE s.list_type = 'read')       AS en_cours,
+       COUNT(*) FILTER (WHERE s.list_type = 'wish')       AS souhaits,
+       COUNT(*) FILTER (WHERE s.list_type IN ('unfinished','hold')) AS negatifs
+  FROM reader_signal s
+  JOIN manga m ON m.mu_id = s.mu_id
+ GROUP BY 1
+ ORDER BY lignes DESC;
+
+-- Couverture des agrégats par type (ce que le moteur pourra réellement servir)
+SELECT COALESCE(m.type, 'inconnu')                     AS type_oeuvre,
+       COUNT(DISTINCT c.mu_id_a)                       AS oeuvres_avec_voisines,
+       COUNT(*)                                        AS paires,
+       COUNT(*) FILTER (WHERE c.score < 0)             AS paires_negatives,
+       ROUND(AVG(c.co_readers), 1)                     AS lecteurs_communs_moyen
+  FROM reader_cooccurrence c
+  JOIN manga m ON m.mu_id = c.mu_id_a
+ GROUP BY 1
+ ORDER BY paires DESC;
+
+-- Progression nuit après nuit
+SELECT DATE(collected_at) AS nuit, COUNT(*) AS lignes,
+       COUNT(DISTINCT user_hash) AS lecteurs
+  FROM reader_signal GROUP BY 1 ORDER BY 1 DESC LIMIT 14;
+```
+
+
+---
+
 ## 🐛 Problèmes connus
 
 Voir [.claude/memory-bank/known-issues.md](known-issues.md) — 5 problèmes actifs détectés à l'audit sécurité de mai 2026.
