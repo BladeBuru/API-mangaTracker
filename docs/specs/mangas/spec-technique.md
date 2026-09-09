@@ -215,6 +215,9 @@ Lecture BDD uniquement (aucun appel MU), cache mémoire ~10 min stale-while-reva
 | `RELEASES_SYNC_MAX_PAGES` | `20` | Plafond DUR de pages MU par run du job sorties. 3 pages suffisent en régime établi (267 sorties/jour mesurées) ; le plafond ne sert qu'à borner un rattrapage après une longue indisponibilité — sans lui, un curseur périmé de plusieurs semaines ferait paginer le job sans fin |
 | `RELEASES_SYNC_LOOKBACK_DAYS` | `7` | Fenêtre de rattrapage au **tout premier run** (curseur NULL). On ne remonte pas tout l'historique MU : le but du job est de ne pas rater les NOUVEAUX chapitres, pas de reconstruire le passé (l'hydratation et le signalement communautaire s'en chargent) |
 | `CATALOG_SYNC_HYDRATION_BUDGET` | `800` | Appels `getMangaDetails` max/nuit pour hydrater les lignes `manga` incomplètes. 800 × 2 s ≈ 27 min à 30 req/min, soit la moitié du plafond MU anonyme (~60 req/min). Relevé de 200 → 800 le 2026-08-28 : avec le critère élargi, 200/nuit mettait plusieurs semaines à rattraper le stock |
+| `RECO_GRAPH_BACKFILL_ENABLED` | `true` (`false` si `NODE_ENV=test`) | Active/désactive le cron du graphe de recommandations |
+| `RECO_GRAPH_BACKFILL_PAGES_PER_RUN` | `1500` | Fiches `/series/{id}` max par nuit pour le graphe (1 500 × 2 s ≈ 50 min à 30 req/min). L'ingestion elle-même est gratuite : elle se branche sur les fiches déjà téléchargées par `getMangaDetails` et l'hydratation |
+| `RECO_GRAPH_BACKFILL_REFRESH_DAYS` | `60` | Délai avant de relire une série déjà visitée (`manga.reco_graph_attempted_at`). Le graphe MU bouge peu ; ce filigrane est ce qui garantit la progression d'une nuit à l'autre sur 147 000 titres |
 
 ---
 
@@ -245,6 +248,28 @@ Job nightly `hydration` (ex-`hydrateMissingGenres`, généralisé le 2026-08-28)
 **Ancien tri supprimé** : `ORDER BY rating DESC NULLS LAST` enterrait précisément les lignes à réparer (un stub a `rating` NULL par construction, il passait donc derrière les ~5000 lignes du catalogue) et une ligne « genres OK / rating NULL » n'était jamais reprise — le système ne se rattrapait jamais seul.
 
 **Pourquoi une colonne dédiée plutôt que `updated_at < now() - 30 j`** : un stub fraîchement créé a un `updated_at` récent et serait exclu 30 jours alors que c'est exactement la ligne à réparer en priorité. `hydration_attempted_at` est aussi découplée des écritures sans rapport (refresh covers, report chapitres) qui repousseraient l'hydratation par effet de bord. C'est la garde la plus simple qui garantit réellement la progression du job d'une nuit à l'autre.
+
+### Graphe de voisinage MangaUpdates (`RecoGraphIngestService` / `RecoGraphBackfillService`)
+
+`GET /v1/series/{id}` renvoie TROIS champs de voisinage — `recommendations`
+(suggestions manuelles, poids 2-220), `category_recommendations` (votes de
+catégorie, poids 27 000-38 000) et `related_series` (suites, préquelles,
+adaptations, avec `relation_type`). Seul le premier était lu jusqu'au
+2026-09-09, et c'est le moins pertinent : sur Solo Leveling (Manhwa), il
+donne *Kimetsu no Yaiba* et *Vinland Saga* là où `category_recommendations`
+donne *Solo Leveling: Ragnarok* et *I Am the Sorcerer King*.
+
+| Aspect | Comportement |
+|--------|--------------|
+| **Ingestion** | `RecoGraphIngestService.ingestSeriesPayload(muId, payload)` — reçoit une réponse DÉJÀ téléchargée, **zéro requête MU supplémentaire**. Branchée sur `getMangaDetails` (donc sur les 800 fiches/nuit de l'hydratation) et `fetchAndCacheRecommendations` |
+| **Écritures** | Stubs `manga` `ON CONFLICT (mu_id) DO NOTHING`, covers complétées seulement si absentes, liens upsertés sur `(source_mu_id, kind, recommended_mu_id)`, `manga.type` de la SOURCE écrit null-safe (il vient de la même réponse et alimente le prorata de type des recommandations) |
+| **Rattrapage** | Cron **07:00 + jitter 0-10 min** (01:00 / 02:00 / 03:30 sont pris, l'hydratation enchaînée finit vers 04:20, et un chantier parallèle occupe 05:30 / 06:30). Priorité : bibliothèques → cibles déjà recommandées → éligibles à l'accueil (cover + genres + note ≥ 7) → mieux notées |
+| **Curseur** | Filigrane `manga.reco_graph_attempted_at` posé après CHAQUE tentative — l'ordre de parcours dépend de l'usage et change d'une nuit à l'autre, un `OFFSET` sauterait des séries. `catalog_sync_state` (`reco-graph`) porte l'état de la passe |
+| **Garde-fous** | Verrou MU partagé (`MuJobLockService`), backoff `mu-backoff.ts`, disjoncteur à 5 fiches consécutives en échec |
+
+L'exploitation côté moteur (normalisation des poids, gating des `related`,
+mesure avant/après) est décrite dans
+`docs/specs/recommendations/spec-technique.md`.
 
 ### Pattern fire-and-forget avec rate-limiting
 

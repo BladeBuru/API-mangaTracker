@@ -3,9 +3,9 @@
 | Champ         | Valeur                                                                                  |
 |---------------|-----------------------------------------------------------------------------------------|
 | Module        | recommendations                                                                         |
-| Version       | 0.3.0                                                                                   |
-| Date          | 2026-08-26                                                                              |
-| Source        | Rétro-ingénierie + feat/recos-chapitres-traductions + fix/recos-by-genre-dedup (corrections revue adversariale) |
+| Version       | 0.5.0                                                                                   |
+| Date          | 2026-09-09                                                                              |
+| Source        | Rétro-ingénierie + feat/recos-chapitres-traductions + fix/recos-by-genre-dedup + feat/manga-type-recos-home + feat/reco-graph-mu |
 
 ---
 
@@ -422,3 +422,88 @@ Rejeté comme ADR : AP-7 (détail de schéma non-architectural).
 | `src/api/recommendations/dismissal.service.spec.ts` | Rejets : unicité par upsert `ON CONFLICT`, annulation + 404 sur double annulation, invalidation du cache de recos, sentinelle `userId <= 0` sans requête, union biblio ∪ rejets, listing trié | Ajouté 2026-08-28 |
 | Tests d'exclusion (répartis) | Un test par chemin de reco dans `recommendation.service.spec.ts` (liste plate, catalogue, by-genre, sleepers, cold start ×2), `genre-section.service.spec.ts` (complément catalogue + défense en profondeur) et `mangas.service.spec.ts` (fiche détail ×3) | Ajouté 2026-08-28 |
 | Tests controller | Non présents dans le module | Absent |
+
+---
+
+## Graphe de voisinage œuvre-à-œuvre MangaUpdates (v0.5.0 — 2026-09-09)
+
+### Le constat mesuré
+
+`GET https://api.mangaupdates.com/v1/series/{id}` renvoie **trois** champs de voisinage, de qualité très inégale. Relevé sur Solo Leveling (`15180124327`, Manhwa) le 2026-09-09 :
+
+| Champ | Poids MU | Voisins obtenus | Ingéré avant ? |
+|-------|----------|-----------------|----------------|
+| `recommendations` | 2 à 3 | *Kimetsu no Yaiba*, *Vinland Saga*, *Mieruko-chan* — des mangas japonais sans rapport | **oui, le seul** |
+| `category_recommendations` | 27 000 à 38 000 | *Solo Leveling: Ragnarok*, *I Am the Final Boss*, *I Am the Sorcerer King* — exactement le bon voisinage manhwa | non |
+| `related_series` | (aucun) | suites, préquelles, adaptations, avec `relation_type` | non |
+
+État de `manga_recommendation` en production : **17 825 liens sur 3 812 séries** (2,6 % d'un catalogue de 147 261 titres), poids 2-220 (moyenne 12,1), cibles à 84 % `Manga` / 7,5 % `Manhwa` / 1 % `Manhua`, et **12 titres sur 77** en bibliothèque avec un lien sortant. 100 % des cibles existent déjà dans `manga` (`series_id` MU **est** notre `mu_id`).
+
+### Modèle de données
+
+Migration `1788480000000` :
+
+| Colonne | Type | Rôle |
+|---------|------|------|
+| `manga_recommendation.kind` | `varchar(16)` NOT NULL, défaut `'manual'` | origine du lien (`manual` / `category` / `related`) — les 17 825 lignes existantes sont marquées `manual` par un UPDATE explicite avant la pose du NOT NULL |
+| `manga_recommendation.relation_type` | `varchar(48)` NULL | `Sequel`, `Prequel`, `Spin-Off`, `Adapted From`… — uniquement pour `kind = 'related'` |
+| `manga.reco_graph_attempted_at` | `timestamptz` NULL | filigrane du rattrapage nocturne |
+
+Unicité : `IDX_manga_reco_source_kind_recommended_unique (source_mu_id, kind, recommended_mu_id)`, créé AVANT la suppression de l'ancien index (la table n'est jamais sans garde-fou). `kind` en deuxième position pour servir aussi la requête du moteur (« tous les liens `category` de ces sources »).
+
+**Pourquoi pas trois tables** : même forme (source, cible, titre, poids), mêmes consommateurs (moteur, priorisation de l'hydratation, `hidden_gems`). Trois tables → `UNION ALL` dans chaque lecture, trois upserts, trois index de cible, pour zéro information supplémentaire. **Pourquoi `kind` dans l'unicité** : une paire existe souvent sous plusieurs origines et les poids ne sont pas comparables ; l'ancienne contrainte les aurait fait s'écraser.
+
+### Chaîne de traitement
+
+```
+GET /v1/series/{id}  (déjà téléchargée par getMangaDetails / hydratation / backfill)
+  └─ reco-graph.mapper.ts        mapSeriesNeighbourhood()  ← pur, formats plat + imbriqué
+       └─ RecoGraphIngestService ingestSeriesPayload()     ← stubs, covers, upserts, type source
+            └─ manga_recommendation (kind = manual | category | related)
+
+RecoGraphBackfillService  cron 07:00 + jitter, budget 1 500, verrou MU, backoff, disjoncteur
+
+RecommendationService.buildUserRecommendations / computeScoreMap
+  └─ RecoGraphCandidateService.augment()
+       └─ reco-graph-scoring.ts  buildGraphSourceContexts() + scoreGraphLinks()  ← purs
+```
+
+### Normalisation et combinaison des poids
+
+- `category` : `CATEGORY_TOP_CONTRIBUTION (30) × (w / wmax du groupe source+category) × multiplicateur d'affinité`. Le poids MU est proportionnel à la popularité de la SOURCE, pas à la qualité du voisin : le rang relatif neutralise ce biais, et c'est le multiplicateur historique (statut × note perso × récence) qui départage les sources. 30 est calibré entre la moyenne des poids `manual` (12) et leur maximum observé (220).
+- `related` : `RELATED_CONTRIBUTION (10) × multiplicateur`, uniquement depuis une source `completed` / `caughtUp`, et hors `NON_DISCOVERY_RELATIONS` (`Adapted From`, `Adaptation`, `Alternate Version` — la même œuvre sous un autre support).
+- `manual` : **inchangé**, poids brut × multiplicateur dans `scoreRecos`. `getCachedRecommendations` filtre `kind = 'manual'` par défaut — garde-fou indispensable.
+- Cumul **additif** entre origines et entre sources (contrairement au complément catalogue, qui ne double jamais un score MU).
+- Plafond `MAX_CATEGORY_LINKS_PER_SOURCE = 12` (MU en renvoie 5 aujourd'hui) pour qu'un élargissement de leur API ne déséquilibre pas le pool.
+
+### Rattrapage nocturne
+
+Cron **07:00 + jitter 0-10 min** (créneaux occupés : 01:00 type, 02:00 sorties, 03:30 catalogue + hydratation enchaînée terminée à 04:19, et 05:30 / 06:30 pour un chantier parallèle de collecte de listes de lecteurs MU). Fin de run vers 07:50, très loin du 01:00 suivant. Variables : `RECO_GRAPH_BACKFILL_ENABLED`, `RECO_GRAPH_BACKFILL_PAGES_PER_RUN` (1 500), `RECO_GRAPH_BACKFILL_REFRESH_DAYS` (60), cadence partagée `CATALOG_SYNC_DELAY_MS`.
+
+Ordre de parcours : bibliothèques → cibles déjà recommandées → éligibles aux sections d'accueil (cover + genres + note ≥ 7) → reste, mieux notés d'abord. Curseur RÉEL = filigrane `manga.reco_graph_attempted_at` posé après CHAQUE tentative (l'ordre change d'une nuit à l'autre, un `OFFSET` sauterait des séries) ; `catalog_sync_state` (ligne `reco-graph`) porte l'état de la passe : `last_completed_page` = séries traitées depuis le début de la passe, `total_pages` = éligibles au dernier run, `completed_at` quand plus rien n'est éligible.
+
+### Effet mesuré (prod, lecture seule)
+
+`npm run measure:reco-graph -- --user=<id>` (`test/reco-graph-impact.ts`) rejoue le pipeline réel — liens `manual` scorés comme en production, complément par le VRAI `CatalogCandidateService`, prorata `interleaveByTypeMix` — avec et sans le graphe.
+
+| Profil | Pool avant → après | Origine des cartes servies (avant → après) | Renouvellement |
+|--------|--------------------|--------------------------------------------|----------------|
+| 68 titres, 74,6 % Manhwa (top 30) | 218 → 390 | catalogue 23 + manuel 7 → **graphe 24** + manuel 4 + catalogue 2 | 25/30 |
+| 10 titres, 57,1 % Manhwa (top 20) | 210 → 249 | catalogue 16 + manuel 4 → **graphe 18** + catalogue 1 + manuel 1 | 18/20 |
+
+La répartition par type bouge peu (66,7 % → 63,3 % de manhwa sur le top 30) : le prorata de 2026-09-05 tenait déjà le format. Ce que le graphe change, c'est la **pertinence** — on passe d'une heuristique « même genre, bien noté » à un vrai voisinage œuvre-à-œuvre.
+
+### Attribution
+
+Les suggestions dérivent des données de [MangaUpdates](https://www.mangaupdates.com). Leur politique d'usage demande de créditer la source : le client Flutter doit afficher « Suggestions fournies par MangaUpdates » sous les listes de recommandations et sur la fiche détail.
+
+### Tests ajoutés
+
+| Fichier | Ce qu'il teste |
+|---------|----------------|
+| `src/api/mangas/reco-graph.mapper.spec.ts` | Trois champs, formats plat et imbriqué, poids nuls/négatifs, ids invalides, auto-références, dédoublonnage par cible (PostgreSQL refuse un `ON CONFLICT DO UPDATE` qui toucherait deux fois la même ligne), payloads aberrants, `NON_DISCOVERY_RELATIONS` |
+| `src/api/mangas/reco-graph-ingest.service.spec.ts` | Les trois `kind` persistés, cible de conflit `(source, kind, cible)` = préservation des liens existants, stubs `ON CONFLICT DO NOTHING`, covers seulement si absentes, `type` source null-safe, idempotence, `saveManualLinks` |
+| `src/api/mangas/reco-graph-backfill.service.spec.ts` | Budget, ordre de priorité, verrou MU pris/libéré, filigrane même en échec, curseur cumulé, passe terminée, disjoncteur |
+| `src/api/recommendations/reco-graph-scoring.spec.ts` | Œuvres appréciées, normalisation relative à la source, ordre de grandeur vs `manual`, plafond par source, gating des `related`, exclusions, agrégation |
+| `src/api/recommendations/reco-graph-candidate.service.spec.ts` | Jamais `manual`, cumul multi-sources, addition sur une entrée existante, exclusions, dégradation sans lever |
+| `src/api/recommendations/recommendation.service.spec.ts` (describe ajouté) | AVANT/APRÈS sur le prorata de type, set d'exclusion transmis, pas de fetch bloquant quand le graphe suffit, home segmentée |
