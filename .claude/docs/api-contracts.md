@@ -80,6 +80,10 @@ throw new ConflictException(`Manga '${muId}' is already in the library`);
 
 Les trois listes respectent le **profil de type** de la bibliothèque (part pondérée de Manga / Manhwa / Manhua…) : un lecteur à 80 % manhwa reçoit ≈ 80 % de manhwa sur chaque page, jamais zéro. Type inconnu (NULL) autorisé mais pénalisé quand la préférence est marquée.
 
+**Source des candidats (2026-09-09)** — le contrat de réponse est INCHANGÉ (`MangaQuickViewDto`, mêmes champs), seule la provenance des titres évolue : le **graphe de voisinage œuvre-à-œuvre de MangaUpdates** (`category_recommendations` et `related_series` de `GET /v1/series/{id}`) devient la source principale, devant les suggestions manuelles et le complément « même genre, bien noté » du catalogue local. Mesuré sur la bibliothèque principale : 23 des 30 cartes venaient du catalogue local, 24 viennent désormais du voisinage MU. Les recos de la fiche détail (`GET /mangas/recommendations/:muId`) restent sur les seules suggestions manuelles + la liste communautaire — inchangées.
+
+> **Attribution MangaUpdates (obligation d'usage)** : ces suggestions dérivent des données de [MangaUpdates](https://www.mangaupdates.com). Tout client qui les affiche doit porter une mention de crédit visible (« Suggestions fournies par MangaUpdates ») sous les listes de recommandations et sur la fiche détail.
+
 ### Library (`/library`)
 
 | Méthode | Route | Auth | Corps | Réponse |

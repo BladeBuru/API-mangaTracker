@@ -330,6 +330,25 @@ SELECT DATE(collected_at) AS nuit, COUNT(*) AS lignes,
   FROM reader_signal GROUP BY 1 ORDER BY 1 DESC LIMIT 14;
 ```
 
+## 🕸️ Graphe de recommandations œuvre-à-œuvre MangaUpdates (2026-09-09)
+
+Branche `feat/reco-graph-mu` (base `master` `0c32a8c`).
+
+**Le constat.** `GET /v1/series/{id}` renvoie TROIS voisinages et un seul était ingéré — le moins pertinent. Mesuré sur Solo Leveling (`15180124327`, Manhwa) : `recommendations` (manuel, poids 2-3) → *Kimetsu no Yaiba*, *Vinland Saga* (des mangas japonais sans rapport) ; `category_recommendations` (votes de catégorie, poids 27 000-38 000) → *Solo Leveling: Ragnarok*, *I Am the Final Boss*, *I Am the Sorcerer King* (le bon voisinage) ; `related_series` → suites et spin-offs avec `relation_type`. En prod : **17 825 liens sur 3 812 séries** (2,6 % de 147 261 titres), cibles à 84 % `Manga`, et **12 titres sur 77** en bibliothèque avaient un lien sortant.
+
+**Modèle** (migration `1788480000000`) : `manga_recommendation.kind` (`manual` | `category` | `related`, défaut `manual` — les 17 825 liens existants sont marqués par un UPDATE explicite), `relation_type varchar(48)`, unicité `(source_mu_id, kind, recommended_mu_id)` (une paire peut exister sous plusieurs origines ; poids non comparables entre origines), `manga.reco_graph_attempted_at` (filigrane du rattrapage). Une colonne plutôt que trois tables : même forme, mêmes consommateurs, une seule requête par source.
+
+**Ingestion à coût réseau nul** : `RecoGraphIngestService` reçoit une réponse `/series/{id}` DÉJÀ téléchargée. Branché sur `MangasService.getMangaDetails` — donc aussi sur les 800 fiches/nuit de `CatalogHydrationService`, qui l'appelle en boucle — et sur `fetchAndCacheRecommendations`. Écrit au passage le `type` de la série source (null-safe) : c'est lui qui alimente le prorata de type.
+
+**Rattrapage** : `RecoGraphBackfillService`, cron **07:00 + jitter 0-10 min**, budget `RECO_GRAPH_BACKFILL_PAGES_PER_RUN` (1 500 fiches ≈ 50 min). Priorité bibliothèques → cibles déjà recommandées → éligibles à l'accueil → mieux notées. Verrou MU partagé, backoff `mu-backoff.ts`, disjoncteur à 5 échecs consécutifs, état dans `catalog_sync_state` (`reco-graph`). Créneau choisi pour éviter **05:30 / 06:30**, occupés par un chantier parallèle (collecte de listes de lecteurs MU puis agrégation).
+
+**Exploitation** : `RecoGraphCandidateService` + `reco-graph-scoring.ts`. Les voisins des œuvres appréciées (statut fort ou note ≥ 7) entrent dans le pool ; poids `category` normalisés **relativement à la source** (`w / wmax` × 30, calibré entre la moyenne des poids `manual` (12) et leur maximum (220)) ; `related` réservés aux sources terminées/à jour, hors relations « même œuvre, autre support », contribution forfaitaire 10. Contributions **additives** (contrairement au complément catalogue), exclusion biblio ∪ rejets, prorata de type inchangé. Garde-fou : `getCachedRecommendations` filtre `kind = 'manual'` — sans ça les poids de catégorie écraseraient tout le scoring historique.
+
+**Effet mesuré** (prod, lecture seule, `npm run measure:reco-graph`) — utilisateur principal, 68 titres, profil 74,6 % Manhwa : pool **218 → 390** candidats ; **origine des 30 cartes servies : 23 catalogue local + 7 liens manuels → 24 graphe MU + 4 manuels + 2 catalogue** ; **25/30 titres renouvelés**. Le prorata de type tenait déjà le format (66,7 % → 63,3 % de manhwa) ; ce qui change, c'est la **pertinence** — on passe d'une heuristique « même genre, bien noté » à un vrai voisinage œuvre-à-œuvre.
+
+**Tests** : +56 (412 → 468), 5 suites ajoutées.
+
+**Reste à faire** : (1) déployer et observer les logs `[reco-graph]` après le premier cron 07:00 (budget consommé, liens écrits, éligibles restants) ; (2) relancer `npm run measure:reco-graph -- --db` après quelques nuits pour confirmer sur les données réellement ingérées ; (3) côté Flutter, afficher le **crédit MangaUpdates** sous les listes de recommandations (leur politique d'usage le demande) ; (4) surveiller la volumétrie de `manga_recommendation` : ~13 liens par fiche, soit ~1,9 M de lignes (**≈ 350 Mo**) si l'on couvre les 147 261 séries (≈ 98 nuits). Pour la borner, baisser `RECO_GRAPH_BACKFILL_PAGES_PER_RUN` ou restreindre le rattrapage aux rangs 0-2 (le rang 3 « reste du catalogue » est le seul qui pousse le volume).
 
 ---
 

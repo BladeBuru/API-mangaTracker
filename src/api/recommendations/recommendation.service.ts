@@ -13,6 +13,7 @@ import {
 } from './catalog-candidate.service';
 import { GenreSectionService } from './genre-section.service';
 import { DismissalService } from './dismissal.service';
+import { RecoGraphCandidateService } from './reco-graph-candidate.service';
 import { RecommendationDtoBuilderService } from './recommendation-dto-builder.service';
 import { ScoredEntry } from './scored-entry.interface';
 import { SleeperHitsService } from './sleeper-hits.service';
@@ -110,6 +111,7 @@ export class RecommendationService {
     private readonly mangasService: MangasService,
     private readonly recoCache: RecoCacheService,
     private readonly catalogCandidates: CatalogCandidateService,
+    private readonly recoGraph: RecoGraphCandidateService,
     private readonly genreSections: GenreSectionService,
     private readonly dismissals: DismissalService,
     private readonly sleepers: SleeperHitsService,
@@ -218,6 +220,12 @@ export class RecommendationService {
       }),
     );
 
+    // Graphe de voisinage MU (`category` + `related`) — BDD seule, aucun
+    // appel réseau. Placé AVANT l'arbitrage cache/fetch bloquant : quand le
+    // graphe répond, il n'y a plus de raison de faire attendre l'utilisateur
+    // le temps de 68 fiches MU.
+    await this.recoGraph.augment(userMangas, excludedMuIds, scoreMap);
+
     if (scoreMap.size > 0) {
       if (uncachedIds.length > 0) {
         this.fetchUncachedInBackground(uncachedIds);
@@ -287,6 +295,9 @@ export class RecommendationService {
         );
       }),
     );
+
+    // Même ordre que la liste plate : graphe MU d'abord (BDD seule).
+    await this.recoGraph.augment(userMangas, excludedMuIds, scoreMap);
 
     if (scoreMap.size > 0) {
       if (uncachedIds.length > 0) this.fetchUncachedInBackground(uncachedIds);

@@ -90,6 +90,25 @@ export class Manga {
   @Column({ type: 'timestamptz', nullable: true })
   hydration_attempted_at: Date | null;
 
+  /**
+   * Date de la dernière lecture de la fiche `/v1/series/{id}` par le job de
+   * rattrapage du **graphe de recommandations** (`RecoGraphBackfillService`),
+   * succès comme échec.
+   *
+   * C'est le curseur RÉEL du rattrapage : l'ordre de parcours dépend de
+   * l'usage (bibliothèques, cibles déjà recommandées, éligibles à l'accueil,
+   * puis note) et change donc d'une nuit à l'autre — un simple `OFFSET` dans
+   * `catalog_sync_state` sauterait des séries dès qu'un titre entre dans une
+   * bibliothèque. Un filigrane par ligne, lui, garantit la progression sans
+   * trou ni doublon sur 147 000 titres. Même doctrine que
+   * `hydration_attempted_at`, colonne distincte parce que les deux jobs ont
+   * des fenêtres de rafraîchissement et des priorités différentes.
+   *
+   * NULL = jamais visitée → priorité maximale. Migration `1788480000000`.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  reco_graph_attempted_at: Date | null;
+
   @CreateDateColumn()
   created_at: Date;
 

@@ -11,6 +11,21 @@ import { MangaRecommendation } from './manga-recommendation.entity';
 import { UserManga } from './user-manga.entity';
 import { MU_TRENDS_URL, NSFW_GENRES } from './constants';
 import { MuRateLimitException } from './exceptions/mu-rate-limit.exception';
+import { RecoGraphIngestService } from './reco-graph-ingest.service';
+
+/**
+ * Écriture du graphe MU neutralisée : ces suites testent `MangasService`,
+ * pas la persistance des liens (couverte par `reco-graph-ingest.service.spec`).
+ */
+const mockRecoGraph = () => ({
+  ingestSeriesPayload: jest.fn(async () => ({
+    manual: 0,
+    category: 0,
+    related: 0,
+    stubs: 0,
+  })),
+  saveManualLinks: jest.fn(async () => 0),
+});
 
 const mockRepo = () => ({
   find: jest.fn(),
@@ -56,6 +71,7 @@ describe('MangasService', () => {
           provide: ReadingStatusAutoUpdateService,
           useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
         },
+        { provide: RecoGraphIngestService, useValue: mockRecoGraph() },
       ],
       imports: [HttpModule],
     }).compile();
@@ -157,6 +173,7 @@ describe('MangasService — getMangaDetails : UPDATE null-safe', () => {
           provide: ReadingStatusAutoUpdateService,
           useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
         },
+        { provide: RecoGraphIngestService, useValue: mockRecoGraph() },
       ],
     }).compile();
 
@@ -357,6 +374,7 @@ describe('MangasService — searchManga', () => {
           provide: ReadingStatusAutoUpdateService,
           useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
         },
+        { provide: RecoGraphIngestService, useValue: mockRecoGraph() },
       ],
     }).compile();
 
@@ -529,6 +547,7 @@ describe('MangasService — getRecommendationsAsQuickView : exclusion des titres
           provide: ReadingStatusAutoUpdateService,
           useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
         },
+        { provide: RecoGraphIngestService, useValue: mockRecoGraph() },
       ],
     }).compile();
 
@@ -563,5 +582,137 @@ describe('MangasService — getRecommendationsAsQuickView : exclusion des titres
     const result = await service.getRecommendationsAsQuickView(1000, 42);
 
     expect(result).toEqual([]);
+  });
+});
+
+/**
+ * Branchement de l'ingestion du graphe (2026-09-09) et isolation des trois
+ * origines de `manga_recommendation`.
+ */
+describe('MangasService — graphe de voisinage MangaUpdates', () => {
+  let service: MangasService;
+  let getMock: jest.Mock;
+  let recoGraph: ReturnType<typeof mockRecoGraph>;
+  let recoQb: Record<string, jest.Mock>;
+  let capturedParams: Record<string, unknown>;
+
+  const muDetail = {
+    series_id: 123,
+    title: 'Titre MU',
+    description: 'desc',
+    status: '',
+    image: { url: { thumb: 't.jpg', original: 'o.jpg' } },
+    year: '2019',
+    bayesian_rating: 8.42,
+    completed: false,
+    associated: [],
+    genres: [],
+    latest_chapter: 10,
+    type: 'Manhwa',
+    recommendations: [{ series_id: 200, series_name: 'A', weight: 3 }],
+    category_recommendations: [
+      { series_id: 300, series_name: 'B', weight: 38432 },
+    ],
+    related_series: [
+      {
+        related_series_id: 400,
+        related_series_name: 'C',
+        relation_type: 'Sequel',
+      },
+    ],
+  };
+
+  beforeEach(async () => {
+    getMock = jest.fn(() => of({ data: muDetail }));
+    recoGraph = mockRecoGraph();
+    capturedParams = {};
+
+    recoQb = {} as Record<string, jest.Mock>;
+    const chain = (fn?: (...args: unknown[]) => void) =>
+      jest.fn((...args: unknown[]) => {
+        fn?.(...args);
+        return recoQb;
+      });
+    Object.assign(recoQb, {
+      where: chain((_c, p) => Object.assign(capturedParams, p as object)),
+      andWhere: chain((_c, p) => Object.assign(capturedParams, p as object)),
+      orderBy: chain(),
+      getMany: jest.fn().mockResolvedValue([]),
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MangasService,
+        { provide: HttpService, useValue: { get: getMock } },
+        { provide: HelperService, useValue: {} },
+        {
+          provide: getRepositoryToken(Manga),
+          useValue: {
+            ...mockRepo(),
+            createQueryBuilder: jest.fn(() => {
+              const qb: Record<string, jest.Mock> = {};
+              const ret = () => jest.fn(() => qb);
+              Object.assign(qb, {
+                update: ret(),
+                set: ret(),
+                setParameter: ret(),
+                where: ret(),
+                andWhere: ret(),
+                execute: jest.fn().mockResolvedValue({}),
+              });
+              return qb;
+            }),
+          },
+        },
+        {
+          provide: getRepositoryToken(MangaRecommendation),
+          useValue: { createQueryBuilder: jest.fn(() => recoQb) },
+        },
+        { provide: getRepositoryToken(UserManga), useValue: mockRepo() },
+        {
+          provide: DismissalService,
+          useValue: { getDismissedMuIds: jest.fn(async () => new Set()) },
+        },
+        {
+          provide: ReadingStatusAutoUpdateService,
+          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
+        },
+        { provide: RecoGraphIngestService, useValue: recoGraph },
+      ],
+    }).compile();
+
+    service = module.get<MangasService>(MangasService);
+  });
+
+  it('getMangaDetails passe la réponse MU BRUTE au graphe (coût réseau nul)', async () => {
+    await service.getMangaDetails(123);
+    // Fire-and-forget : on laisse la microtask s'exécuter.
+    await Promise.resolve();
+
+    expect(recoGraph.ingestSeriesPayload).toHaveBeenCalledWith(123, muDetail);
+    // Un seul appel MU pour la fiche ET les trois voisinages.
+    expect(getMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetchAndCacheRecommendations ingère les trois champs en un seul appel', async () => {
+    await service.fetchAndCacheRecommendations(123);
+
+    expect(getMock).toHaveBeenCalledTimes(1);
+    expect(recoGraph.ingestSeriesPayload).toHaveBeenCalledWith(123, muDetail);
+  });
+
+  it('getCachedRecommendations ne rend que les liens `manual` par défaut', async () => {
+    // Garde-fou : les poids `category` (27 000-38 000) écraseraient le
+    // scoring historique s'ils sortaient par ce chemin.
+    await service.getCachedRecommendations(123);
+
+    expect(capturedParams.kinds).toEqual(['manual']);
+    expect(capturedParams.sourceMuId).toBe('123');
+  });
+
+  it('accepte des origines explicites pour les usages avertis', async () => {
+    await service.getCachedRecommendations(123, ['category', 'related']);
+
+    expect(capturedParams.kinds).toEqual(['category', 'related']);
   });
 });
