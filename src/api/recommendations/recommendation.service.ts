@@ -15,7 +15,8 @@ import { GenreSectionService } from './genre-section.service';
 import { DismissalService } from './dismissal.service';
 import { RecoGraphCandidateService } from './reco-graph-candidate.service';
 import { RecommendationDtoBuilderService } from './recommendation-dto-builder.service';
-import { byValueDescThenId } from './reco-ordering';
+import { computeAffinityMultiplier } from './library-affinity';
+import { byValueDescThenId, compareIdAsc } from './reco-ordering';
 import { ScoredEntry } from './scored-entry.interface';
 import { SleeperHitsService } from './sleeper-hits.service';
 import { computeTypeProfile } from './type-profile';
@@ -40,24 +41,6 @@ import { computeTypeProfile } from './type-profile';
 @Injectable()
 export class RecommendationService {
   private readonly logger = new Logger(RecommendationService.name);
-
-  /**
-   * Multiplicateur appliqué selon le statut de lecture.
-   * Un manga `completed` ou `caughtUp` est un signal fort de goût.
-   * Un manga juste planifié pèse moins.
-   */
-  private static readonly STATUS_MULTIPLIER: Record<string, number> = {
-    completed: 1.5,
-    caughtUp: 1.3,
-    reading: 1.2,
-    readLater: 0.8,
-  };
-
-  /**
-   * Demi-vie de pertinence en jours. Un manga ajouté il y a 1 an a un poids ~0.37.
-   * Les goûts évoluent — on favorise les mangas récemment ajoutés/mis à jour.
-   */
-  private static readonly RECENCY_HALF_LIFE_DAYS = 365;
 
   /**
    * Nombre maximum de recommandations remontées depuis un même manga source.
@@ -140,6 +123,66 @@ export class RecommendationService {
   }
 
   /**
+   * Bibliothèque d'un utilisateur, **ordonnée par `mu_id` croissant**.
+   *
+   * L'ordre importe : les contributions de chaque titre source sont
+   * ADDITIONNÉES au score des candidats, et l'addition flottante n'est pas
+   * associative — deux ordres d'accumulation donnent des scores qui diffèrent
+   * au dernier bit, donc un classement différent entre deux ex æquo. Or
+   * `find()` sans `ORDER BY` ne garantit aucun ordre.
+   */
+  private async loadLibrary(userId: number): Promise<UserManga[]> {
+    const userMangas = await this.userMangaRepository.find({
+      where: { user: { id: userId } },
+      relations: ['manga'],
+    });
+    return userMangas.sort((a, b) =>
+      compareIdAsc(a.manga?.mu_id ?? '', b.manga?.mu_id ?? ''),
+    );
+  }
+
+  /**
+   * Première passe de scoring : lecture des recos MU déjà en cache.
+   *
+   * Les lectures restent **parallèles** (une par titre de bibliothèque), mais
+   * le scoring est appliqué **séquentiellement dans l'ordre de la
+   * bibliothèque** au lieu de l'être dans l'ordre d'arrivée des réponses.
+   * Avant, l'ordre d'insertion du `scoreMap` — et l'ordre des additions
+   * flottantes — dépendait d'une course entre requêtes : deux appels
+   * identiques ne produisaient pas exactement le même pool.
+   *
+   * @returns les `mu_id` sans reco en cache, à rattraper en tâche de fond.
+   */
+  private async scoreFromCache(
+    userMangas: UserManga[],
+    excludedMuIds: Set<string>,
+    scoreMap: Map<string, ScoredEntry>,
+  ): Promise<number[]> {
+    const cachedPerSource = await Promise.all(
+      userMangas.map((um) =>
+        this.mangasService.getCachedRecommendations(Number(um.manga.mu_id)),
+      ),
+    );
+
+    const uncachedIds: number[] = [];
+    cachedPerSource.forEach((cached, index) => {
+      const um = userMangas[index];
+      if (cached.length === 0) {
+        uncachedIds.push(Number(um.manga.mu_id));
+        return;
+      }
+      this.scoreRecos(
+        um.manga.mu_id,
+        computeAffinityMultiplier(um),
+        cached,
+        excludedMuIds,
+        scoreMap,
+      );
+    });
+    return uncachedIds;
+  }
+
+  /**
    * « Sleeper hits » — pépites récentes peu visibles. Délégué à
    * `SleeperHitsService` (contrat inchangé pour le controller).
    */
@@ -182,10 +225,7 @@ export class RecommendationService {
     const cached = this.recoCache.get<MangaQuickViewDto[]>(userId, variant);
     if (cached) return cached;
 
-    const userMangas = await this.userMangaRepository.find({
-      where: { user: { id: userId } },
-      relations: ['manga'],
-    });
+    const userMangas = await this.loadLibrary(userId);
 
     if (userMangas.length === 0) {
       // Cold start : pas de signaux d'affinité personnelle. On remonte le
@@ -200,25 +240,12 @@ export class RecommendationService {
 
     const excludedMuIds = await this.buildExclusionSet(userId, userMangas);
     const scoreMap = new Map<string, ScoredEntry>();
-    const uncachedIds: number[] = [];
 
     // Première passe : cache
-    await Promise.all(
-      userMangas.map(async (um) => {
-        const muId = Number(um.manga.mu_id);
-        const cached = await this.mangasService.getCachedRecommendations(muId);
-        if (cached.length === 0) {
-          uncachedIds.push(muId);
-          return;
-        }
-        this.scoreRecos(
-          um.manga.mu_id,
-          this.computeMultiplier(um),
-          cached,
-          excludedMuIds,
-          scoreMap,
-        );
-      }),
+    const uncachedIds = await this.scoreFromCache(
+      userMangas,
+      excludedMuIds,
+      scoreMap,
     );
 
     // Graphe de voisinage MU (`category` + `related`) — BDD seule, aucun
@@ -267,34 +294,18 @@ export class RecommendationService {
     userMangas: UserManga[];
     excludedMuIds: Set<string>;
   }> {
-    const userMangas = await this.userMangaRepository.find({
-      where: { user: { id: userId } },
-      relations: ['manga'],
-    });
+    const userMangas = await this.loadLibrary(userId);
     if (userMangas.length === 0) {
       return { scoreMap: new Map(), userMangas, excludedMuIds: new Set() };
     }
 
     const excludedMuIds = await this.buildExclusionSet(userId, userMangas);
     const scoreMap = new Map<string, ScoredEntry>();
-    const uncachedIds: number[] = [];
 
-    await Promise.all(
-      userMangas.map(async (um) => {
-        const muId = Number(um.manga.mu_id);
-        const cached = await this.mangasService.getCachedRecommendations(muId);
-        if (cached.length === 0) {
-          uncachedIds.push(muId);
-          return;
-        }
-        this.scoreRecos(
-          um.manga.mu_id,
-          this.computeMultiplier(um),
-          cached,
-          excludedMuIds,
-          scoreMap,
-        );
-      }),
+    const uncachedIds = await this.scoreFromCache(
+      userMangas,
+      excludedMuIds,
+      scoreMap,
     );
 
     // Même ordre que la liste plate : graphe MU d'abord (BDD seule).
@@ -333,12 +344,14 @@ export class RecommendationService {
     ) {
       const batch = userMangas.slice(i, i + RecommendationService.BATCH_SIZE);
       let rateLimited = false;
-      await Promise.all(
+      // Fetches parallèles, scoring séquentiel : comme `scoreFromCache`, on
+      // ne laisse pas l'ordre d'arrivée des réponses MU décider de l'ordre
+      // des additions de score (voir `loadLibrary`).
+      const fetched = await Promise.all(
         batch.map(async (um) => {
           const muId = Number(um.manga.mu_id);
-          let recos: MangaRecommendation[];
           try {
-            recos = await Promise.race([
+            return await Promise.race([
               this.mangasService.fetchAndCacheRecommendations(muId),
               new Promise<MangaRecommendation[]>((_, reject) =>
                 setTimeout(
@@ -350,17 +363,21 @@ export class RecommendationService {
           } catch (err) {
             if (err instanceof MuRateLimitException) rateLimited = true;
             this.logger.warn(`Reco fetch timeout/erreur pour ${muId}: ${err}`);
-            return;
+            return null;
           }
-          this.scoreRecos(
-            um.manga.mu_id,
-            this.computeMultiplier(um),
-            recos,
-            excludedMuIds,
-            scoreMap,
-          );
         }),
       );
+      fetched.forEach((recos, index) => {
+        if (recos === null) return;
+        const um = batch[index];
+        this.scoreRecos(
+          um.manga.mu_id,
+          computeAffinityMultiplier(um),
+          recos,
+          excludedMuIds,
+          scoreMap,
+        );
+      });
       const hasNextBatch =
         i + RecommendationService.BATCH_SIZE < userMangas.length;
       if (hasNextBatch) {
@@ -467,22 +484,6 @@ export class RecommendationService {
     );
     this.recoCache.set(userId, variant, result);
     return result;
-  }
-
-  /**
-   * Calcule le multiplicateur global appliqué aux recommandations d'un manga
-   * source.
-   * `m_total = m_rating × m_status × m_recency`
-   */
-  private computeMultiplier(um: UserManga): number {
-    const ratingMultiplier = um.user_rating > 0 ? um.user_rating / 5.0 : 1.0;
-    const statusMultiplier =
-      RecommendationService.STATUS_MULTIPLIER[um.readingStatus] ?? 1.0;
-    const ageDays = (Date.now() - um.adding_date.getTime()) / 86_400_000;
-    const recencyMultiplier = Math.exp(
-      -ageDays / RecommendationService.RECENCY_HALF_LIFE_DAYS,
-    );
-    return ratingMultiplier * statusMultiplier * recencyMultiplier;
   }
 
   /**
