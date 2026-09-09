@@ -9,6 +9,7 @@ import {
 import { GenreSectionService } from './genre-section.service';
 import { DismissalService } from './dismissal.service';
 import { SleeperHitsService } from './sleeper-hits.service';
+import { RecoGraphCandidateService } from './reco-graph-candidate.service';
 import { RecommendationDtoBuilderService } from './recommendation-dto-builder.service';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { MangaRecommendation } from '@/api/mangas/manga-recommendation.entity';
@@ -79,6 +80,12 @@ describe('RecommendationService', () => {
   };
   let catalogCandidates: { findCandidates: jest.Mock };
   /**
+   * Graphe de voisinage MU (`category` / `related`). Neutre par défaut : les
+   * suites historiques doivent produire EXACTEMENT le même résultat qu'avant
+   * son arrivée ; le describe dédié lui fait injecter des candidats.
+   */
+  let recoGraphCandidates: { augment: jest.Mock };
+  /**
    * mu_id écartés par l'utilisateur (« pas intéressé / déjà vu »). Vide par
    * défaut : chaque test qui teste l'exclusion y ajoute ses ids.
    */
@@ -104,6 +111,7 @@ describe('RecommendationService', () => {
     catalogCandidates = {
       findCandidates: jest.fn().mockResolvedValue([]),
     };
+    recoGraphCandidates = { augment: jest.fn().mockResolvedValue(0) };
     // Double du DismissalService qui reproduit fidèlement l'union
     // « bibliothèque ∪ rejets » du vrai service (cf. buildExclusionSet).
     dismissedMuIds = new Set<string>();
@@ -138,6 +146,10 @@ describe('RecommendationService', () => {
         { provide: getRepositoryToken(Manga), useValue: mangaRepo },
         { provide: MangasService, useValue: mangasService },
         { provide: CatalogCandidateService, useValue: catalogCandidates },
+        {
+          provide: RecoGraphCandidateService,
+          useValue: recoGraphCandidates,
+        },
         { provide: DismissalService, useValue: dismissals },
       ],
     }).compile();
@@ -1293,6 +1305,157 @@ describe('RecommendationService', () => {
       const result = await service.buildUserRecommendations(42, 2, 0);
 
       expect(result.map((r) => r.muId)).toEqual([2000, 3000]);
+    });
+  });
+  /**
+   * Graphe de voisinage MangaUpdates (`category` / `related`) — 2026-09-09.
+   *
+   * Le prorata de type introduit le 2026-09-05 ne peut rééquilibrer que ce
+   * qui EXISTE dans le pool : quand les seuls liens disponibles ciblent des
+   * mangas (84 % des 17 825 liens `manual` en prod), un lecteur de manhwa
+   * reçoit des mangas quoi qu'il arrive. Ces tests vérifient les deux faces
+   * du problème.
+   */
+  describe('graphe de voisinage MangaUpdates', () => {
+    /** Types déduits de l'id : 3xxx = Manhwa, sinon Manga. */
+    function typeOf(id: string): string {
+      return id.startsWith('3') ? 'Manhwa' : 'Manga';
+    }
+
+    /** Bibliothèque 4 manhwa + 1 manga, dont les recos manuelles sont manga. */
+    function libraryOfManhwaReader(): void {
+      userMangaRepo.find.mockResolvedValue([
+        ...['1001', '1002', '1003', '1004'].map((id, i) =>
+          makeUserManga({
+            id: i + 1,
+            manga: makeManga({ id: i + 1, mu_id: id, type: 'Manhwa' }),
+          }),
+        ),
+        makeUserManga({
+          id: 9,
+          manga: makeManga({ id: 9, mu_id: '1005', type: 'Manga' }),
+        }),
+      ]);
+      mangasService.getCachedRecommendations.mockImplementation(
+        (muId: number) =>
+          Promise.resolve(
+            Array.from({ length: 10 }, (_, i) =>
+              makeReco(String(muId), `${2000 + i}`, 20),
+            ),
+          ),
+      );
+    }
+
+    beforeEach(() => {
+      mangaRepo.find.mockImplementation(({ where }) => {
+        const ids = (where as any).mu_id._value as string[];
+        return Promise.resolve(
+          ids.map((id) =>
+            makeManga({ mu_id: id, title: `Manga ${id}`, type: typeOf(id) }),
+          ),
+        );
+      });
+    });
+
+    it('AVANT : sans candidats manhwa dans le pool, le prorata ne peut rien faire', async () => {
+      libraryOfManhwaReader();
+
+      const result = await service.buildUserRecommendations(42, 10, 0);
+
+      expect(result).toHaveLength(10);
+      expect(result.every((r) => r.type === 'Manga')).toBe(true);
+    });
+
+    it('APRÈS : les voisins du graphe entrent dans le pool et le prorata s’applique', async () => {
+      libraryOfManhwaReader();
+      // Le vrai service écrit dans le scoreMap ; on reproduit son effet.
+      recoGraphCandidates.augment.mockImplementation(
+        async (
+          _userMangas: unknown,
+          _excluded: Set<string>,
+          scoreMap: Map<
+            string,
+            { score: number; sources: Map<string, number> }
+          >,
+        ) => {
+          for (let i = 0; i < 10; i++) {
+            scoreMap.set(`${3000 + i}`, {
+              score: 30 - i,
+              sources: new Map([['1001', 30 - i]]),
+            });
+          }
+          return 10;
+        },
+      );
+
+      const result = await service.buildUserRecommendations(42, 10, 0);
+
+      expect(result[0].type).toBe('Manhwa');
+      expect(result.filter((r) => r.type === 'Manhwa')).toHaveLength(8);
+      expect(result.filter((r) => r.type === 'Manga')).toHaveLength(2);
+    });
+
+    it('reçoit le set d’exclusion complet (bibliothèque ∪ titres écartés)', async () => {
+      libraryOfManhwaReader();
+      dismissedMuIds = new Set(['2000']);
+
+      await service.buildUserRecommendations(42, 10, 0);
+
+      const excluded = recoGraphCandidates.augment.mock
+        .calls[0][1] as Set<string>;
+      expect(excluded.has('2000')).toBe(true);
+      expect(excluded.has('1001')).toBe(true);
+    });
+
+    it('évite le fetch MU bloquant quand le graphe suffit à peupler le pool', async () => {
+      userMangaRepo.find.mockResolvedValue([
+        makeUserManga({ manga: makeManga({ mu_id: '1001', type: 'Manhwa' }) }),
+      ]);
+      // Aucun lien manuel en cache : avant le graphe, on partait en fetch
+      // bloquant de toutes les fiches MU avant de répondre.
+      mangasService.getCachedRecommendations.mockResolvedValue([]);
+      recoGraphCandidates.augment.mockImplementation(
+        async (
+          _userMangas: unknown,
+          _excluded: Set<string>,
+          scoreMap: Map<
+            string,
+            { score: number; sources: Map<string, number> }
+          >,
+        ) => {
+          scoreMap.set('3000', { score: 30, sources: new Map([['1001', 30]]) });
+          return 1;
+        },
+      );
+
+      // Le fetch MU ne se dénoue jamais : si la réponse en dépendait, cet
+      // `await` resterait bloqué jusqu'au timeout du test.
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      mangasService.fetchAndCacheRecommendations.mockImplementation(
+        async () => {
+          await gate;
+          return [];
+        },
+      );
+
+      const result = await service.buildUserRecommendations(42, 10, 0);
+
+      expect(result.map((r) => r.muId)).toEqual([3000]);
+      // Le rattrapage du cache manuel a bien été lancé, mais en arrière-plan.
+      expect(mangasService.fetchAndCacheRecommendations).toHaveBeenCalledWith(
+        1001,
+      );
+      release();
+    });
+
+    it('alimente aussi la home segmentée par genre', async () => {
+      libraryOfManhwaReader();
+      recoGraphCandidates.augment.mockResolvedValue(0);
+
+      await service.buildUserRecommendationsByGenre(42, 3, 5);
+
+      expect(recoGraphCandidates.augment).toHaveBeenCalled();
     });
   });
 });

@@ -7,6 +7,7 @@ import { MangasModule } from '@/api/mangas/mangas.module';
 import { RecommendationService } from './recommendation.service';
 import { RecommendationController } from './recommendation.controller';
 import { CatalogCandidateService } from './catalog-candidate.service';
+import { RecoGraphCandidateService } from './reco-graph-candidate.service';
 import { GenreSectionService } from './genre-section.service';
 import { SleeperHitsService } from './sleeper-hits.service';
 import { RecommendationDtoBuilderService } from './recommendation-dto-builder.service';
@@ -31,6 +32,9 @@ import { DismissalThrottlerGuard } from './dismissal-throttler.guard';
   providers: [
     RecommendationService,
     CatalogCandidateService,
+    // Graphe de voisinage MangaUpdates (`category` / `related`) — source de
+    // candidats principale depuis 2026-09-09, lue en BDD seule.
+    RecoGraphCandidateService,
     GenreSectionService,
     // Extraits de RecommendationService (2026-09-05, limite 600 lignes) :
     // sleepers + cold start, et construction des cartes de la liste plate
