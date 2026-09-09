@@ -28,7 +28,7 @@ import { CatalogPageIngestService } from './catalog-page-ingest.service';
 import { CatalogShardPlannerService } from './catalog-shard-planner.service';
 import { CatalogShardRunnerService } from './catalog-shard-runner.service';
 import { CatalogTypeBackfillService } from './catalog-type-backfill.service';
-import { MuJobLockService } from './mu-job-lock.service';
+import { MuJobLockModule } from './mu-job-lock.module';
 import { CatalogSyncState } from './catalog-sync-state.entity';
 import { CoverProxyService } from './cover-proxy.service';
 import { RecoCacheModule } from '../recommendations/reco-cache.module';
@@ -61,6 +61,9 @@ import { GtxProvider } from './translation/gtx.provider';
     // doivent exclure les titres écartés par l'utilisateur, comme tous les
     // autres chemins. Module autonome → pas de cycle mangas ↔ recommendations.
     DismissalModule,
+    // Verrou MU partagé — instance unique pour TOUS les jobs MangaUpdates,
+    // y compris ceux qui vivent hors de ce module (`ReaderSignalModule`).
+    MuJobLockModule,
   ],
   controllers: [
     MangasController,
@@ -87,10 +90,11 @@ import { GtxProvider } from './translation/gtx.provider';
     CatalogPageIngestService,
     CatalogHydrationService,
     CatalogReleasesService,
-    // Rattrapage de `manga.type` (bibliothèques au boot + nightly 01:00) et
-    // verrou partagé : un seul job MU à la fois (releases/catalogue/type).
+    // Rattrapage de `manga.type` (bibliothèques au boot + nightly 01:00).
+    // Le verrou MU partagé vient désormais de `MuJobLockModule` (importé
+    // ci-dessus) : le re-déclarer ici en fabriquerait une seconde instance
+    // dès qu'un autre module porte un job MU.
     CatalogTypeBackfillService,
-    MuJobLockService,
     CoverProxyService,
     HomeSectionsService,
     HomeSectionQueryBuilder,
