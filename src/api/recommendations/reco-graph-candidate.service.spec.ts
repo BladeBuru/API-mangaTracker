@@ -49,6 +49,8 @@ describe('RecoGraphCandidateService', () => {
       andWhere: chain((_c, params) =>
         Object.assign(capturedWhere, params as object),
       ),
+      orderBy: chain(),
+      addOrderBy: chain(),
       getRawMany,
     });
 

@@ -637,6 +637,7 @@ describe('MangasService — graphe de voisinage MangaUpdates', () => {
       where: chain((_c, p) => Object.assign(capturedParams, p as object)),
       andWhere: chain((_c, p) => Object.assign(capturedParams, p as object)),
       orderBy: chain(),
+      addOrderBy: chain(),
       getMany: jest.fn().mockResolvedValue([]),
     });
 

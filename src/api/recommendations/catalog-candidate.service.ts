@@ -4,6 +4,11 @@ import { Repository, SelectQueryBuilder } from 'typeorm';
 import { Manga } from '@/api/mangas/manga.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { NSFW_GENRES } from '@/api/mangas/constants';
+import { computeAffinityMultiplier } from './library-affinity';
+import {
+  byValueDescThenId,
+  compareEntryValueDescThenKey,
+} from './reco-ordering';
 import {
   computeTypeProfile,
   fetchByTypeBuckets,
@@ -64,20 +69,6 @@ export class CatalogCandidateService {
 
   /** Nombre de mangas sources exposés par candidat (explicabilité). */
   private static readonly SOURCES_PER_CANDIDATE = 2;
-
-  /**
-   * Miroir de `RecommendationService.STATUS_MULTIPLIER` /
-   * `RECENCY_HALF_LIFE_DAYS` — utilisé uniquement pour choisir les mangas
-   * sources les plus représentatifs (pas pour le score du candidat).
-   */
-  private static readonly STATUS_MULTIPLIER: Record<string, number> = {
-    completed: 1.5,
-    caughtUp: 1.3,
-    reading: 1.2,
-    readLater: 0.8,
-  };
-
-  private static readonly RECENCY_HALF_LIFE_DAYS = 365;
 
   constructor(
     @InjectRepository(Manga)
@@ -140,7 +131,16 @@ export class CatalogCandidateService {
       });
     }
 
-    scored.sort((a, b) => b.score - a.score);
+    // Ordre TOTAL avant le plafond `maxCandidates` : à score égal (fréquent,
+    // le score ne dépend que des genres et de la note), le `mu_id` croissant
+    // décide — sinon l'ordre des lignes rendues par Postgres, non garanti,
+    // choisissait quels candidats survivaient à la troncature.
+    scored.sort(
+      byValueDescThenId<CatalogCandidate>(
+        (c) => c.score,
+        (c) => c.mu_id,
+      ),
+    );
     this.logger.log(
       `Catalogue : ${scored.length} candidat(s) pour genres [${topGenres.join(
         ', ',
@@ -192,8 +192,11 @@ export class CatalogCandidateService {
       }
     }
     if (total === 0) return new Map();
+    // Départage alphabétique : deux genres à égalité d'occurrences ne
+    // doivent pas se disputer la 5e place au gré de l'ordre d'insertion —
+    // le jeu de genres favoris pilote toute la requête catalogue.
     const top = Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
+      .sort(compareEntryValueDescThenKey)
       .slice(0, CatalogCandidateService.TOP_GENRES);
     return new Map(top.map(([genre, count]) => [genre, count / total]));
   }
@@ -210,23 +213,16 @@ export class CatalogCandidateService {
     for (const genre of genres) {
       const sources = userMangas
         .filter((um) => (um.manga?.genres ?? []).includes(genre))
-        .sort((a, b) => this.computeMultiplier(b) - this.computeMultiplier(a))
+        .sort(
+          byValueDescThenId<UserManga>(
+            (um) => computeAffinityMultiplier(um),
+            (um) => um.manga.mu_id,
+          ),
+        )
         .slice(0, CatalogCandidateService.SOURCES_PER_CANDIDATE)
         .map((um) => um.manga.mu_id);
       result.set(genre, sources);
     }
     return result;
-  }
-
-  /** Miroir de `RecommendationService.computeMultiplier` (voir doc statique). */
-  private computeMultiplier(um: UserManga): number {
-    const ratingMultiplier = um.user_rating > 0 ? um.user_rating / 5.0 : 1.0;
-    const statusMultiplier =
-      CatalogCandidateService.STATUS_MULTIPLIER[um.readingStatus] ?? 1.0;
-    const ageDays = (Date.now() - um.adding_date.getTime()) / 86_400_000;
-    const recencyMultiplier = Math.exp(
-      -ageDays / CatalogCandidateService.RECENCY_HALF_LIFE_DAYS,
-    );
-    return ratingMultiplier * statusMultiplier * recencyMultiplier;
   }
 }

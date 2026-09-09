@@ -3,6 +3,8 @@ import {
   isDiscoverableRelation,
   RecoLinkKind,
 } from '@/api/mangas/reco-graph.mapper';
+import { computeAffinityMultiplier } from './library-affinity';
+import { byValueDescThenId, compareIdAsc } from './reco-ordering';
 
 /**
  * Normalisation et agrégation du **graphe de voisinage MangaUpdates** —
@@ -100,15 +102,6 @@ const FINISHED_STATUSES = ['completed', 'caughtUp'];
 /** Note perso à partir de laquelle une œuvre compte, quel que soit le statut. */
 export const APPRECIATED_RATING_FLOOR = 7;
 
-const STATUS_MULTIPLIER: Record<string, number> = {
-  completed: 1.5,
-  caughtUp: 1.3,
-  reading: 1.2,
-  readLater: 0.8,
-};
-
-const RECENCY_HALF_LIFE_DAYS = 365;
-
 /**
  * Contextes des œuvres **appréciées** de la bibliothèque — les seules
  * autorisées à propager leur voisinage.
@@ -132,17 +125,9 @@ export function buildGraphSourceContexts(
       rating >= APPRECIATED_RATING_FLOOR;
     if (!appreciated) continue;
 
-    const ratingMultiplier = rating > 0 ? rating / 5.0 : 1.0;
-    const statusMultiplier = STATUS_MULTIPLIER[um.readingStatus] ?? 1.0;
-    const ageDays = um.adding_date
-      ? (now - um.adding_date.getTime()) / 86_400_000
-      : 0;
     contexts.set(muId, {
       muId,
-      multiplier:
-        ratingMultiplier *
-        statusMultiplier *
-        Math.exp(-ageDays / RECENCY_HALF_LIFE_DAYS),
+      multiplier: computeAffinityMultiplier(um, now),
       finished: FINISHED_STATUSES.includes(um.readingStatus),
     });
   }
@@ -172,8 +157,13 @@ export function scoreGraphLinks(
     else bySource.set(row.source_mu_id, [row]);
   }
 
+  // Les contributions sont ensuite ADDITIONNÉES au score d'un candidat.
+  // L'addition flottante n'étant pas associative, l'ordre d'émission doit
+  // être fixe : on parcourt les sources par `mu_id` croissant plutôt que
+  // dans l'ordre d'arrivée des lignes.
   const contributions: GraphContribution[] = [];
-  for (const [sourceMuId, links] of bySource) {
+  for (const sourceMuId of [...bySource.keys()].sort(compareIdAsc)) {
+    const links = bySource.get(sourceMuId) as GraphLinkRow[];
     const context = contexts.get(sourceMuId) as GraphSourceContext;
     contributions.push(...scoreCategoryLinks(sourceMuId, links, context));
     contributions.push(...scoreRelatedLinks(sourceMuId, links, context));
@@ -187,9 +177,18 @@ function scoreCategoryLinks(
   links: GraphLinkRow[],
   context: GraphSourceContext,
 ): GraphContribution[] {
+  // Ordre TOTAL avant la troncature : à poids égal, `recommended_mu_id`
+  // croissant. Sans lui, le sous-ensemble des 12 voisins retenus dépendait
+  // de l'ordre de lecture des lignes (`getRawMany` sans `ORDER BY`) — donc
+  // les candidats injectés dans le pool changeaient d'une requête à l'autre.
   const category = links
     .filter((row) => row.kind === 'category' && row.weight > 0)
-    .sort((a, b) => b.weight - a.weight)
+    .sort(
+      byValueDescThenId<GraphLinkRow>(
+        (row) => row.weight,
+        (row) => row.recommended_mu_id,
+      ),
+    )
     .slice(0, MAX_CATEGORY_LINKS_PER_SOURCE);
   if (category.length === 0) return [];
 
@@ -215,6 +214,7 @@ function scoreRelatedLinks(
       (row) =>
         row.kind === 'related' && isDiscoverableRelation(row.relation_type),
     )
+    .sort((a, b) => compareIdAsc(a.recommended_mu_id, b.recommended_mu_id))
     .map((row) => ({
       muId: row.recommended_mu_id,
       sourceMuId,

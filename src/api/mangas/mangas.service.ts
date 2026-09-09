@@ -272,14 +272,20 @@ export class MangasService {
     sourceMuId: number,
     kinds: RecoLinkKind[] = ['manual'],
   ): Promise<MangaRecommendation[]> {
-    return this.recoRepository
-      .createQueryBuilder('mr')
-      .where('mr.source_mu_id = :sourceMuId', {
-        sourceMuId: sourceMuId.toString(),
-      })
-      .andWhere('mr.kind IN (:...kinds)', { kinds })
-      .orderBy('mr.weight', 'DESC')
-      .getMany();
+    return (
+      this.recoRepository
+        .createQueryBuilder('mr')
+        .where('mr.source_mu_id = :sourceMuId', {
+          sourceMuId: sourceMuId.toString(),
+        })
+        .andWhere('mr.kind IN (:...kinds)', { kinds })
+        .orderBy('mr.weight', 'DESC')
+        // Départage : `RecommendationService.scoreRecos` ne garde que les 40
+        // premiers poids. À poids égal, sans cet ordre, le sous-ensemble
+        // retenu variait d'une requête à l'autre.
+        .addOrderBy('mr.recommended_mu_id', 'ASC')
+        .getMany()
+    );
   }
 
   /**

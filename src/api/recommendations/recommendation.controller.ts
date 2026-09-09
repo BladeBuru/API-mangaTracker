@@ -32,13 +32,17 @@ export class RecommendationController {
     name: 'limit',
     required: false,
     type: Number,
-    description: 'Nombre max de recommandations (défaut : 50, max : 500)',
+    description:
+      'Nombre max de recommandations par page (défaut : 50, borné à 1-500). ' +
+      'Les pages sont des tranches d une liste canonique unique par utilisateur : ' +
+      'une page de 10 est exactement le début d une page de 50.',
   })
   @ApiQuery({
     name: 'offset',
     required: false,
     type: Number,
-    description: 'Décalage pour la pagination (défaut : 0)',
+    description:
+      'Décalage pour la pagination (défaut : 0, valeurs négatives ramenées à 0)',
   })
   @ApiResponse({
     status: 200,
@@ -107,7 +111,7 @@ export class RecommendationController {
     name: 'limit',
     required: false,
     type: Number,
-    description: 'Nombre max de pépites (défaut : 20, max : 500)',
+    description: 'Nombre max de pépites (défaut : 20, borné à 1-500)',
   })
   @ApiResponse({
     status: 200,

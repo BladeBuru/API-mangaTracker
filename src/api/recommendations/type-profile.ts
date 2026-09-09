@@ -295,8 +295,13 @@ export async function fetchByTypeBuckets(
   const seen = new Set<string>();
   const merged: Manga[] = [];
   for (const bucket of planTypeQueryBuckets(profile, totalLimit)) {
+    // `addOrderBy('m.mu_id')` : le `LIMIT` tronque un catalogue de ~150 000
+    // lignes dont beaucoup partagent la même note. Sans départage, Postgres
+    // rend un échantillon différent à chaque exécution et le pool de
+    // candidats — donc l'ordre final — varie d'une requête à l'autre.
     const rows = await applyTypeBucket(createQuery(), bucket, profile)
       .orderBy('m.rating', 'DESC')
+      .addOrderBy('m.mu_id', 'ASC')
       .limit(bucket.limit)
       .getMany();
     for (const manga of rows) {

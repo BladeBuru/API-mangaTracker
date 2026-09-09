@@ -8,6 +8,8 @@ import { MangasService } from '@/api/mangas/mangas.service';
 import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
 import { CommunityRating } from '@/api/mangas/rating-aggregator';
 import { DismissalService } from './dismissal.service';
+import { byValueDescThenId } from './reco-ordering';
+import { clampRecoWindow, RECO_MAX_LIMIT } from './reco-pagination';
 import { computeTypeProfile, interleaveByTypeMix } from './type-profile';
 
 /**
@@ -29,8 +31,8 @@ import { computeTypeProfile, interleaveByTypeMix } from './type-profile';
 export class SleeperHitsService {
   private readonly logger = new Logger(SleeperHitsService.name);
 
-  /** Limite max de la pagination (alignée sur `RecommendationService`). */
-  private static readonly MAX_LIMIT = 500;
+  /** Limite max de la pagination (source unique : `reco-pagination`). */
+  private static readonly MAX_LIMIT = RECO_MAX_LIMIT;
 
   /**
    * Cold start (bibliothèque vide) : nombre minimum de votes locaux pour
@@ -44,6 +46,12 @@ export class SleeperHitsService {
    * pour exposer aussi des découvertes récentes peu visibles.
    */
   private static readonly COLD_START_SLEEPER_BUDGET = 30;
+
+  /**
+   * Cold start : marge de lignes chargées au-delà de la liste canonique, pour
+   * absorber les dédups (titres écartés, stubs sans ligne `manga`).
+   */
+  private static readonly COLD_START_DEDUP_MARGIN = 50;
 
   constructor(
     @InjectRepository(UserManga)
@@ -79,7 +87,9 @@ export class SleeperHitsService {
     userId: number,
     limit = 20,
   ): Promise<MangaQuickViewDto[]> {
-    const effectiveLimit = Math.min(limit, SleeperHitsService.MAX_LIMIT);
+    // Borné comme la liste plate : `limit=0` ou négatif ne doit jamais
+    // atteindre un `slice` (cf. `clampRecoWindow`).
+    const { limit: effectiveLimit } = clampRecoWindow(limit, 0);
     const currentYear = new Date().getFullYear();
     const yearMin = currentYear - 2;
     const ratingMin = 7.5;
@@ -155,7 +165,15 @@ export class SleeperHitsService {
         return { manga, score, community: c };
       })
       .filter((s): s is Scored => s !== null);
-    scored.sort((a, b) => b.score - a.score);
+    // Ordre TOTAL avant la troncature à `effectiveLimit` : à score sleeper
+    // égal (fréquent — même note agrégée, même année, zéro vote local), le
+    // `mu_id` croissant décide, plutôt que l'ordre de lecture des lignes.
+    scored.sort(
+      byValueDescThenId<Scored>(
+        (s) => s.score,
+        (s) => s.manga.mu_id,
+      ),
+    );
 
     // 7. Prorata du profil de type, puis top N → DTO (null-safe sur stubs)
     const balanced = interleaveByTypeMix(scored, (s) => s.manga.type, profile);
@@ -171,21 +189,28 @@ export class SleeperHitsService {
    *  1. Top communauté : mangas avec ≥ COLD_START_MIN_VOTES votes locaux,
    *     triés par note bayésienne décroissante (cf. `aggregateRating`).
    *  2. Sleepers : titres récents bien notés peu recommandés.
-   *  3. Concat (top puis sleepers), dédup par muId, slice offset/limit.
+   *  3. Concat (top puis sleepers), dédup par muId, plafond canonique.
    *
    * On évite de scorer par genre faute de signaux personnels : la priorité est
    * que la home ne soit jamais vide, et que la pagination remonte de nouveaux
    * candidats au fil du scroll.
+   *
+   * **Vivier constant (fix 2026-09-09)** : la méthode rend désormais la liste
+   * canonique complète, sans `offset`. Le vivier chargé ne dépend donc plus de
+   * la fenêtre demandée — il valait `offset + limit + 50`, si bien qu'une
+   * bibliothèque vide interrogée avec deux tailles de page construisait deux
+   * viviers différents, puis les re-triait sur une clé (`aggregatedRating`)
+   * distincte de celle du `LIMIT` SQL (`AVG(user_rating)`) : le début de liste
+   * changeait. La pagination est appliquée par l'appelant, sur cette liste.
    */
   async buildColdStartRecommendations(
     userId: number,
-    limit: number,
-    offset: number,
+    maxItems: number,
   ): Promise<MangaQuickViewDto[]> {
-    // On charge plus large que offset+limit pour absorber les dédups et la
-    // pagination ultérieure sans recalcul.
+    // Marge au-delà de la liste canonique pour absorber les dédups. Ne dépend
+    // que de constantes → identique d'une requête à l'autre.
     const poolSize = Math.min(
-      offset + limit + 50,
+      maxItems + SleeperHitsService.COLD_START_DEDUP_MARGIN,
       SleeperHitsService.MAX_LIMIT * 3,
     );
 
@@ -214,7 +239,7 @@ export class SleeperHitsService {
       ...sleepers.filter((s) => !seen.has(s.muId)),
     ];
 
-    return combined.slice(offset, offset + limit);
+    return combined.slice(0, maxItems);
   }
 
   /**
@@ -240,6 +265,10 @@ export class SleeperHitsService {
           min: SleeperHitsService.COLD_START_MIN_VOTES,
         })
         .orderBy('AVG(um.user_rating)', 'DESC')
+        // Départage : `LIMIT` tronque le classement communautaire, et les
+        // moyennes ex æquo sont la norme sur peu de votes. Sans cet ordre,
+        // le vivier du démarrage à froid changeait à chaque appel.
+        .addOrderBy('um.manga_id', 'ASC')
         .limit(maxRows)
         .getRawMany();
     if (rows.length === 0) return [];
@@ -268,7 +297,12 @@ export class SleeperHitsService {
         return m ? this.toDto(m, community.get(muId)) : null;
       })
       .filter((d): d is MangaQuickViewDto => d !== null)
-      .sort((a, b) => (b.aggregatedRating ?? 0) - (a.aggregatedRating ?? 0));
+      .sort(
+        byValueDescThenId<MangaQuickViewDto>(
+          (d) => d.aggregatedRating ?? 0,
+          (d) => d.muId,
+        ),
+      );
   }
 
   /** Carte null-safe (stubs) + enrichissement communautaire. */

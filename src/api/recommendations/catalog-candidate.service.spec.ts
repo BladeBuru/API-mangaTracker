@@ -32,6 +32,7 @@ describe('CatalogCandidateService', () => {
     where: jest.Mock;
     andWhere: jest.Mock;
     orderBy: jest.Mock;
+    addOrderBy: jest.Mock;
     limit: jest.Mock;
     getMany: jest.Mock;
   };
@@ -50,6 +51,7 @@ describe('CatalogCandidateService', () => {
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       getMany: jest.fn().mockResolvedValue([]),
     };
@@ -242,6 +244,7 @@ describe('CatalogCandidateService', () => {
             return q;
           }),
           orderBy: jest.fn().mockReturnThis(),
+          addOrderBy: jest.fn().mockReturnThis(),
           limit: jest.fn((n: number) => {
             state.limit = n;
             return q;

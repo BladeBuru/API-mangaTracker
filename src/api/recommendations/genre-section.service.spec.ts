@@ -66,6 +66,7 @@ describe('GenreSectionService', () => {
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         getMany:
           result instanceof Error
