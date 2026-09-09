@@ -1573,6 +1573,56 @@ describe('RecommendationService', () => {
       expect(second.map((d) => d.muId)).toEqual(first.map((d) => d.muId));
     });
 
+    /**
+     * Les écritures en tâche de fond (`hydrateIncompleteDtosInBackground` →
+     * `getMangaDetails`) remplissent `type` — précisément la clé de
+     * regroupement de l'entrelacement. Avant le correctif, la requête de
+     * l'accueil déclenchait ces écritures et la requête de « Voir tout »,
+     * quelques secondes plus tard, recalculait tout sur une base modifiée.
+     */
+    it("une écriture en tâche de fond entre les deux écrans ne réordonne plus la liste", async () => {
+      // Bibliothèque 100 % manhwa → profil marqué, l'entrelacement s'applique.
+      userMangaRepo.find.mockResolvedValue(
+        ['1000', '1001'].map((muId, index) =>
+          makeUserManga({
+            id: index + 1,
+            manga: makeManga({ id: index + 1, mu_id: muId, type: 'Manhwa' }),
+          }),
+        ),
+      );
+      const candidateIds = Array.from({ length: 14 }, (_, i) =>
+        String(2001 + i),
+      );
+      mangasService.getCachedRecommendations.mockImplementation(
+        async (muId: number) =>
+          candidateIds.map((id) => makeReco(String(muId), id, 10)),
+      );
+
+      // `hydrated` simule le remplissage de `type` par la tâche de fond.
+      let hydrated = false;
+      mangaRepo.find.mockImplementation(({ where }: any) => {
+        const ids: string[] = where.mu_id._value;
+        return Promise.resolve(
+          ids.map((id) =>
+            makeManga({
+              mu_id: id,
+              title: `Titre ${id}`,
+              type: hydrated && Number(id) >= 2008 ? 'Manhwa' : undefined,
+            }),
+          ),
+        );
+      });
+
+      const home = await service.buildUserRecommendations(11, 10, 0);
+      hydrated = true;
+      const seeAll = await service.buildUserRecommendations(11, 50, 0);
+
+      expect(home).toHaveLength(10);
+      expect(seeAll.slice(0, 10).map((d) => d.muId)).toEqual(
+        home.map((d) => d.muId),
+      );
+    });
+
     describe('bornes de la fenêtre', () => {
       beforeEach(() => setupTiedPool());
 
