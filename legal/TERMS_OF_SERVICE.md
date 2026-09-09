@@ -31,6 +31,10 @@ L'Application **ne fournit aucun contenu manga** (texte ou images des chapitres)
 
 Les métadonnées de mangas (titres, auteurs, genres, couvertures) sont fournies par l'API publique **MangaUpdates** ([api.mangaupdates.com](https://api.mangaupdates.com)).
 
+Les **recommandations personnalisées** s'appuient elles aussi sur des données publiques de MangaUpdates : les liens de similarité et les recommandations de catégorie que leur communauté associe à chaque série. Ces liens sont combinés avec votre bibliothèque **sur nos serveurs** ; aucune donnée vous concernant n'est transmise à MangaUpdates.
+
+Conformément aux conditions d'utilisation de leur API, l'Application affiche en permanence un crédit visible mentionnant MangaUpdates comme source de ces données (bas de la page d'accueil, bas des pages de listes complètes et pied de la page de profil).
+
 ## 3. Inscription et compte
 
 ### 3.1 Conditions d'inscription
@@ -86,6 +90,7 @@ Le code source, l'interface, les marques et logos de Manga Tracker sont protég�
 
 ### 5.2 Les contenus tiers
 - Les **métadonnées de mangas** (titres, descriptions, couvertures) sont la propriété de leurs ayants droit respectifs et fournies par MangaUpdates dans le cadre de leur API publique.
+- Les **données de recommandation** (liens de similarité entre séries, recommandations de catégorie) proviennent de la communauté MangaUpdates et restent leur propriété. Manga Tracker les utilise dans le cadre de leur API publique, avec le crédit exigé, et n'en revendique aucun droit.
 - Les **mangas eux-mêmes** ne sont **pas hébergés** par Manga Tracker.
 
 ### 5.3 Vos contenus

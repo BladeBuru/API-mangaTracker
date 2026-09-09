@@ -50,7 +50,7 @@ Manga Tracker collecte les données suivantes :
 |---------|-------------------|
 | Authentification et gestion de compte | Exécution d'un contrat (article 6.1.b) |
 | Stockage de votre bibliothèque manga | Exécution d'un contrat |
-| Recommandations personnalisées | Intérêt légitime (article 6.1.f) — utilisation de votre bibliothèque pour générer des suggestions |
+| Recommandations personnalisées | Intérêt légitime (article 6.1.f) — votre bibliothèque est croisée, **sur nos serveurs**, avec les liens de similarité publics de MangaUpdates pour générer des suggestions |
 | Notes communautaires agrégées | Intérêt légitime — données anonymisées (moyenne et compte uniquement) |
 | Sécurité (rate-limit, détection d'abus) | Intérêt légitime |
 | Statistiques internes anonymisées | Intérêt légitime |
@@ -61,7 +61,7 @@ Vos données peuvent être transmises aux sous-traitants suivants :
 
 | Sous-traitant | Rôle | Données concernées | Localisation |
 |---------------|------|---------------------|--------------|
-| MangaUpdates (api.mangaupdates.com) | Source des données manga (uniquement requêtes sur les titres, **pas vos données utilisateur**) | Aucune donnée personnelle | États-Unis |
+| MangaUpdates (api.mangaupdates.com) | Source des données manga et des liens de recommandation entre séries. Les requêtes ne portent que sur des identifiants de séries — **jamais sur vos données utilisateur**, jamais sur votre bibliothèque | Aucune donnée personnelle | États-Unis |
 | _[Hébergeur — ex: OVH, Scaleway, AWS]_ | Hébergement de la base de données | Toutes vos données | _[À compléter]_ |
 | Google (si OAuth utilisé) | Authentification | Email + identifiant Google | États-Unis (DPF certifié) |
 

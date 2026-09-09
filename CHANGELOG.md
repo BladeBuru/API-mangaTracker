@@ -5,6 +5,18 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ---
 
+## [Unreleased] — docs/credits-mangaupdates
+
+### Changed
+
+- **CGU §2 et §5.2** : les recommandations personnalisées reposent désormais sur les liens de similarité et les recommandations de catégorie publiés par la communauté MangaUpdates. Le texte le dit, précise que ces liens sont croisés avec la bibliothèque de l'utilisateur **sur nos serveurs** (aucune donnée utilisateur ne part chez MangaUpdates), et acte le **crédit visible** exigé par leurs conditions d'utilisation — crédit affiché dans l'application depuis la 0.15.0 (accueil, listes complètes, profil).
+- **Politique de confidentialité §3 et §4** : la finalité « Recommandations personnalisées » et la ligne sous-traitant MangaUpdates décrivent le croisement réel. Les requêtes vers MangaUpdates ne portent que sur des **identifiants de séries** — jamais sur un compte, jamais sur une bibliothèque.
+
+### Notes
+
+- **Versions légales inchangées** (`CURRENT_TOS_VERSION = 1.0`, `CURRENT_PRIVACY_VERSION`) : il s'agit d'une précision de provenance et d'une attribution, pas d'un changement de traitement des données personnelles ni des obligations de l'utilisateur. Aucun re-consentement n'est donc déclenché.
+- ⚠️ **Si la collecte du signal de lecture public est un jour activée**, ce sera un changement de traitement : les deux versions devront être incrémentées et le flux de re-consentement se déclenchera pour tous les comptes.
+- Les deux documents portent toujours « Date d'entrée en vigueur : À compléter avant publication » et l'avertissement « à faire valider par un juriste ». Ce commit ne lève ni l'un ni l'autre.
 ## [Unreleased] — fix/reco-order-stable
 
 > Basée sur `master` (452ea39). **Stabilité, pas pertinence** : à vivier identique, le classement rendu est le même qu'avant — seuls les ex æquo, jusqu'ici arbitraires, sont désormais départagés. Aucun algorithme de scoring ni de sélection n'a été touché. Aucune migration.
