@@ -5,6 +5,54 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ---
 
+## [Unreleased] — fix/reco-order-stable
+
+> Basée sur `master` (452ea39). **Stabilité, pas pertinence** : à vivier identique, le classement rendu est le même qu'avant — seuls les ex æquo, jusqu'ici arbitraires, sont désormais départagés. Aucun algorithme de scoring ni de sélection n'a été touché. Aucune migration.
+
+### Contexte
+
+Signalé en prod : « les recommandations de la page d'accueil, une fois que je déplie, ne sont pas forcément les mêmes dans l'ordre ». L'accueil demande `limit=10`, la page « Voir tout » `limit=50`.
+
+Cause racine : `limit` et `offset` faisaient partie de la clé de cache (`flat:all:10:0` vs `flat:all:50:0`). Deux tailles de page = deux entrées de cache = **deux calculs complets et indépendants**. Et ce calcul n'était pas déterministe : tris par score sans départage secondaire, ordre d'insertion du `scoreMap` issu d'une course `Promise.all`, `getRawMany()` tronqué sans `ORDER BY`, écritures en tâche de fond modifiant `type` — la clé même du regroupement de l'entrelacement — entre deux requêtes proches.
+
+Relevé sur la prod le 2026-09-09 (`npm run verify:reco-order`) : **21 à 51 positions du classement final sur 202-232** ne se distinguaient que par un score strictement égal, soit **10 à 22 % du classement laissé au hasard de l'ordre de lecture de Postgres**.
+
+### Fixed
+
+- **recommendations** : **une seule unité de calcul par `(utilisateur, genre)`**. `limit`/`offset` sortent de la clé de cache ; la **liste canonique** entière est calculée et mise en cache, la pagination n'est plus qu'un `slice` appliqué APRÈS le cache, au hit comme au miss. Toute taille de page est donc un préfixe de la même liste : `limit=10` est exactement le début de `limit=50`. Contrat client inchangé
+- **recommendations** : **ordre total partout où un tri précède une troncature** (`reco-ordering.ts`) — départage par `mu_id` croissant, identifiant immuable qu'aucune tâche de fond ne réécrit. `recommendation-dto-builder` (pool + top 3 des sources), `catalog-candidate` (candidats, genres favoris, sources par genre), `reco-graph-scoring` (voisins `category` et `related`), `sleeper-hits` (score sleeper + top communauté), `genre-section`, `scoreRecos` (40 meilleurs poids par source). **Un tri stable ne suffisait pas** : `Array.prototype.sort` est stable par rapport à l'ordre d'ENTRÉE, lequel n'était lui-même pas reproductible
+- **recommendations** : `ORDER BY` explicites là où un résultat tronqué n'en avait aucun — `RecoGraphCandidateService.loadLinks` (`getRawMany` puis `slice(0, 12)` par source), `fetchByTypeBuckets` (`LIMIT` sur ~147 000 lignes de catalogue : la note à la frontière de troncature est partagée par **6 à 17 lignes**, que Postgres pouvait permuter librement), `MangasService.getCachedRecommendations`, `SleeperHitsService.buildTopCommunityDtos`
+- **recommendations** : **accumulation des scores indépendante de la course `Promise.all`**. Les contributions sont additionnées, et l'addition flottante n'est pas associative : deux ordres d'accumulation donnent des scores qui diffèrent au dernier bit, donc un classement différent entre ex æquo. Les lectures restent parallèles, le scoring est appliqué séquentiellement dans l'ordre de la bibliothèque — elle-même désormais ordonnée par `mu_id` (`find()` sans `ORDER BY` ne garantit rien)
+- **recommendations** : **démarrage à froid (bibliothèque vide) stable**. `buildColdStartRecommendations` rend la liste canonique et n'a plus d'`offset` : son vivier valait `offset + limit + 50` puis était re-trié sur `aggregatedRating` alors que le `LIMIT` SQL classait par `AVG(user_rating)` — deux tailles de page construisaient deux viviers et deux têtes de liste différentes
+- **recommendations** : **plancher sur `limit`** (`clampRecoWindow`). `ParseIntPipe` rejetait `limit=abc` mais laissait passer `limit=-1`, qui atteignait `slice(0, -1)` et retirait silencieusement la dernière carte. Plancher 1, plafond 500, `offset` négatif ramené à 0 — sur la liste plate comme sur `GET /recommendations/sleepers`
+
+### Changed
+
+- **recommendations** : au-delà de `offset + limit > 500` (taille de la liste canonique, `RECO_CANONICAL_MAX_ITEMS`), la réponse est vide là où l'ancienne pagination pouvait encore rendre des titres. Le client Flutter s'arrête proprement (page incomplète → `hasMore = false`). Le pool réel mesuré en prod est de 202 à 232 candidats : la borne n'est pas atteinte
+- **recommendations** : le **démarrage à froid est désormais mis en cache** comme le reste (il était recalculé à chaque requête). L'invalidation reste immédiate : le premier manga ajouté à la bibliothèque vide l'entrée (`RecoCacheService.invalidateUser`, appelé par `LibraryService` et `DismissalService`)
+- **recommendations** : `library-affinity.ts` devient la source unique de `statut × note perso × récence`, qui existait à l'identique dans trois fichiers tous documentés comme « miroir de `RecommendationService.computeMultiplier` ». Résultats numériques inchangés
+
+### Added
+
+- **config** : `RECO_CANONICAL_MAX_ITEMS` (optionnelle, défaut 500 = limite max d'une page, bornée à [500, 2000]) — taille de la liste canonique calculée et cachée par utilisateur
+- **outillage** : `npm run verify:reco-order -- --user=<id>` (`test/reco-order-stability.ts`) — reconstruit deux fois la liste canonique d'un utilisateur réel sur la **base de production en lecture seule** (SELECT uniquement, aucun appel MangaUpdates), et vérifie que les deux constructions sont identiques, que `limit=10` est le préfixe exact de `limit=50`, et que deux pages consécutives se recollent. Affiche aussi le nombre d'ex æquo et le coût mémoire du cache
+
+### Mémoire du cache (mesurée en prod, 2026-09-09)
+
+| | Avant | Après |
+|---|---|---|
+| Entrées par utilisateur | 1 par taille de page × page visitée (jusqu'à ~10) | **1** par filtre de genre |
+| Cartes en mémoire | 10 pages × 50 = les mêmes 500 cartes | 202-232 cartes réelles |
+| Coût mesuré | — | **91 à 104 Kio** par utilisateur (**225 Kio** au plafond de 500) |
+
+Une carte de recommandation pèse ≈ 378 o en JSON, ≈ 460 o en tas Node. `RecoCacheService.MAX_ENTRIES` (5 000) est inchangé : le cache canonique **réduit** le nombre d'entrées par utilisateur, il ne l'augmente pas.
+
+### Tests
+
+627 tests verts (615 → 627). 12 cas de stabilité (`recommendation.service.spec.ts`) + 9 cas sur `reco-ordering.spec.ts`. Dont un test qui reproduit le symptôme exact : une écriture en tâche de fond remplissant `type` entre l'accueil et « Voir tout » déplaçait **7 des 10 premières cartes** — vérifié en échec sur `452ea39`, vert sur la branche.
+
+---
+
 ## [Unreleased] — feat/reader-signal-collect
 
 > Basée sur `master` (0c32a8c). **Aucune route exposée, moteur de recommandation NON modifié** : ce chantier s'arrête à la donnée collectée et agrégée, prête à être branchée. Une session parallèle travaille sur le graphe de recommandations et ajoute elle aussi un job MU nocturne — le verrou `MuJobLockService` garantit qu'un seul job MangaUpdates tourne à la fois.

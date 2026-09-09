@@ -1,6 +1,6 @@
 # Progrès — Manga Tracker API
 
-> Dernière mise à jour : Septembre 2026
+> Dernière mise à jour : 2026-09-09
 
 ---
 
@@ -349,6 +349,37 @@ Branche `feat/reco-graph-mu` (base `master` `0c32a8c`).
 **Tests** : +56 (412 → 468), 5 suites ajoutées.
 
 **Reste à faire** : (1) déployer et observer les logs `[reco-graph]` après le premier cron 07:00 (budget consommé, liens écrits, éligibles restants) ; (2) relancer `npm run measure:reco-graph -- --db` après quelques nuits pour confirmer sur les données réellement ingérées ; (3) côté Flutter, afficher le **crédit MangaUpdates** sous les listes de recommandations (leur politique d'usage le demande) ; (4) surveiller la volumétrie de `manga_recommendation` : ~13 liens par fiche, soit ~1,9 M de lignes (**≈ 350 Mo**) si l'on couvre les 147 261 séries (≈ 98 nuits). Pour la borner, baisser `RECO_GRAPH_BACKFILL_PAGES_PER_RUN` ou restreindre le rattrapage aux rangs 0-2 (le rang 3 « reste du catalogue » est le seul qui pousse le volume).
+
+---
+
+## 🎯 Ordre des recommandations déterministe et stable (2026-09-09)
+
+Branche `fix/reco-order-stable` (base `master` `452ea39`). **Aucune migration.**
+
+**Le symptôme.** « Les recommandations de la page d'accueil, une fois que je déplie, ne sont pas forcément les mêmes dans l'ordre. » L'accueil demande `limit=10`, la page « Voir tout » `limit=50`.
+
+**La cause structurelle.** `limit` et `offset` faisaient partie de la clé de cache (`flat:all:10:0` vs `flat:all:50:0`). Deux tailles de page = deux entrées = **deux calculs complets et indépendants**. Rien ne garantissait que les deux listes partagent leur préfixe — sauf si le calcul était déterministe. Il ne l'était pas.
+
+**Les quatre sources de non-déterminisme, toutes traitées.**
+
+1. **Tris partiels avant troncature.** Six emplacements triaient par score puis tronquaient sans départage. `Array.prototype.sort` est stable, mais seulement par rapport à l'ordre d'ENTRÉE — lequel venait d'une `Map` remplie par une course `Promise.all` ou d'un `getRawMany()` sans `ORDER BY`. Nouveau module `reco-ordering.ts` : départage par `mu_id` croissant (identifiant immuable, qu'aucune tâche de fond ne réécrit).
+2. **Requêtes tronquées sans ordre.** `ORDER BY` explicites ajoutés sur `RecoGraphCandidateService.loadLinks`, `fetchByTypeBuckets`, `getCachedRecommendations`, `buildTopCommunityDtos`. Mesuré : la note à la frontière de troncature d'un bucket catalogue est partagée par **6 à 17 lignes** que Postgres pouvait permuter librement.
+3. **Addition flottante non associative.** Les contributions des sources sont additionnées ; deux ordres d'accumulation donnent des scores qui diffèrent au dernier bit, donc un classement différent entre ex æquo. Les lectures restent parallèles, le **scoring est appliqué séquentiellement** dans l'ordre de la bibliothèque, elle-même triée par `mu_id`.
+4. **Écritures en tâche de fond.** `hydrateIncompleteDtosInBackground` → `getMangaDetails` remplit `type` — précisément la clé de regroupement de `interleaveByTypeMix`. **Stratégie retenue : figer l'unité de calcul.** Une liste canonique par `(user, genre)`, calculée une fois et cachée ; les deux écrans lisent la même. L'hydratation est conservée (elle est utile, et retirer une fonctionnalité pour en réparer une autre est proscrit) ; elle ne peut plus réordonner ce qui est déjà servi. Alternatives écartées : retirer l'hydratation du chemin de lecture l'affamerait (c'est là que les stubs remontent) ; « ordonner sur une donnée stable » est impossible sans casser le prorata de type, dont `type` EST la clé.
+
+**Le correctif de fond.** `limit`/`offset` sortent de la clé de cache. La liste canonique entière (plafond `recoCanonicalMaxItems()`, défaut 500) est calculée et cachée ; la pagination est un `slice` **après** le cache, au hit comme au miss. Toute taille de page est un préfixe de la même liste.
+
+**Démarrage à froid.** `buildColdStartRecommendations` rend la liste canonique sans `offset` : son vivier valait `offset + limit + 50` puis était re-trié sur `aggregatedRating` alors que le `LIMIT` SQL classait par `AVG(user_rating)` — une bibliothèque vide était instable par construction.
+
+**Plancher sur `limit`.** `ParseIntPipe` rejetait `limit=abc` mais laissait passer `limit=-1`, qui atteignait `slice(0, -1)` et retirait silencieusement la dernière carte. `clampRecoWindow` : plancher 1, plafond 500, `offset` négatif ramené à 0.
+
+**Mesuré en prod** (`npm run verify:reco-order -- --user=<id>`, lecture seule) sur les trois bibliothèques réelles : pool **202 / 232 / 224** candidats ; **21 / 51 / 42 positions** du classement ne se distinguaient que par un score strictement égal, soit **10 à 22 % du classement laissé au hasard** ; cache canonique **91 / 104 / 101 Kio** par utilisateur (225 Kio au plafond, ≈ 460 o par carte). Le cache canonique **réduit** le nombre d'entrées par utilisateur (une, au lieu d'une par page visitée).
+
+**Ce qui n'a PAS changé** : aucun algorithme de scoring ni de sélection. À vivier identique, le classement est le même — seuls les ex æquo sont départagés. Un seul changement de comportement visible : au-delà de `offset + limit > 500`, la réponse est vide là où l'ancienne pagination pouvait rendre des titres (pool réel : 202-232, la borne n'est pas atteinte ; le client Flutter s'arrête proprement sur une page incomplète).
+
+**Tests** : 615 → 627. 12 cas de stabilité + 9 sur les comparateurs. Dont la reproduction du symptôme exact : une écriture en tâche de fond remplissant `type` entre les deux écrans déplaçait **7 des 10 premières cartes** — en échec sur `452ea39`, vert sur la branche.
+
+**Reste à faire après déploiement** : (1) confirmer sur appareil que l'ordre accueil / « Voir tout » coïncide ; (2) côté Flutter, l'atténuation `feat/reco-order-dismiss` (page canonique partagée) devient redondante mais reste inoffensive — décider si on la garde ; (3) surveiller la mémoire du cache si le nombre de comptes actifs grandit (`RECO_CANONICAL_MAX_ITEMS` permet de la borner) ; (4) `RecoCacheService` reste **en mémoire, mono-instance** : une seconde instance d'API redonnerait deux ordres différents (tech-design D5).
 
 ---
 

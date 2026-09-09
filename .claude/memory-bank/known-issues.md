@@ -1,6 +1,6 @@
 # Problèmes Connus — Manga Tracker API
 
-**Dernière mise à jour :** Août 2026
+**Dernière mise à jour :** 2026-09-09
 
 ---
 
@@ -76,6 +76,62 @@
 ---
 
 ## ✅ Problèmes Résolus
+
+### Recommandations : ordre différent entre l'accueil et « Voir tout »
+
+- **Module** : recommendations
+- **Résolu le** : 2026-09-09 (branche `fix/reco-order-stable`)
+- **Symptôme** : « Les recommandations de la page d'accueil, une fois que je
+  déplie, ne sont pas forcément les mêmes dans l'ordre. » L'accueil demande
+  `limit=10`, la page « Voir tout » `limit=50`.
+- **Cause structurelle** : `limit` et `offset` faisaient partie de la clé de
+  cache (`flat:all:10:0` vs `flat:all:50:0`,
+  `recommendation.service.ts:177-180`). Deux tailles de page = deux entrées
+  de cache = deux calculs complets et indépendants. Rien ne garantissait
+  qu'ils partagent leur préfixe — sauf déterminisme du calcul.
+- **Causes de non-déterminisme** (toutes traitées) :
+  1. **Tris partiels avant troncature** — six emplacements triaient par
+     score puis tronquaient sans départage secondaire. `Array.sort` est
+     stable, mais par rapport à l'ordre d'ENTRÉE, qui venait d'une `Map`
+     remplie par une course `Promise.all` ou d'un `getRawMany()` sans
+     `ORDER BY`. Corrigé par `reco-ordering.ts` (départage `mu_id` croissant).
+  2. **Requêtes tronquées sans ordre** — `RecoGraphCandidateService.loadLinks`
+     (`slice(0, 12)` par source), `fetchByTypeBuckets` (`LIMIT` sur ~147 000
+     lignes : la note à la frontière est partagée par **6 à 17 lignes**),
+     `getCachedRecommendations`, `buildTopCommunityDtos`.
+  3. **Addition flottante non associative** — les contributions des sources
+     sont additionnées ; l'ordre d'accumulation venait de la course
+     `Promise.all`. Lectures toujours parallèles, scoring désormais
+     séquentiel dans l'ordre de la bibliothèque (triée par `mu_id`).
+  4. **Écritures en tâche de fond** — l'hydratation à la demande remplit
+     `type`, la clé de regroupement de `interleaveByTypeMix`. La requête de
+     l'accueil modifiait donc la base que lisait celle de « Voir tout ».
+- **Solution** : **une seule unité de calcul par `(user, genre)`**. La liste
+  canonique entière est calculée et mise en cache (plafond
+  `RECO_CANONICAL_MAX_ITEMS`, défaut 500) ; la pagination n'est plus qu'un
+  `slice` appliqué APRÈS le cache, au hit comme au miss. L'hydratation en
+  tâche de fond est conservée : elle ne peut plus réordonner une liste déjà
+  servie.
+- **Corrigé au passage** : `limit` n'avait pas de plancher — `limit=-1`
+  atteignait `slice(0, -1)` et retirait silencieusement la dernière carte.
+  Démarrage à froid : vivier `offset + limit + 50` puis re-tri sur une clé
+  différente de celle du `LIMIT` SQL → bibliothèque vide instable par
+  construction.
+- **⚠️ Piège** : un tri « stable » ne suffit PAS à rendre un classement
+  reproductible. La stabilité de `Array.sort` ne préserve que l'ordre
+  d'entrée ; si celui-ci n'est pas reproductible, la sortie ne l'est pas non
+  plus. Il faut un ordre **total** (clé de départage immuable) partout où un
+  tri précède une troncature.
+- **Mesuré en prod** (`npm run verify:reco-order`, lecture seule, users 1/3/2)
+  : pool 202/232/224 candidats, **21/51/42 positions ex æquo** (10 à 22 % du
+  classement était arbitraire), cache canonique 91/104/101 Kio par
+  utilisateur.
+- **Tests** : 615 → 627. Reproduction du symptôme exact (écriture en tâche de
+  fond entre les deux écrans : 7 des 10 premières cartes déplacées) — en
+  échec sur `452ea39`, vert sur la branche.
+- **Non couvert** : `RecoCacheService` est en mémoire et mono-instance
+  (tech-design D5). Une seconde instance d'API redonnerait deux ordres
+  différents ; il faudrait un store partagé (Redis).
 
 ### Connexion Google web : la popup perdait `window.opener` (COOP de Helmet)
 - **Module** : `api/user/auth` (`google-oauth.guard.ts`, `auth.controller.ts` callback Google)
