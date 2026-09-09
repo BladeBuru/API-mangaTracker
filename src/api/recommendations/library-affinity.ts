@@ -49,6 +49,8 @@ export function computeAffinityMultiplier(
     ? (now - um.adding_date.getTime()) / 86_400_000
     : 0;
   return (
-    ratingMultiplier * statusMultiplier * Math.exp(-ageDays / RECENCY_HALF_LIFE_DAYS)
+    ratingMultiplier *
+    statusMultiplier *
+    Math.exp(-ageDays / RECENCY_HALF_LIFE_DAYS)
   );
 }

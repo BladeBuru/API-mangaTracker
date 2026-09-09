@@ -67,6 +67,8 @@ describe('RecommendationService', () => {
   let service: RecommendationService;
   /** Instance réelle — permet d'espionner le passage du set d'exclusion. */
   let genreSections: GenreSectionService;
+  /** Instance réelle du cache — permet de le vider entre deux calculs. */
+  let recoCache: RecoCacheService;
   // Les mocks sont volontairement étendus avec `createQueryBuilder?: any`
   // pour les tests sleeper hits / segmentation qui overrident dynamiquement
   // la méthode (faux QueryBuilder).
@@ -156,6 +158,7 @@ describe('RecommendationService', () => {
 
     service = module.get<RecommendationService>(RecommendationService);
     genreSections = module.get<GenreSectionService>(GenreSectionService);
+    recoCache = module.get<RecoCacheService>(RecoCacheService);
     // Neutralise les pauses inter-batch (batch délai/429 testés dédiés).
     service.sleep = jest.fn().mockResolvedValue(undefined);
   });
@@ -1463,6 +1466,205 @@ describe('RecommendationService', () => {
       await service.buildUserRecommendationsByGenre(42, 3, 5);
 
       expect(recoGraphCandidates.augment).toHaveBeenCalled();
+    });
+  });
+  /**
+   * Bug prod rapporté le 2026-09-09 : « les recommandations de la page
+   * d'accueil, une fois que je déplie, ne sont pas forcément les mêmes dans
+   * l'ordre ». L'accueil demande `limit=10`, « Voir tout » `limit=50`.
+   */
+  describe("stabilité de l'ordre (fix 2026-09-09)", () => {
+    /** Deux titres sources, 14 candidats, tous les poids EX ÆQUO. */
+    function setupTiedPool(reversed = false): void {
+      const sources = ['1000', '1001'];
+      const library = sources.map((muId, index) =>
+        makeUserManga({
+          id: index + 1,
+          manga: makeManga({ id: index + 1, mu_id: muId }),
+        }),
+      );
+      userMangaRepo.find.mockResolvedValue(
+        reversed ? [...library].reverse() : library,
+      );
+
+      // 14 candidats de mu_id 2001..2014, TOUS au même poids : seul le
+      // départage secondaire peut décider de l'ordre.
+      const candidateIds = Array.from({ length: 14 }, (_, i) =>
+        String(2001 + i),
+      );
+      mangasService.getCachedRecommendations.mockImplementation(
+        async (muId: number) => {
+          const recos = candidateIds.map((id) =>
+            makeReco(String(muId), id, 10, `Titre ${id}`),
+          );
+          return reversed ? recos.reverse() : recos;
+        },
+      );
+
+      mangaRepo.find.mockImplementation(({ where }: any) => {
+        const ids: string[] = where.mu_id._value;
+        const rows = ids.map((id) =>
+          makeManga({ mu_id: id, title: `Titre ${id}` }),
+        );
+        return Promise.resolve(reversed ? rows.reverse() : rows);
+      });
+    }
+
+    it('limit=10 est exactement le préfixe de limit=50 pour le même utilisateur', async () => {
+      setupTiedPool();
+
+      const home = await service.buildUserRecommendations(7, 10, 0);
+      const seeAll = await service.buildUserRecommendations(7, 50, 0);
+
+      expect(home).toHaveLength(10);
+      expect(seeAll).toHaveLength(14);
+      expect(seeAll.slice(0, 10).map((d) => d.muId)).toEqual(
+        home.map((d) => d.muId),
+      );
+    });
+
+    it('ne recalcule plus une liste par taille de page (limit/offset hors clé de cache)', async () => {
+      setupTiedPool();
+
+      await service.buildUserRecommendations(7, 10, 0);
+      const callsAfterFirst =
+        mangasService.getCachedRecommendations.mock.calls.length;
+      await service.buildUserRecommendations(7, 50, 0);
+      await service.buildUserRecommendations(7, 50, 10);
+
+      // Un seul calcul : les deux autres appels ne font que trancher.
+      expect(mangasService.getCachedRecommendations.mock.calls.length).toBe(
+        callsAfterFirst,
+      );
+    });
+
+    it('les pages successives se recollent sans trou ni doublon', async () => {
+      setupTiedPool();
+
+      const full = await service.buildUserRecommendations(7, 50, 0);
+      const page1 = await service.buildUserRecommendations(7, 5, 0);
+      const page2 = await service.buildUserRecommendations(7, 5, 5);
+
+      expect([...page1, ...page2].map((d) => d.muId)).toEqual(
+        full.slice(0, 10).map((d) => d.muId),
+      );
+    });
+
+    it('départage les scores ex æquo par mu_id croissant', async () => {
+      setupTiedPool();
+
+      const result = await service.buildUserRecommendations(7, 50, 0);
+
+      expect(result.map((d) => d.muId)).toEqual(
+        Array.from({ length: 14 }, (_, i) => 2001 + i),
+      );
+    });
+
+    it("rend le même ordre à deux calculs successifs, cache vidé et lignes dans l'ordre inverse", async () => {
+      setupTiedPool();
+      const first = await service.buildUserRecommendations(7, 50, 0);
+
+      // Le cache est vidé (mutation de bibliothèque, TTL…) et la base rend
+      // ses lignes dans un autre ordre — ce que rien ne garantit côté SQL.
+      recoCache.invalidateUser(7);
+      setupTiedPool(true);
+      const second = await service.buildUserRecommendations(7, 50, 0);
+
+      expect(second.map((d) => d.muId)).toEqual(first.map((d) => d.muId));
+    });
+
+    describe('bornes de la fenêtre', () => {
+      beforeEach(() => setupTiedPool());
+
+      it('un limit négatif ne produit pas un slice(0, -1)', async () => {
+        const result = await service.buildUserRecommendations(7, -1, 0);
+        expect(result).toHaveLength(1);
+        expect(result[0].muId).toBe(2001);
+      });
+
+      it('un limit nul est ramené au plancher de 1', async () => {
+        expect(await service.buildUserRecommendations(7, 0, 0)).toHaveLength(1);
+      });
+
+      it('un offset négatif est ramené à 0', async () => {
+        const result = await service.buildUserRecommendations(7, 3, -5);
+        expect(result.map((d) => d.muId)).toEqual([2001, 2002, 2003]);
+      });
+
+      it('un limit au-delà du plafond ne dépasse pas la liste canonique', async () => {
+        const result = await service.buildUserRecommendations(7, 10_000, 0);
+        expect(result).toHaveLength(14);
+      });
+    });
+
+    describe('bibliothèque vide (démarrage à froid)', () => {
+      /** Top communauté à notes ex æquo, sleepers absents. */
+      function setupColdStart(reversed = false): void {
+        userMangaRepo.find.mockResolvedValue([]);
+        const rows = ['5003', '5001', '5002', '5000'].map((manga_id) => ({
+          manga_id,
+          avg: '8.0',
+          count: '10',
+        }));
+        userMangaRepo.createQueryBuilder = jest.fn(() => ({
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          having: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          addOrderBy: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockReturnThis(),
+          getRawMany: jest
+            .fn()
+            .mockResolvedValue(reversed ? [...rows].reverse() : rows),
+        })) as any;
+        mangaRepo.find.mockImplementation(({ where }: any) => {
+          const ids: string[] = where.mu_id._value;
+          return Promise.resolve(
+            ids.map((id) => makeManga({ mu_id: id, title: `Manga ${id}` })),
+          );
+        });
+        // Sleepers : aucun candidat (le top communauté suffit ici).
+        mangaRepo.createQueryBuilder = jest.fn(() => ({
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          getMany: jest.fn().mockResolvedValue([]),
+        })) as any;
+        mangasService.getCommunityRatings.mockImplementation(
+          async (muIds: string[]) =>
+            new Map(
+              muIds.map((muId) => [
+                muId,
+                {
+                  communityRating: 8,
+                  communityRatingCount: 10,
+                  aggregatedRating: 7.5,
+                },
+              ]),
+            ),
+        );
+      }
+
+      it('limit=10 reste le préfixe de limit=50 sur une bibliothèque vide', async () => {
+        setupColdStart();
+        const home = await service.buildUserRecommendations(9, 10, 0);
+        const seeAll = await service.buildUserRecommendations(9, 50, 0);
+        expect(home.length).toBeGreaterThan(0);
+        expect(seeAll.slice(0, home.length).map((d) => d.muId)).toEqual(
+          home.map((d) => d.muId),
+        );
+      });
+
+      it("garde le même ordre à deux calculs, quel que soit l'ordre des lignes", async () => {
+        setupColdStart();
+        const first = await service.buildUserRecommendations(9, 50, 0);
+        recoCache.invalidateUser(9);
+        setupColdStart(true);
+        const second = await service.buildUserRecommendations(9, 50, 0);
+        expect(first.length).toBeGreaterThan(0);
+        expect(second.map((d) => d.muId)).toEqual(first.map((d) => d.muId));
+      });
     });
   });
 });

@@ -17,6 +17,12 @@ import { RecoGraphCandidateService } from './reco-graph-candidate.service';
 import { RecommendationDtoBuilderService } from './recommendation-dto-builder.service';
 import { computeAffinityMultiplier } from './library-affinity';
 import { byValueDescThenId, compareIdAsc } from './reco-ordering';
+import {
+  clampRecoWindow,
+  paginate,
+  RECO_DEFAULT_LIMIT,
+  recoCanonicalMaxItems,
+} from './reco-pagination';
 import { ScoredEntry } from './scored-entry.interface';
 import { SleeperHitsService } from './sleeper-hits.service';
 import { computeTypeProfile } from './type-profile';
@@ -63,9 +69,6 @@ export class RecommendationService {
    * n'additionne JAMAIS : un candidat déjà scoré par MU garde son score MU.
    */
   private static readonly CATALOG_MIN_POOL = 150;
-
-  /** Limite max de la pagination. **2026-05-19** : 100 → 500. */
-  private static readonly MAX_LIMIT = 500;
 
   // **2026-05-19 (correctif)** : on garde l'exclusion stricte des mangas
   // déjà en biblio (l'user ne veut PAS voir ce qu'il a déjà). Le vrai
@@ -201,8 +204,16 @@ export class RecommendationService {
    * - Limite à MAX_RECOS_PER_SOURCE recos par manga source (diversité).
    * - Sélection au prorata du profil de type (manga / manhwa / manhua).
    * - Optionnellement filtré par genre.
-   * - Trie par score décroissant, applique offset + limit.
+   * - Trie par score décroissant.
    * - Tracke `recommendedBecauseOf` (top 3 mangas sources) pour explicabilité.
+   *
+   * **Unité de calcul = la liste canonique** (fix 2026-09-09) : `limit` et
+   * `offset` ne font plus partie de la clé de cache. On calcule et on cache
+   * UNE liste par `(user, genre)`, bornée à `recoCanonicalMaxItems()`, puis
+   * on la tranche — au hit comme au miss. Toute taille de page est donc un
+   * préfixe de la même liste : `limit=10` (accueil) est exactement le début
+   * de `limit=50` (« Voir tout »). Avant, chaque taille de page déclenchait
+   * un calcul complet et indépendant, et les deux écrans divergeaient.
    *
    * Stratégie cache :
    * 1. Cache existant → réponse rapide. Fetches manquants en background.
@@ -210,32 +221,41 @@ export class RecommendationService {
    */
   async buildUserRecommendations(
     userId: number,
-    limit = 50,
+    limit = RECO_DEFAULT_LIMIT,
     offset = 0,
     genreFilter?: string,
   ): Promise<MangaQuickViewDto[]> {
-    const effectiveLimit = Math.min(limit, RecommendationService.MAX_LIMIT);
-    const effectiveOffset = Math.max(0, offset);
+    const window = clampRecoWindow(limit, offset);
 
     // Cache user-level (hotfix-v0-10-1 US-4) : TTL 1h, invalidé sur toute
     // mutation de la bibliothèque (cf. RecoCacheService).
-    const variant = `flat:${
-      genreFilter ?? 'all'
-    }:${effectiveLimit}:${effectiveOffset}`;
+    const variant = `flat:${genreFilter ?? 'all'}`;
     const cached = this.recoCache.get<MangaQuickViewDto[]>(userId, variant);
-    if (cached) return cached;
+    if (cached) return paginate(cached, window);
 
+    const canonical = await this.buildCanonicalList(userId, genreFilter);
+    // Une liste vide n'est pas mise en cache : elle traduit un pool encore
+    // en cours de remplissage (fetches MU en tâche de fond), pas un résultat.
+    if (canonical.length > 0) this.recoCache.set(userId, variant, canonical);
+    return paginate(canonical, window);
+  }
+
+  /**
+   * Liste canonique complète d'un utilisateur (offset 0, plafond
+   * `recoCanonicalMaxItems()`) — l'unique chose qui soit calculée et cachée.
+   */
+  private async buildCanonicalList(
+    userId: number,
+    genreFilter?: string,
+  ): Promise<MangaQuickViewDto[]> {
+    const canonicalMax = recoCanonicalMaxItems();
     const userMangas = await this.loadLibrary(userId);
 
     if (userMangas.length === 0) {
       // Cold start : pas de signaux d'affinité personnelle. On remonte le
       // top communauté (notes locales agrégées) complété par des sleepers
       // récents, pour que l'écran ne soit jamais vide.
-      return this.sleepers.buildColdStartRecommendations(
-        userId,
-        effectiveLimit,
-        effectiveOffset,
-      );
+      return this.sleepers.buildColdStartRecommendations(userId, canonicalMax);
     }
 
     const excludedMuIds = await this.buildExclusionSet(userId, userMangas);
@@ -269,14 +289,12 @@ export class RecommendationService {
     // Pool trop maigre → complément depuis le catalogue local.
     await this.augmentWithCatalog(userMangas, excludedMuIds, scoreMap);
     if (scoreMap.size === 0) return [];
-    const result = await this.dtoBuilder.build(scoreMap, {
-      limit: effectiveLimit,
-      offset: effectiveOffset,
+    return this.dtoBuilder.build(scoreMap, {
+      limit: canonicalMax,
+      offset: 0,
       genreFilter,
       profile: computeTypeProfile(userMangas),
     });
-    this.recoCache.set(userId, variant, result);
-    return result;
   }
 
   /**
