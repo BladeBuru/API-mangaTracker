@@ -5,6 +5,34 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ---
 
+## [Unreleased] — perf/budgets-nocturnes
+
+### Changed
+
+- **déploiement** : `CATALOG_SYNC_HYDRATION_BUDGET` 800 → **2 500** et `RECO_GRAPH_BACKFILL_PAGES_PER_RUN` 1 500 → **5 000**. Le **débit** vers MangaUpdates est inchangé — `CATALOG_SYNC_DELAY_MS` reste à 2 000 ms, soit 30 req/min, la moitié du plafond anonyme. Ce qui change, c'est la **durée** utilisée : les jobs ne consommaient que ~79 min de requêtes sur une fenêtre nocturne de 7 h, dont ~3 h de vide entre la fin de l'hydratation (~04:00) et le graphe (07:00), puis 17 h d'inactivité jusqu'au créneau suivant.
+
+### Contexte — mesuré sur la production le 2026-09-10
+
+- **Hydratation** : 8 000 / 148 243 fiches traitées (5,4 %), très exactement 800/nuit depuis dix nuits. Reste **140 090 fiches jamais tentées**. Pas d'effet tapis roulant : sur les 8 000 tentées, seules **119** sont revenues encore incomplètes (98,5 % de réussite), donc le budget supplémentaire attaque bien du stock neuf et non des reprises.
+- **Graphe de recommandation** : 1 500 / 148 243 (1,0 %) après une seule nuit. Reste 146 743.
+- **Type** : 50 174 fiches (34 %) sans type, et le backfill dédié est **terminé** (154/154 shards) — il ne couvrait que Manhwa et Manhua, jamais Manga. Vérifié : l'hydratation remplit le type sur 99,1 % des fiches qu'elle touche et le graphe sur 100 %. La couverture du type se boucle donc avec le balayage du graphe.
+
+### Dimensionnement
+
+- Contrainte réelle : `MuJobLockService` est en **« skip, jamais attendre »**. Un job qui déborde sur le créneau du suivant lui fait perdre sa nuit entière. Les budgets sont donc taillés pour tenir dans leur créneau avec marge : hydratation 2 500 × 2 s = 83 min (03:50 → ~05:13, avant le créneau 05:30 réservé à la collecte du signal de lecture, aujourd'hui dormante) ; graphe 5 000 × 2 s = 167 min (07:00 → ~09:50, rien derrière jusqu'à 01:00).
+- Effet attendu : hydratation **~56 nuits** (début novembre 2026 au lieu de mars 2027), graphe **~30 nuits** (mi-octobre 2026 au lieu de mi-décembre), et les 50 174 fiches sans type réparées mi-octobre.
+
+### Coût assumé
+
+- `manga_recommendation` grossit plus vite. Mesuré : **6,8 liens par œuvre source, 227 o par lien**. Le balayage complet du catalogue donne ~1 M de lignes, soit **~218 Mo** — la base passerait de 74 Mo à ~300 Mo. Accélérer ne change pas ce total, seulement la date à laquelle on l'atteint. (L'estimation antérieure du memory-bank, ~350-417 Mo, partait d'un ratio de 13 liens/fiche ; la mesure donne moins.)
+- `CATALOG_SYNC_DELAY_MS` n'est **pas** touché. C'est la seule marge de sécurité contre un bannissement, et « ne pas se faire bannir » est l'exigence n°1 inscrite dans `mu-job-lock.service.ts`. À noter : le plafond MangaUpdates de 60 req/min est affirmé deux fois dans le code sans référence à leur documentation — il n'a pas été revérifié ici.
+
+### Observation non traitée
+
+- `CATALOG_SYNC_PAGES_PER_RUN` est toujours à 600, alors que son commentaire prévoyait de le rebaisser « une fois le catalogue complet » — ce qui est le cas (99/99 shards terminés). Il consomme ~20 min de fenêtre nocturne par nuit. Non modifié ici : ce budget pilote aussi le rafraîchissement des shards tous les 30 jours, et je n'ai pas mesuré l'impact d'une baisse sur ce cycle.
+
+---
+
 ## [Unreleased] — docs/credits-mangaupdates
 
 ### Changed
