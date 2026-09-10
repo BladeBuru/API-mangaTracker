@@ -232,6 +232,36 @@ jobs:
                   # le catalogue complet — le regime de croisiere (nouveautes)
                   # ne demande que quelques pages par nuit.
                   CATALOG_SYNC_PAGES_PER_RUN: "600"
+                  # Budgets nocturnes releves le 2026-09-10. Le DEBIT vers
+                  # MangaUpdates ne bouge pas (CATALOG_SYNC_DELAY_MS reste a
+                  # 2000 ms = 30 req/min, moitie du plafond) : on utilise le
+                  # temps mort de la nuit, qui etait presque entierement
+                  # inoccupe (~79 min de requetes sur une fenetre de 7 h).
+                  #
+                  # Dimensionnement contraint par MuJobLockService, qui est en
+                  # « skip, jamais attendre » : un job qui deborde sur le
+                  # creneau du suivant lui fait perdre sa nuit entiere.
+                  #   hydratation : chainee apres le catalogue (03:30 + ~20 min)
+                  #     2500 x 2 s = 83 min  -> fin ~05:13, avant le creneau 05:30
+                  #     (collecte du signal de lecture, aujourd hui dormante).
+                  #   graphe : 07:00 + jitter, 5000 x 2 s = 167 min -> fin ~09:50,
+                  #     rien derriere jusqu a 01:00.
+                  #
+                  # Effet attendu, mesure sur la prod le 2026-09-10 :
+                  #   hydratation 140 090 fiches restantes -> ~56 nuits
+                  #     (debut novembre 2026 au lieu de mars 2027)
+                  #   graphe 146 743 fiches restantes -> ~30 nuits
+                  #     (mi-octobre 2026 au lieu de mi-decembre), ce qui comble
+                  #     aussi les 50 174 fiches sans type : le graphe remplit
+                  #     la colonne type a 100 %.
+                  #
+                  # Cout : manga_recommendation grossit plus vite. Mesure a
+                  # 6,8 liens par oeuvre source et 227 o par lien, le balayage
+                  # complet donne ~1 M de lignes, soit ~218 Mo. La base passerait
+                  # de 74 Mo a ~300 Mo. Accelerer ne change pas ce total, juste
+                  # la date a laquelle on y arrive.
+                  CATALOG_SYNC_HYDRATION_BUDGET: "2500"
+                  RECO_GRAPH_BACKFILL_PAGES_PER_RUN: "5000"
                 volumes:
                   # Volume Docker nommé : simple cache reconstructible, pas
                   # besoin d'un dataset NAS dédié.
