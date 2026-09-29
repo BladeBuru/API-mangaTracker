@@ -8,12 +8,20 @@ import {
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
+import { NestExpressApplication } from '@nestjs/platform-express';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger:
       process.env.NODE_ENV === 'development' ? ['debug'] : ['error', 'warn'],
   });
+
+  // 0. Taille des corps JSON — le défaut d'Express (100 ko) est plus petit
+  // que l'avatar accepté par `PATCH /user/profile` (data URL jusqu'à
+  // 200 000 caractères) : tout enregistrement de profil portant une photo
+  // échouait en 413, nom à afficher compris. 300 ko couvre l'avatar et
+  // les autres champs, sans ouvrir la porte à des corps arbitraires.
+  app.useBodyParser('json', { limit: '300kb' });
 
   // 1. Helmet — headers de sécurité (CSP, HSTS, X-Frame-Options, etc.)
   app.use(helmet());

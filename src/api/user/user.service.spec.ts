@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as bcrypt from 'bcryptjs';
@@ -10,6 +10,7 @@ import { UpdatePasswordDto } from './dto/update-password.dto';
 describe('UserService', () => {
   let service: UserService;
   let saveMock: jest.Mock;
+  let findOneMock: jest.Mock;
 
   const buildUser = (overrides: Partial<User> = {}): User => {
     const user = new User();
@@ -33,13 +34,14 @@ describe('UserService', () => {
 
   beforeEach(async () => {
     saveMock = jest.fn().mockImplementation((entity: User) => entity);
+    findOneMock = jest.fn().mockResolvedValue(null);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserService,
         {
           provide: getRepositoryToken(User),
           useValue: {
-            findOne: jest.fn(),
+            findOne: findOneMock,
             save: saveMock,
           },
         },
@@ -93,6 +95,65 @@ describe('UserService', () => {
       expect(user.password).not.toBe('NewPassword1!');
       expect(bcrypt.compareSync('NewPassword1!', user.password)).toBe(true);
       expect(result.id).toBe(1);
+    });
+  });
+
+  describe('updateProfile — nom à afficher', () => {
+    it('should persist the new display name, trimmed', async () => {
+      const user = buildUser({ displayName: 'john' });
+
+      const result = await service.updateProfile(
+        { displayName: '  Jean le Lecteur ' },
+        buildRequest(user),
+      );
+
+      expect(user.displayName).toBe('Jean le Lecteur');
+      expect(result.displayName).toBe('Jean le Lecteur');
+      expect(user.username).toBe('john');
+    });
+
+    it('should clear the display name when null is sent', async () => {
+      const user = buildUser({ displayName: 'Jean' });
+
+      await service.updateProfile(
+        { displayName: null } as unknown as { displayName: string },
+        buildRequest(user),
+      );
+
+      expect(user.displayName).toBeNull();
+    });
+
+    it('should leave the display name untouched when absent', async () => {
+      const user = buildUser({ displayName: 'Jean' });
+
+      await service.updateProfile({ bio: 'Seinen' }, buildRequest(user));
+
+      expect(user.displayName).toBe('Jean');
+      expect(user.bio).toBe('Seinen');
+    });
+  });
+
+  describe('updateName', () => {
+    it('should return a 409 when the username belongs to someone else', async () => {
+      findOneMock.mockResolvedValue(buildUser({ id: 2, username: 'Jean' }));
+
+      await expect(
+        service.updateName({ name: 'jean' }, buildRequest(buildUser())),
+      ).rejects.toThrow(ConflictException);
+      expect(saveMock).not.toHaveBeenCalled();
+    });
+
+    it('should accept a case change of its own username', async () => {
+      const user = buildUser();
+      findOneMock.mockResolvedValue(user);
+
+      const result = await service.updateName(
+        { name: 'John' },
+        buildRequest(user),
+      );
+
+      expect(result.username).toBe('John');
+      expect(saveMock).toHaveBeenCalledTimes(1);
     });
   });
 });
