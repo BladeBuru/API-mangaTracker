@@ -170,9 +170,13 @@ export class MangasController {
     const muRatings = new Map([
       [id.toString(), Number(mangaDetails.rating) || 0],
     ]);
+    const muVotes = new Map([
+      [id.toString(), Number(mangaDetails.ratingVotes) || 0],
+    ]);
     const community = await this.mangasService.getCommunityRatings(
       muIds,
       muRatings,
+      muVotes,
     );
     const c = community.get(id.toString());
 
@@ -185,6 +189,8 @@ export class MangasController {
       community_rating: c?.communityRating ?? undefined,
       community_rating_count: c?.communityRatingCount ?? 0,
       aggregated_rating: c?.aggregatedRating ?? undefined,
+      mu_rating_votes: c?.muRatingVotes ?? undefined,
+      total_rating_votes: c?.totalRatingVotes ?? 0,
       translated_description: translated ?? undefined,
     };
   }

@@ -1,29 +1,26 @@
 /**
- * Calcul d'une note "de confiance" combinant :
- *  - la note globale MangaUpdates (Bayesian rating, basée sur ~beaucoup de votants)
- *  - la note communautaire locale (moyenne des `user_rating` des utilisateurs
- *    Manga Tracker, échelle 1-10)
+ * Calcul de la note globale d'une œuvre, qui fusionne :
+ *  - la note MangaUpdates (`bayesian_rating`, sur 10) et son nombre de
+ *    votants (`rating_votes`) ;
+ *  - les notes des utilisateurs Manga Tracker (`user_manga.user_rating`,
+ *    1-10, 0 = pas de note).
  *
- * Formule (moyenne pondérée Bayesienne) :
- *   aggregated = (C × MU_rating + n × community_avg) / (C + n)
+ * Deux régimes :
  *
- * Où :
- *  - `C` est le « poids de confiance » accordé à la note MU. Exprimé en
- *    nombre équivalent de votants. Plus C est grand, plus la note locale
- *    devra avoir de votes pour faire bouger l'agrégat.
- *  - `n` = nombre d'utilisateurs locaux ayant noté.
- *  - `MU_rating` est sur 10 (l'API MU retourne un Bayesian rating
- *    déjà sur 10).
- *  - `community_avg` est sur 10 aussi (user_rating va de 1 à 10).
+ * 1. **Nombre de votants MU connu** (cas nominal depuis 2026-09-30) — vraie
+ *    moyenne fusionnée, chaque vote pèse autant :
+ *      global = (V × MU + n × moyenne_locale) / (V + n)
+ *    et le total affiché vaut `V + n`. Demande produit : « des notes globales
+ *    avec les utilisateurs de MangaUpdates ET les nôtres, et le total ».
  *
- * Comportements clés :
- *  - n = 0 (personne en local n'a noté) → aggregated = MU_rating.
- *  - n = C → aggregated = (MU + local) / 2 (équilibre 50/50).
- *  - n >> C → aggregated ≈ community_avg (la communauté locale domine).
+ * 2. **Nombre de votants MU inconnu** (fiche jamais rafraîchie depuis l'ajout
+ *    de la colonne, liste qui ne le transmet pas) — repli historique :
+ *    la note MU vaut `C` votants fictifs (`RATING_CONFIDENCE_WEIGHT`), pour
+ *    qu'un seul vote local ne renverse pas la note. Le total ne compte alors
+ *    que les votes locaux (`muRatingVotes = null`).
  *
- * Constante par défaut C = 50 : il faut 50 votes locaux pour qu'ils pèsent
- * autant que la note MU. Choisi pour donner une influence raisonnable à
- * la communauté locale sans qu'un seul vote ne renverse la note.
+ * Dans les deux cas : aucun vote local → note MU ; pas de note MU → moyenne
+ * locale. Calcul à la lecture, rien n'est stocké (RETRO-011).
  */
 export const RATING_CONFIDENCE_WEIGHT = 50;
 
@@ -32,44 +29,60 @@ export interface CommunityRating {
   communityRating: number | null;
   /** Nombre de votants locaux (rating > 0). */
   communityRatingCount: number;
-  /** Note agrégée selon la formule Bayesienne. */
+  /** Note globale (fusion MU + locale). */
   aggregatedRating: number;
+  /** Votants MangaUpdates, `null` si inconnu. */
+  muRatingVotes: number | null;
+  /** Total des votes derrière la note globale (MU connus + locaux). */
+  totalRatingVotes: number;
 }
 
 /**
- * Calcule la note communautaire et la note agrégée pour un manga donné.
+ * Calcule la note communautaire et la note globale d'une œuvre.
  *
- * @param muRating Note globale MangaUpdates (sur 10). Si null/0 → on utilise
- *   uniquement la communauté locale.
+ * @param muRating Note MangaUpdates (sur 10). null/0 → communauté seule.
  * @param localAvg Moyenne locale des notes (rating > 0). Null si aucun.
  * @param localCount Nombre de notes locales.
+ * @param confidenceWeight Poids de la note MU quand son nombre de votants
+ *   est inconnu (régime 2).
+ * @param muVotes Nombre de votants MU. > 0 → régime 1 (fusion au prorata).
  */
 export function aggregateRating(
   muRating: number | null,
   localAvg: number | null,
   localCount: number,
   confidenceWeight: number = RATING_CONFIDENCE_WEIGHT,
+  muVotes: number | null = null,
 ): CommunityRating {
   const safeLocalCount = Math.max(0, localCount);
   const safeLocalAvg = localAvg ?? 0;
   const safeMuRating = muRating ?? 0;
+  const knownMuVotes =
+    typeof muVotes === 'number' && Number.isFinite(muVotes) && muVotes > 0
+      ? Math.round(muVotes)
+      : null;
+  const hasMuRating = safeMuRating > 0;
 
   let aggregated: number;
   if (safeLocalCount === 0) {
     aggregated = safeMuRating;
-  } else if (safeMuRating === 0) {
+  } else if (!hasMuRating) {
     // Pas de note MU → on retourne juste la moyenne locale (peu fiable si
     // localCount est petit, mais c'est tout ce qu'on a)
     aggregated = safeLocalAvg;
   } else {
+    const muWeight = knownMuVotes ?? confidenceWeight;
     aggregated =
-      (confidenceWeight * safeMuRating + safeLocalCount * safeLocalAvg) /
-      (confidenceWeight + safeLocalCount);
+      (muWeight * safeMuRating + safeLocalCount * safeLocalAvg) /
+      (muWeight + safeLocalCount);
   }
 
+  const countedMuVotes = hasMuRating ? knownMuVotes : null;
   return {
     communityRating: safeLocalCount > 0 ? safeLocalAvg : null,
     communityRatingCount: safeLocalCount,
     aggregatedRating: Math.round(aggregated * 100) / 100,
+    muRatingVotes: countedMuVotes,
+    totalRatingVotes: (countedMuVotes ?? 0) + safeLocalCount,
   };
 }

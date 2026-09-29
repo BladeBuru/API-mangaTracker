@@ -63,6 +63,7 @@ export class MangasService {
   async getCommunityRatings(
     muIds: string[],
     muRatingByMuId: Map<string, number>,
+    muVotesByMuId?: Map<string, number>,
   ): Promise<Map<string, CommunityRating>> {
     if (muIds.length === 0) return new Map();
 
@@ -94,6 +95,8 @@ export class MangasService {
           muRating,
           local ? local.avg : null,
           local ? local.count : 0,
+          undefined,
+          muVotesByMuId?.get(muId) ?? null,
         ),
       );
     }
