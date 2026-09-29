@@ -5,6 +5,33 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ---
 
+## [Unreleased] — claude/brave-pasteur-gszxre (retours utilisateurs de septembre)
+
+### Added
+
+- **Recommandations des utilisateurs** — table `user_manga_recommendation` (migration `1788739200000`, un vote par utilisateur et par paire, cascade à la suppression du compte, `CHECK` source ≠ cible) ; `GET /mangas/:muId/community-recommendations` (votes MangaUpdates `manual` + votes Manga Tracker, fusionnés et triés par total), `PUT` / `DELETE /mangas/:muId/community-recommendations/:targetMuId` (idempotent, fiche minimale créée pour une cible inconnue, 60 votes/heure par utilisateur).
+- **Synthèse des notes** — `GET /mangas/:muId/ratings` : note globale et total des votes, lus en base (aucun appel MangaUpdates).
+- **Pages auteur** — `GET /authors/:authorId` : fiche MangaUpdates (`/v1/authors/{id}`) et œuvres (`/v1/authors/{id}/series`), enrichies par le catalogue local ; une tentative par appel (8 s), cache mémoire 24 h, requêtes simultanées dédupliquées, échecs mémorisés 5 min, œuvres adultes retirées, fiche partielle si la liste des œuvres échoue.
+- **`manga.rating_votes`** (migration `1788652800000`) — nombre de votants MangaUpdates, rempli par la fiche détail et le catalogue nocturne (colonne protégée).
+
+### Changed
+
+- **Note globale** — `aggregateRating` fusionne au prorata des votes réels quand le nombre de votants MangaUpdates est connu (`(V × MU + n × locale) / (V + n)`, total = `V + n`) ; repli sur l'ancien poids fixe (50) sinon. `GET /mangas/:id` expose `mu_rating_votes` et `total_rating_votes`. Toujours calculée à la lecture (RETRO-011).
+- **Corps JSON limités à 300 ko** (100 ko par défaut) : un profil portant une photo échouait en 413, nom à afficher compris.
+- **`PATCH /user/profile`** — `displayName` rogné, `null` l'efface.
+- **`PUT /user/name`** — mêmes règles qu'à l'inscription (3-32 caractères, pas d'email) et 409 sur un identifiant déjà pris (500 auparavant).
+
+### Tests
+
+- `npm test` : **671 tests verts** (642 avant), dont 9 d'intégration sur un vrai PostgreSQL (`community.integration.spec.ts`, migrations comprises ; ignorés sans `DATABASE_HOST`, toujours exécutés en CI).
+- Vérifié à la main sur l'API compilée + PostgreSQL 16 local : toutes les migrations depuis une base vide, les nouvelles routes (200/400/403/409/503), un profil avec photo de 150 ko (200, 413 avant).
+
+### À valider après déploiement
+
+- Format réel des réponses MangaUpdates `/v1/authors/*` : l'hôte était injoignable depuis l'environnement de développement ; le lecteur est défensif (plusieurs formes acceptées, fiche partielle plutôt qu'erreur).
+
+---
+
 ## [Unreleased] — perf/budgets-nocturnes
 
 ### Changed

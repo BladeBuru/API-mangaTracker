@@ -1,10 +1,32 @@
 # Progrès — Manga Tracker API
 
-> Dernière mise à jour : 2026-09-09
+> Dernière mise à jour : 2026-09-30
 
 ---
 
 ## ✅ Fonctionnalités complétées
+
+### 🗣️ Retours utilisateurs de septembre (2026-09-30)
+
+Branche `claude/brave-pasteur-gszxre` (pendant Flutter du même nom — **déployer
+l'API d'abord**).
+
+- ✅ **Note globale MU + Manga Tracker** : colonne `manga.rating_votes`
+  (migration `1788652800000`), `aggregateRating(…, muVotes)` fusionne au
+  prorata des votes réels (repli poids 50 si inconnu) ; `GET /mangas/:id`
+  expose `mu_rating_votes`, `total_rating_votes` ; `GET /mangas/:muId/ratings`
+  (lecture en base, relue par l'app après un vote).
+- ✅ **Recommandations des utilisateurs** (`CommunityModule`, autonome) : table
+  `user_manga_recommendation` (migration `1788739200000`), liste fusionnée
+  MU `manual` + votes app, `PUT`/`DELETE` idempotents, 60 votes/h/utilisateur.
+- ✅ **Pages auteur** (`AuthorsModule`) : `GET /authors/:authorId`, MU
+  `/v1/authors/{id}` + `/series`, une tentative (8 s), cache 24 h, dédup,
+  échecs 5 min, fiche partielle, œuvres adultes retirées. Format MU **non
+  vérifié en réel** (hôte injoignable depuis l'environnement de dev).
+- ✅ **Profil** : corps JSON 300 ko (413 sur un profil avec photo), `displayName`
+  effaçable (null) et rogné, `PUT /user/name` validé + 409.
+- Tests : 671 verts (642 avant), dont `community.integration.spec.ts` sur un
+  vrai PostgreSQL (migrations depuis une base vide comprises).
 
 ### Authentification (`user/auth`)
 - ✅ Register (création de compte + hashage bcrypt)

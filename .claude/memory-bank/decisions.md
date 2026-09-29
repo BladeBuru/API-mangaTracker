@@ -165,6 +165,34 @@
 
 ---
 
+### Note globale : fusion au prorata des votes réels (évolution de RETRO-011)
+**Décision** : quand le nombre de votants MangaUpdates est connu
+(`manga.rating_votes`), la note globale est la vraie moyenne des votes
+(`(V × MU + n × locale) / (V + n)`) et le total affiché vaut `V + n`. Sinon,
+repli sur l'ancien poids fixe (`C = 50`) et total = votes locaux seulement.
+Toujours calculée à la lecture (RETRO-011 inchangé sur ce point).
+**Raison** : demande produit — « des notes globales avec les utilisateurs de
+MangaUpdates ET les nôtres, et le total ». Le poids fixe inventait 50 votants
+et ne permettait pas d'afficher un total honnête.
+**Impact** : un titre très voté chez MU bouge à peine avec quelques votes
+locaux (c'est exact) ; les listes qui n'ont pas `rating_votes` gardent le
+régime historique.
+**Date** : 2026-09-30
+
+---
+
+### Recommandations des utilisateurs : table dédiée, jamais dans `manga_recommendation`
+**Décision** : les votes « si vous avez aimé A, lisez B » des utilisateurs vont
+dans `user_manga_recommendation` (une ligne par vote), séparés du graphe MU ;
+les compteurs ne sont additionnés qu'à l'affichage.
+**Raison** : donnée personnelle (cascade RGPD, export), sémantique différente
+(vote unitaire vs poids agrégé réécrit à chaque rafraîchissement MU), et
+plusieurs lecteurs du graphe comptent ses lignes sans filtrer `kind` (sections
+cachées, sleepers, hydratation) — y mêler des votes locaux les fausserait.
+**Date** : 2026-09-30
+
+---
+
 ## Décisions Futures à Prendre
 
 | Sujet | Contexte | Deadline | Options |

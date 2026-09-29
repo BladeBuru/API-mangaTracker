@@ -7,6 +7,8 @@ import User from '@/api/user/user.entity';
 import { UserMangaRecommendation } from './user-manga-recommendation.entity';
 import { CommunityRecommendationService } from './community-recommendation.service';
 import { RatingSummaryService } from './rating-summary.service';
+import { GdprService } from '@/api/user/gdpr/gdpr.service';
+import { UserSession } from '@/api/user/auth/user-session.entity';
 
 /**
  * Tests d'intégration sur un VRAI PostgreSQL (migrations comprises) : les
@@ -177,6 +179,25 @@ function buildDataSource(): DataSource {
       await ds.getRepository(User).delete(alice.id);
       const list = await recos.list(ONE_PIECE, bob.id);
       expect(list.items[0].appVotes).toBe(0);
+    });
+
+    it("l'export RGPD (article 20) contient les recommandations publiées", async () => {
+      await recos.recommend(alice.id, ONE_PIECE, NARUTO);
+      const gdpr = new GdprService(
+        ds.getRepository(User),
+        ds.getRepository(UserManga),
+        ds.getRepository(UserSession),
+        ds.getRepository(UserMangaRecommendation),
+      );
+      const exported = await gdpr.exportUserData(alice.id);
+      expect(exported.communityRecommendations).toEqual([
+        expect.objectContaining({
+          sourceMuId: `${ONE_PIECE}`,
+          recommendedMuId: `${NARUTO}`,
+        }),
+      ]);
+      const forBob = await gdpr.exportUserData(bob.id);
+      expect(forBob.communityRecommendations).toEqual([]);
     });
 
     it('note globale : 3 votes MU à 8 + 1 vote local à 4 → 7, 4 votes', async () => {

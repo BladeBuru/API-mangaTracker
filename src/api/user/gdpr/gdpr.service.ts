@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import User from '@/api/user/user.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { UserSession } from '@/api/user/auth/user-session.entity';
+import { UserMangaRecommendation } from '@/api/community/user-manga-recommendation.entity';
 
 /**
  * Versions des documents légaux. Doit être incrémenté à chaque changement
@@ -61,6 +62,12 @@ export interface GdprExport {
     deviceInfo: string | null;
     isActive: boolean;
   }>;
+  /** Recommandations publiées (« qui a aimé `source` aimera `recommended` »). */
+  communityRecommendations: Array<{
+    sourceMuId: string;
+    recommendedMuId: string;
+    createdAt: string;
+  }>;
 }
 
 @Injectable()
@@ -74,6 +81,8 @@ export class GdprService {
     private readonly userMangaRepository: Repository<UserManga>,
     @InjectRepository(UserSession)
     private readonly sessionRepository: Repository<UserSession>,
+    @InjectRepository(UserMangaRecommendation)
+    private readonly recommendationRepository: Repository<UserMangaRecommendation>,
   ) {}
 
   /**
@@ -117,13 +126,17 @@ export class GdprService {
     });
     if (!account) throw new NotFoundException('User not found');
 
-    const [library, sessions] = await Promise.all([
+    const [library, sessions, recommendations] = await Promise.all([
       this.userMangaRepository.find({
         where: { user: { id: userId } },
         relations: ['manga'],
       }),
       this.sessionRepository.find({
         where: { user: { id: userId } },
+      }),
+      this.recommendationRepository.find({
+        where: { user: { id: userId } },
+        relations: ['source', 'recommended'],
       }),
     ]);
 
@@ -170,6 +183,11 @@ export class GdprService {
         lastUsedAt: s.lastUsedAt?.toISOString() ?? null,
         deviceInfo: s.deviceInfo ?? null,
         isActive: s.isActive ?? false,
+      })),
+      communityRecommendations: recommendations.map((r) => ({
+        sourceMuId: r.source?.mu_id ?? '',
+        recommendedMuId: r.recommended?.mu_id ?? '',
+        createdAt: r.created_at.toISOString(),
       })),
     };
   }

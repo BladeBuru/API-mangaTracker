@@ -4,8 +4,8 @@
 |-------|--------|
 | SGBD | PostgreSQL 16 |
 | ORM | TypeORM 0.3 |
-| Dernière MAJ | 2026-08-29 |
-| Migration la plus récente | `1788048000000-AddReleasesCursorToCatalogSyncState` |
+| Dernière MAJ | 2026-09-30 |
+| Migration la plus récente | `1788739200000-CreateUserMangaRecommendation` |
 
 > Ce fichier est maintenu par `update-writer-after-implement` après chaque
 > migration. Les tables sont groupées par module. Les specs de module contiennent
@@ -20,7 +20,7 @@
 | `users` | user | `User` | `1700000000000-InitialSchema`, `1746230600000-AddGdprConsentColumns`, `1746230900000-AddCreatedAtToUser`, `1746231000000-AddProfileFieldsToUser`, `1746231500000-AddUsernameUniqueIndex`, `1746231600000-ChangeAvatarUrlToText` |
 | `user_sessions` | auth | `UserSession` | `1700000000000-InitialSchema` |
 | `auth_tokens` | auth/email | `AuthToken` | `1746230700000-CreateAuthTokenAndEmailVerified` |
-| `mangas` | mangas | `Manga` | `1700000000000-InitialSchema`, `1746230500000-AddGenresToManga`, `1746230800000-MakeMangaCoverColumnsNullable`, `1787875200000-AddHydrationAttemptedAtToManga`, `1788220800000-AddTypeToManga` |
+| `mangas` | mangas | `Manga` | `1700000000000-InitialSchema`, `1746230500000-AddGenresToManga`, `1746230800000-MakeMangaCoverColumnsNullable`, `1787875200000-AddHydrationAttemptedAtToManga`, `1788220800000-AddTypeToManga`, `1788652800000-AddRatingVotesToManga` |
 | `user_mangas` | library | `UserManga` | `1700000000000-InitialSchema`, `1788048000000-AddReleasesCursorToCatalogSyncState` (index `manga_id`) |
 | `user_manga_chapter_logs` | library | `UserMangaChapterLog` | `1746231100000-CreateUserMangaChapterLog` |
 | `manga_chapter_reports` | library | `MangaChapterReport` | `1753100000000-CreateMangaChapterReport` |
@@ -33,10 +33,40 @@
 | `manga_shares` | sharing | `MangaShare` | `1746231400000-CreateSharing` |
 | `user_manga_dismissal` | recommendations | `UserMangaDismissal` | `1788048000000-CreateUserMangaDismissal` |
 | `reading_groups` | sharing | `ReadingGroup` | `1746231400000-CreateSharing` |
+| `user_manga_recommendation` | community | `UserMangaRecommendation` | `1788739200000-CreateUserMangaRecommendation` |
 
 ---
 
 ## Détail des tables modifiées récemment
+
+### Table `user_manga_recommendation` (ajoutée 2026-09-30)
+
+Recommandations explicites des utilisateurs : « qui a aimé `source` aimera
+`recommended` ». Une ligne = un vote. Séparée du graphe MangaUpdates
+(`manga_recommendation`) : elle porte un utilisateur (donnée personnelle,
+cascade RGPD) et compte des votes un par un, là où le graphe stocke un poids
+agrégé par MU. Les deux sources ne sont additionnées qu'à l'affichage
+(`GET /mangas/:muId/community-recommendations`).
+
+| Colonne | Type PostgreSQL | Contrainte | Notes |
+|---------|-----------------|------------|-------|
+| `id` | integer | PK, auto-increment | |
+| `user_id` | integer | FK → `user(id)` ON DELETE CASCADE, NOT NULL | |
+| `source_mu_id` | bigint | FK → `manga(mu_id)` ON DELETE CASCADE, NOT NULL | L'œuvre aimée |
+| `recommended_mu_id` | bigint | FK → `manga(mu_id)` ON DELETE CASCADE, NOT NULL | L'œuvre recommandée (fiche minimale créée si inconnue) |
+| `created_at` | timestamp | NOT NULL DEFAULT CURRENT_TIMESTAMP | |
+
+**Contraintes / index :** `UQ_user_reco_user_source_target` UNIQUE `(user_id,
+source_mu_id, recommended_mu_id)` (un vote par paire et par utilisateur, porte
+l'insert `ON CONFLICT DO NOTHING`) ; `IDX_user_reco_source_target`
+`(source_mu_id, recommended_mu_id)` (comptage par fiche) ;
+`CHK_user_reco_not_self` (source ≠ cible).
+
+### Table `manga` — colonne `rating_votes` (ajoutée 2026-09-30)
+
+| Colonne ajoutée | Type | Contrainte | Notes |
+|-----------------|------|-----------|-------|
+| `rating_votes` | int | nullable | Votants MangaUpdates derrière `rating` (`rating_votes` MU). Colonne protégée (`PROTECTED_NULLABLE_COLUMNS`). Sert à fusionner note MU et notes Manga Tracker au prorata des votes (`rating-aggregator.ts`) ; NULL = inconnu → repli sur le poids historique (50). |
 
 ### Table `manga` (MAJ 2026-09-05)
 
