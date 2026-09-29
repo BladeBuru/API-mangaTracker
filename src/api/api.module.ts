@@ -9,6 +9,8 @@ import { WellKnownModule } from './well-known/well-known.module';
 import { FriendsModule } from './friends/friends.module';
 import { CommentsModule } from './comments/comments.module';
 import { SharingModule } from './sharing/sharing.module';
+import { CommunityModule } from './community/community.module';
+import { AuthorsModule } from './authors/authors.module';
 
 @Module({
   imports: [
@@ -24,6 +26,10 @@ import { SharingModule } from './sharing/sharing.module';
     FriendsModule,
     CommentsModule,
     SharingModule,
+    // Notes globales et recommandations des utilisateurs (2026-09-30).
+    CommunityModule,
+    // Pages auteur : mini bio + œuvres, depuis MangaUpdates (2026-09-30).
+    AuthorsModule,
   ],
 })
 export class ApiModule {}
