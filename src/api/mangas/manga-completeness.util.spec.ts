@@ -123,6 +123,7 @@ describe('buildProtectedColumnsUpdate — UPDATE null-safe', () => {
       'medium_cover_url',
       'genres',
       'type',
+      'rating_votes',
     ]);
   });
 });

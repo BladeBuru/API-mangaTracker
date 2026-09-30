@@ -12,6 +12,7 @@ export interface MuSearchResult {
     title?: string;
     year?: string | number;
     bayesian_rating?: number | null;
+    rating_votes?: number | null;
     image?: {
       url?: { original?: string | null; thumb?: string | null } | null;
     } | null;
@@ -90,6 +91,10 @@ export function buildCatalogUpsertBatches(
       rating:
         typeof record.bayesian_rating === 'number'
           ? record.bayesian_rating
+          : null,
+      rating_votes:
+        typeof record.rating_votes === 'number' && record.rating_votes >= 0
+          ? Math.round(record.rating_votes)
           : null,
       small_cover_url: record.image?.url?.thumb ?? null,
       medium_cover_url: record.image?.url?.original ?? null,

@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import User from '@/api/user/user.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { UserSession } from '@/api/user/auth/user-session.entity';
+import { UserMangaRecommendation } from '@/api/community/user-manga-recommendation.entity';
 import { GdprController } from './gdpr.controller';
 import { GdprService } from './gdpr.service';
 
@@ -14,7 +15,14 @@ import { GdprService } from './gdpr.service';
  * définies les opérations sensibles sur les données personnelles).
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([User, UserManga, UserSession])],
+  imports: [
+    TypeOrmModule.forFeature([
+      User,
+      UserManga,
+      UserSession,
+      UserMangaRecommendation,
+    ]),
+  ],
   controllers: [GdprController],
   providers: [GdprService],
   exports: [GdprService],

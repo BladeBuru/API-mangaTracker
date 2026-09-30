@@ -3,9 +3,10 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { ILike, QueryFailedError, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { Request } from 'express';
 import { UpdatePasswordDto } from './dto/update-password.dto';
@@ -14,19 +15,62 @@ import { UpdateNameDto } from './dto/update-name.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UserInformationDto } from '@/api/user/dto/user-information.dto';
 import { PublicProfileDto } from '@/api/user/dto/public-profile.dto';
+import { USERNAME_PATTERN } from './auth/username.helper';
+
+/** `_` et `%` sont des jokers de LIKE : « jean_d » ne doit pas trouver « jeanxd ». */
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    error instanceof QueryFailedError &&
+    (error as QueryFailedError & { code?: string }).code === '23505'
+  );
+}
 
 @Injectable()
 export class UserService {
   @InjectRepository(User)
   private readonly repository: Repository<User>;
 
+  /**
+   * Change l'identifiant (`username`). Unicité insensible à la casse, comme
+   * à l'inscription : un doublon renvoie 409 au lieu d'une 500 levée par
+   * l'index unique `LOWER(username)`.
+   */
   public async updateName(
     body: UpdateNameDto,
     req: Request,
   ): Promise<UserInformationDto> {
     const user: User = <User>req.user;
-    user.username = body.name;
-    await this.repository.save(user);
+    const name = body.name.trim();
+    // Revalidé APRÈS trim : le DTO valide la valeur brute (`@Trim()` n'est
+    // pas appliqué par le ValidationPipe), donc « ␣␣␣ » passait et devenait
+    // un identifiant vide.
+    if (!USERNAME_PATTERN.test(name)) {
+      throw new BadRequestException(
+        "Le nom d'utilisateur doit faire 3-32 caractères (lettres, chiffres, " +
+          "espaces, '_', '.', '-') et ne peut pas être une adresse email.",
+      );
+    }
+    const taken = await this.repository.findOne({
+      where: { username: ILike(escapeLikePattern(name)) },
+    });
+    if (taken && taken.id !== user.id) {
+      throw new ConflictException("Nom d'utilisateur déjà pris");
+    }
+    user.username = name;
+    try {
+      await this.repository.save(user);
+    } catch (error) {
+      // Deux renommages simultanés vers le même nom passent tous deux la
+      // vérification ci-dessus ; l'index unique tranche → 409, pas 500.
+      if (isUniqueViolation(error)) {
+        throw new ConflictException("Nom d'utilisateur déjà pris");
+      }
+      throw error;
+    }
     return UserInformationDto.fromEntity(user);
   }
 
@@ -84,9 +128,9 @@ export class UserService {
    * Met à jour les champs de profil étendu (Phase 3) : displayName, bio,
    * avatarUrl, dateOfBirth, gender, isProfilePublic.
    *
-   * Seuls les champs présents dans le DTO sont écrasés. Pas de remise à
-   * null possible via cet endpoint (envoyer une chaîne vide pour vider
-   * un champ texte — sinon utiliser un endpoint dédié).
+   * Seuls les champs présents dans le DTO sont écrasés. `displayName: null`
+   * efface le nom à afficher (l'identifiant sert alors de nom) ; une chaîne
+   * vide vide la bio.
    */
   public async updateProfile(
     body: UpdateProfileDto,
@@ -94,7 +138,10 @@ export class UserService {
   ): Promise<UserInformationDto> {
     const user: User = <User>req.user;
 
-    if (body.displayName !== undefined) user.displayName = body.displayName;
+    if (body.displayName !== undefined) {
+      const trimmed = body.displayName?.trim();
+      user.displayName = trimmed ? trimmed : null;
+    }
     if (body.bio !== undefined) user.bio = body.bio;
     if (body.avatarUrl !== undefined) user.avatarUrl = body.avatarUrl;
     if (body.dateOfBirth !== undefined) {

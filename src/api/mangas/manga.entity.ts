@@ -40,6 +40,15 @@ export class Manga {
   @Column('decimal', { precision: 3, scale: 2, nullable: true })
   rating: number | null;
 
+  /**
+   * Nombre de votants MangaUpdates derrière `rating` (`rating_votes` MU).
+   * Sert à fusionner la note MU et celle des utilisateurs Manga Tracker au
+   * prorata des votes réels (`rating-aggregator.ts`). Colonne protégée :
+   * jamais remise à NULL par une réponse MU qui ne la fournit pas.
+   */
+  @Column({ type: 'int', nullable: true })
+  rating_votes: number | null;
+
   @Column({ nullable: true })
   year: number | null;
 
@@ -149,6 +158,9 @@ export class Manga {
     manga.mu_id = mangaDetailsDto.muId.toString();
     manga.total_chapters = mangaDetailsDto.totalChapters;
     manga.rating = mangaDetailsDto.rating;
+    // Sans ça, une fiche créée par un ajout en bibliothèque n'avait jamais
+    // de votants MU : total des votes faux jusqu'au rafraîchissement suivant.
+    manga.rating_votes = mangaDetailsDto.ratingVotes ?? null;
     manga.completed = mangaDetailsDto.completed;
     manga.type = mangaDetailsDto.type ?? null;
     manga.associated = mangaDetailsDto.associated ?? [];

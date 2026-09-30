@@ -6,7 +6,7 @@ import { MangaRecommendation } from '@/api/mangas/manga-recommendation.entity';
 import { Manga } from '@/api/mangas/manga.entity';
 import { MangasService } from '@/api/mangas/mangas.service';
 import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
-import { CommunityRating } from '@/api/mangas/rating-aggregator';
+import { CommunityRating, muVotesByMuId } from '@/api/mangas/rating-aggregator';
 import { DismissalService } from './dismissal.service';
 import { byValueDescThenId } from './reco-ordering';
 import { clampRecoWindow, RECO_MAX_LIMIT } from './reco-pagination';
@@ -146,6 +146,7 @@ export class SleeperHitsService {
     const community = await this.mangasService.getCommunityRatings(
       hidden.map((m) => m.mu_id),
       muRatings,
+      muVotesByMuId(hidden),
     );
 
     // 6. Score sleeper
@@ -289,6 +290,7 @@ export class SleeperHitsService {
     const community = await this.mangasService.getCommunityRatings(
       muIds,
       muRatings,
+      muVotesByMuId(mangas),
     );
 
     return muIds

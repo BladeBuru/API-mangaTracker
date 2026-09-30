@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import User from '@/api/user/user.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { UserSession } from '@/api/user/auth/user-session.entity';
+import { UserMangaRecommendation } from '@/api/community/user-manga-recommendation.entity';
 
 /**
  * Versions des documents légaux. Doit être incrémenté à chaque changement
@@ -61,6 +62,12 @@ export interface GdprExport {
     deviceInfo: string | null;
     isActive: boolean;
   }>;
+  /** Recommandations publiées (« qui a aimé `source` aimera `recommended` »). */
+  communityRecommendations: Array<{
+    sourceMuId: string;
+    recommendedMuId: string;
+    createdAt: string;
+  }>;
 }
 
 @Injectable()
@@ -74,6 +81,8 @@ export class GdprService {
     private readonly userMangaRepository: Repository<UserManga>,
     @InjectRepository(UserSession)
     private readonly sessionRepository: Repository<UserSession>,
+    @InjectRepository(UserMangaRecommendation)
+    private readonly recommendationRepository: Repository<UserMangaRecommendation>,
   ) {}
 
   /**
@@ -84,6 +93,8 @@ export class GdprService {
     account: User;
     libraryCount: number;
     sessionsCount: number;
+    /** Recommandations publiées (« si vous avez aimé… »). */
+    recommendationsCount: number;
   }> {
     const account = await this.userRepository.findOne({
       where: { id: userId },
@@ -94,13 +105,17 @@ export class GdprService {
     delete (account as any).password;
     delete (account as any).googleId;
 
-    const [libraryCount, sessionsCount] = await Promise.all([
-      this.userMangaRepository.count({ where: { user: { id: userId } } }),
-      this.sessionRepository.count({ where: { user: { id: userId } } }),
-    ]);
+    const [libraryCount, sessionsCount, recommendationsCount] =
+      await Promise.all([
+        this.userMangaRepository.count({ where: { user: { id: userId } } }),
+        this.sessionRepository.count({ where: { user: { id: userId } } }),
+        this.recommendationRepository.count({
+          where: { user: { id: userId } },
+        }),
+      ]);
 
     this.logger.log(`GDPR data summary requested by userId=${userId}`);
-    return { account, libraryCount, sessionsCount };
+    return { account, libraryCount, sessionsCount, recommendationsCount };
   }
 
   /**
@@ -117,13 +132,17 @@ export class GdprService {
     });
     if (!account) throw new NotFoundException('User not found');
 
-    const [library, sessions] = await Promise.all([
+    const [library, sessions, recommendations] = await Promise.all([
       this.userMangaRepository.find({
         where: { user: { id: userId } },
         relations: ['manga'],
       }),
       this.sessionRepository.find({
         where: { user: { id: userId } },
+      }),
+      this.recommendationRepository.find({
+        where: { user: { id: userId } },
+        relations: ['source', 'recommended'],
       }),
     ]);
 
@@ -170,6 +189,11 @@ export class GdprService {
         lastUsedAt: s.lastUsedAt?.toISOString() ?? null,
         deviceInfo: s.deviceInfo ?? null,
         isActive: s.isActive ?? false,
+      })),
+      communityRecommendations: recommendations.map((r) => ({
+        sourceMuId: r.source?.mu_id ?? '',
+        recommendedMuId: r.recommended?.mu_id ?? '',
+        createdAt: r.created_at.toISOString(),
       })),
     };
   }

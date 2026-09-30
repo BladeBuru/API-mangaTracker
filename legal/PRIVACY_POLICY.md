@@ -34,6 +34,7 @@ Manga Tracker collecte les données suivantes :
 
 ### 2.3 Lors de l'utilisation
 - **Bibliothèque de mangas** : la liste des mangas que vous suivez, leur statut de lecture, votre note personnelle (1–10), votre progression en chapitres, vos liens personnalisés
+- **Recommandations que vous publiez** (« si vous avez aimé ce titre, lisez celui-ci ») : les œuvres concernées et la date. Seul leur **nombre** est montré aux autres utilisateurs, jamais votre identité. Votre note personnelle entre, de la même façon anonyme, dans la note globale d'une œuvre.
 - **Préférences** : langue d'affichage, thème (clair/sombre)
 - **Sessions actives** : token de rafraîchissement chiffré, date/IP de dernière connexion (pour la sécurité)
 - **Logs techniques** : messages d'erreur anonymisés (pas d'email ni de contenu utilisateur)

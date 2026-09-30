@@ -43,6 +43,13 @@ export class MangaDetailsDto {
   @IsNumber()
   rating: number;
 
+  @ApiPropertyOptional({
+    description: 'Nombre de votants MangaUpdates derrière `rating`',
+  })
+  @IsNumber()
+  @IsOptional()
+  ratingVotes?: number;
+
   @ApiPropertyOptional()
   @IsNumber()
   @IsOptional()
@@ -151,11 +158,27 @@ export class MangaDetailsDto {
 
   @ApiPropertyOptional({
     description:
-      'Note agrégée Bayesian (note MU + notes communautaires locales)',
+      'Note globale : note MU et notes Manga Tracker fusionnées au prorata ' +
+      'des votes (cf. rating-aggregator.ts)',
   })
   @IsOptional()
   @IsNumber()
   aggregated_rating?: number;
+
+  @ApiPropertyOptional({
+    description: 'Nombre de votants MangaUpdates (null si inconnu)',
+  })
+  @IsOptional()
+  @IsNumber()
+  mu_rating_votes?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Total des votes derrière la note globale (MangaUpdates + Manga Tracker)',
+  })
+  @IsOptional()
+  @IsNumber()
+  total_rating_votes?: number;
 
   @ApiPropertyOptional({
     description:
@@ -355,6 +378,11 @@ export class MangaDetailsDto {
     mangaDetailsDto.mediumCoverUrl = muObject['image']['url']['original'];
     mangaDetailsDto.year = muObject['year'];
     mangaDetailsDto.rating = muObject['bayesian_rating'];
+    const ratingVotes = Number(muObject['rating_votes']);
+    mangaDetailsDto.ratingVotes =
+      Number.isFinite(ratingVotes) && ratingVotes >= 0
+        ? Math.round(ratingVotes)
+        : undefined;
     mangaDetailsDto.totalChapters = MangaDetailsDto.parseLatestChapter(
       muObject.status,
       muObject.latest_chapter,
