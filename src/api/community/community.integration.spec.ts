@@ -1,4 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { MangasService } from '@/api/mangas/mangas.service';
+import { MangaDetailsDto } from '@/api/mangas/dto/manga-details.dto';
 import { DataSource } from 'typeorm';
 import { Manga } from '@/api/mangas/manga.entity';
 import { MangaRecommendation } from '@/api/mangas/manga-recommendation.entity';
@@ -53,6 +55,23 @@ function buildDataSource(): DataSource {
     const NARUTO = 1002;
     const BLEACH = 1003;
     const UNKNOWN = 1999;
+    /** Connue de MangaUpdates mais pas encore en base. */
+    const ON_MU_ONLY = 1500;
+
+    /** Faux MangaUpdates : seule [ON_MU_ONLY] y existe. */
+    const getMangaDetails = jest.fn(async (muId: number) => {
+      if (muId !== ON_MU_ONLY) {
+        throw new NotFoundException(`Manga with id ${muId} cannot be found`);
+      }
+      const details = new MangaDetailsDto();
+      details.muId = ON_MU_ONLY;
+      details.title = 'Titre officiel';
+      details.year = 2010;
+      details.rating = 7.5;
+      details.ratingVotes = 40;
+      details.associated = [];
+      return details;
+    });
 
     beforeAll(async () => {
       ds = buildDataSource();
@@ -62,6 +81,7 @@ function buildDataSource(): DataSource {
         ds.getRepository(Manga),
         ds.getRepository(MangaRecommendation),
         ds.getRepository(UserMangaRecommendation),
+        { getMangaDetails } as unknown as MangasService,
       );
       ratings = new RatingSummaryService(
         ds.getRepository(Manga),
@@ -127,22 +147,38 @@ function buildDataSource(): DataSource {
       expect(again.appVotes).toBe(1);
     });
 
-    it('recommander une œuvre inconnue crée sa fiche minimale', async () => {
-      const item = await recos.recommend(
-        bob.id,
-        ONE_PIECE,
-        UNKNOWN,
-        'Nouveau titre',
-      );
+    it("recommander une œuvre absente de la base crée sa fiche d'après MangaUpdates", async () => {
+      const item = await recos.recommend(bob.id, ONE_PIECE, ON_MU_ONLY);
       expect(item).toMatchObject({
-        muId: UNKNOWN,
-        title: 'Nouveau titre',
+        muId: ON_MU_ONLY,
+        title: 'Titre officiel',
         appVotes: 1,
         recommendedByMe: true,
       });
+      const stored = await ds
+        .getRepository(Manga)
+        .findOneByOrFail({ mu_id: `${ON_MU_ONLY}` });
+      expect(stored.rating_votes).toBe(40);
+
       const forAlice = await recos.list(ONE_PIECE, alice.id);
-      const unknown = forAlice.items.find((i) => i.muId === UNKNOWN);
-      expect(unknown?.recommendedByMe).toBe(false);
+      const created = forAlice.items.find((i) => i.muId === ON_MU_ONLY);
+      expect(created?.recommendedByMe).toBe(false);
+    });
+
+    it('refuse une cible inconnue de MangaUpdates, sans rien créer', async () => {
+      await expect(
+        recos.recommend(alice.id, ONE_PIECE, UNKNOWN),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      const created = await ds
+        .getRepository(Manga)
+        .exist({ where: { mu_id: `${UNKNOWN}` } });
+      expect(created).toBe(false);
+    });
+
+    it("n'interroge pas MangaUpdates pour une cible déjà en base", async () => {
+      getMangaDetails.mockClear();
+      await recos.recommend(alice.id, ONE_PIECE, BLEACH);
+      expect(getMangaDetails).not.toHaveBeenCalled();
     });
 
     it('le tri suit le total de votes', async () => {
@@ -198,6 +234,8 @@ function buildDataSource(): DataSource {
       ]);
       const forBob = await gdpr.exportUserData(bob.id);
       expect(forBob.communityRecommendations).toEqual([]);
+      const summary = await gdpr.getDataSummary(alice.id);
+      expect(summary.recommendationsCount).toBe(1);
     });
 
     it('note globale : 3 votes MU à 8 + 1 vote local à 4 → 7, 4 votes', async () => {

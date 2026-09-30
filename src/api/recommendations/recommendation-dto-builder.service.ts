@@ -6,6 +6,7 @@ import { MangasService } from '@/api/mangas/mangas.service';
 import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
 import { hydrateIncompleteDtosInBackground } from '@/api/mangas/manga-completeness.util';
 import { ScoredEntry } from './scored-entry.interface';
+import { muVotesByMuId } from '@/api/mangas/rating-aggregator';
 import {
   byValueDescThenId,
   compareEntryValueDescThenKey,
@@ -133,6 +134,7 @@ export class RecommendationDtoBuilderService {
     const communityRatings = await this.mangasService.getCommunityRatings(
       finalMuIds,
       muRatings,
+      muVotesByMuId(mangaMap.values()),
     );
 
     const dtos = sorted

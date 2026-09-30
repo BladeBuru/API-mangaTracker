@@ -1,19 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
-
-/** Corps (facultatif) de `PUT /mangas/:muId/community-recommendations/:targetMuId`. */
-export class RecommendMangaDto {
-  @ApiPropertyOptional({
-    description:
-      "Titre de l'œuvre recommandée, utilisé seulement si elle n'est pas " +
-      'encore connue en base (fiche créée puis complétée par la synchro).',
-    example: 'Naruto',
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  public readonly title?: string;
-}
 
 /** Une œuvre recommandée depuis une fiche, votes MangaUpdates + Manga Tracker. */
 export class CommunityRecommendationItemDto {

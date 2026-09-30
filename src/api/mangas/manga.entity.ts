@@ -158,6 +158,9 @@ export class Manga {
     manga.mu_id = mangaDetailsDto.muId.toString();
     manga.total_chapters = mangaDetailsDto.totalChapters;
     manga.rating = mangaDetailsDto.rating;
+    // Sans ça, une fiche créée par un ajout en bibliothèque n'avait jamais
+    // de votants MU : total des votes faux jusqu'au rafraîchissement suivant.
+    manga.rating_votes = mangaDetailsDto.ratingVotes ?? null;
     manga.completed = mangaDetailsDto.completed;
     manga.type = mangaDetailsDto.type ?? null;
     manga.associated = mangaDetailsDto.associated ?? [];

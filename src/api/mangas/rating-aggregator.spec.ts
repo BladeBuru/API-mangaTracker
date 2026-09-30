@@ -1,4 +1,8 @@
-import { aggregateRating, RATING_CONFIDENCE_WEIGHT } from './rating-aggregator';
+import {
+  aggregateRating,
+  muVotesByMuId,
+  RATING_CONFIDENCE_WEIGHT,
+} from './rating-aggregator';
 
 describe('aggregateRating', () => {
   it('retourne MU rating si aucun vote local', () => {
@@ -89,5 +93,17 @@ describe('aggregateRating', () => {
       expect(r.muRatingVotes).toBeNull();
       expect(r.totalRatingVotes).toBe(2);
     });
+  });
+});
+
+describe('muVotesByMuId', () => {
+  it('should keep only known, positive MangaUpdates vote counts', () => {
+    const votes = muVotesByMuId([
+      { mu_id: '1', rating_votes: 40 },
+      { mu_id: '2', rating_votes: null },
+      { mu_id: '3', rating_votes: 0 },
+      { mu_id: '4' },
+    ]);
+    expect([...votes.entries()]).toEqual([['1', 40]]);
   });
 });

@@ -24,6 +24,22 @@
  */
 export const RATING_CONFIDENCE_WEIGHT = 50;
 
+/**
+ * Votants MangaUpdates connus, par `mu_id` — 3ᵉ argument de
+ * `getCommunityRatings`. Sans lui, une carte (accueil, recommandations)
+ * retombait sur le régime 2 et affichait une autre note que la fiche.
+ */
+export function muVotesByMuId(
+  mangas: Iterable<{ mu_id: string; rating_votes?: number | null }>,
+): Map<string, number> {
+  const votes = new Map<string, number>();
+  for (const m of mangas) {
+    const v = Number(m.rating_votes);
+    if (Number.isFinite(v) && v > 0) votes.set(m.mu_id, v);
+  }
+  return votes;
+}
+
 export interface CommunityRating {
   /** Moyenne des notes locales (null si aucun votant local). */
   communityRating: number | null;

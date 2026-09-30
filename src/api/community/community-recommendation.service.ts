@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Manga } from '@/api/mangas/manga.entity';
 import { MangaRecommendation } from '@/api/mangas/manga-recommendation.entity';
+import { MangasService } from '@/api/mangas/mangas.service';
 import { UserMangaRecommendation } from './user-manga-recommendation.entity';
 import {
   CommunityRecommendationItemDto,
@@ -40,6 +41,7 @@ export class CommunityRecommendationService {
     private readonly muRecoRepository: Repository<MangaRecommendation>,
     @InjectRepository(UserMangaRecommendation)
     private readonly userRecoRepository: Repository<UserMangaRecommendation>,
+    private readonly mangasService: MangasService,
   ) {}
 
   /** Liste fusionnée, triée par total de votes décroissant. */
@@ -65,29 +67,18 @@ export class CommunityRecommendationService {
 
   /**
    * Enregistre (idempotent) le vote de [userId] : « qui a aimé [sourceMuId]
-   * aimera [targetMuId] ». Crée une fiche minimale pour la cible si elle
-   * n'est pas encore connue (même cycle « stub puis complétion » que le
-   * graphe MU — la synchro nocturne la complète).
+   * aimera [targetMuId] ». Une cible pas encore en base (titre trouvé par la
+   * recherche) est créée d'après sa fiche MangaUpdates — jamais d'après un
+   * texte fourni par le client, qui s'afficherait chez tout le monde.
    */
   async recommend(
     userId: number,
     sourceMuId: number,
     targetMuId: number,
-    title?: string,
   ): Promise<CommunityRecommendationItemDto> {
     this.assertDistinct(sourceMuId, targetMuId);
     await this.assertSourceExists(sourceMuId);
-
-    await this.mangaRepository
-      .createQueryBuilder()
-      .insert()
-      .into(Manga)
-      .values({
-        mu_id: targetMuId.toString(),
-        title: title?.trim() || `Manga ${targetMuId}`,
-      })
-      .orIgnore()
-      .execute();
+    await this.ensureTargetExists(targetMuId);
 
     await this.userRecoRepository
       .createQueryBuilder()
@@ -229,6 +220,26 @@ export class CommunityRecommendationService {
         'Une œuvre ne peut pas se recommander elle-même',
       );
     }
+  }
+
+  /**
+   * Cible inconnue en base → fiche MangaUpdates (404 si MU ne la connaît pas,
+   * 503 s'il est indisponible). Un seul appel, et seulement pour une œuvre
+   * absente de la base ; le quota de votes (60 / heure) le borne.
+   */
+  private async ensureTargetExists(targetMuId: number): Promise<void> {
+    const known = await this.mangaRepository.exist({
+      where: { mu_id: targetMuId.toString() },
+    });
+    if (known) return;
+    const details = await this.mangasService.getMangaDetails(targetMuId);
+    await this.mangaRepository
+      .createQueryBuilder()
+      .insert()
+      .into(Manga)
+      .values(Manga.fromMU(details))
+      .orIgnore()
+      .execute();
   }
 
   private async assertSourceExists(sourceMuId: number): Promise<void> {

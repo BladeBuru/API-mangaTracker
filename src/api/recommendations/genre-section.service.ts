@@ -5,7 +5,7 @@ import { Manga } from '@/api/mangas/manga.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { MangasService } from '@/api/mangas/mangas.service';
 import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
-import { CommunityRating } from '@/api/mangas/rating-aggregator';
+import { CommunityRating, muVotesByMuId } from '@/api/mangas/rating-aggregator';
 import { NSFW_GENRES } from '@/api/mangas/constants';
 import { hydrateIncompleteDtosInBackground } from '@/api/mangas/manga-completeness.util';
 import { ScoredEntry } from './scored-entry.interface';
@@ -340,6 +340,7 @@ export class GenreSectionService {
     const community = await this.mangasService.getCommunityRatings(
       displayedIds,
       muRatings,
+      muVotesByMuId(mangaMap.values()),
     );
 
     const result: Record<string, MangaQuickViewDto[]> = {};

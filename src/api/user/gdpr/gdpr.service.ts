@@ -93,6 +93,8 @@ export class GdprService {
     account: User;
     libraryCount: number;
     sessionsCount: number;
+    /** Recommandations publiées (« si vous avez aimé… »). */
+    recommendationsCount: number;
   }> {
     const account = await this.userRepository.findOne({
       where: { id: userId },
@@ -103,13 +105,17 @@ export class GdprService {
     delete (account as any).password;
     delete (account as any).googleId;
 
-    const [libraryCount, sessionsCount] = await Promise.all([
-      this.userMangaRepository.count({ where: { user: { id: userId } } }),
-      this.sessionRepository.count({ where: { user: { id: userId } } }),
-    ]);
+    const [libraryCount, sessionsCount, recommendationsCount] =
+      await Promise.all([
+        this.userMangaRepository.count({ where: { user: { id: userId } } }),
+        this.sessionRepository.count({ where: { user: { id: userId } } }),
+        this.recommendationRepository.count({
+          where: { user: { id: userId } },
+        }),
+      ]);
 
     this.logger.log(`GDPR data summary requested by userId=${userId}`);
-    return { account, libraryCount, sessionsCount };
+    return { account, libraryCount, sessionsCount, recommendationsCount };
   }
 
   /**

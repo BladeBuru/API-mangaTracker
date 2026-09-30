@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { QueryFailedError } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { Request } from 'express';
 import { UserService } from './user.service';
@@ -154,6 +155,27 @@ describe('UserService', () => {
 
       expect(result.username).toBe('John');
       expect(saveMock).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['   ', '  a', ' ab '])(
+      'should reject %p once trimmed (too short)',
+      async (name) => {
+        await expect(
+          service.updateName({ name }, buildRequest(buildUser())),
+        ).rejects.toThrow(BadRequestException);
+        expect(saveMock).not.toHaveBeenCalled();
+      },
+    );
+
+    it('should return a 409 when a concurrent rename wins the unique index', async () => {
+      findOneMock.mockResolvedValue(null);
+      const violation = new QueryFailedError('UPDATE', [], new Error('dup'));
+      (violation as QueryFailedError & { code: string }).code = '23505';
+      saveMock.mockRejectedValueOnce(violation);
+
+      await expect(
+        service.updateName({ name: 'Taken' }, buildRequest(buildUser())),
+      ).rejects.toThrow(ConflictException);
     });
   });
 });

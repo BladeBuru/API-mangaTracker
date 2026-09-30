@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  ParseIntPipe,
-  Put,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Delete, Get, Param, Put, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -16,6 +7,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
+import { ParseMuIdPipe } from '@/shared/pipes/parse-mu-id.pipe';
 import User from '@/api/user/user.entity';
 import { CommunityRecommendationService } from './community-recommendation.service';
 import { RatingSummaryService } from './rating-summary.service';
@@ -24,7 +16,6 @@ import {
   CommunityRecommendationItemDto,
   CommunityRecommendationsDto,
   RatingSummaryDto,
-  RecommendMangaDto,
 } from './dto/community-recommendation.dto';
 
 /**
@@ -50,7 +41,7 @@ export class CommunityController {
   @ApiResponse({ status: 404, description: 'Manga inconnu' })
   @Get(':muId/ratings')
   ratingSummary(
-    @Param('muId', ParseIntPipe) muId: number,
+    @Param('muId', ParseMuIdPipe) muId: number,
   ): Promise<RatingSummaryDto> {
     return this.ratings.getSummary(muId);
   }
@@ -62,7 +53,7 @@ export class CommunityController {
   @ApiResponse({ status: 200, type: CommunityRecommendationsDto })
   @Get(':muId/community-recommendations')
   list(
-    @Param('muId', ParseIntPipe) muId: number,
+    @Param('muId', ParseMuIdPipe) muId: number,
     @UserDecorator() user: User,
   ): Promise<CommunityRecommendationsDto> {
     return this.recommendations.list(muId, user.id);
@@ -73,22 +64,22 @@ export class CommunityController {
   })
   @ApiResponse({ status: 200, type: CommunityRecommendationItemDto })
   @ApiResponse({ status: 400, description: 'Œuvre recommandée pour elle-même' })
-  @ApiResponse({ status: 404, description: 'Œuvre source inconnue' })
+  @ApiResponse({
+    status: 404,
+    description: 'Œuvre source inconnue, ou cible inconnue de MangaUpdates',
+  })
   @ApiResponse({ status: 429, description: 'Trop de votes (60 / heure)' })
   @Put(':muId/community-recommendations/:targetMuId')
   @UseGuards(CommunityThrottlerGuard)
   recommend(
-    @Param('muId', ParseIntPipe) muId: number,
-    @Param('targetMuId', ParseIntPipe) targetMuId: number,
-    @Body() body: RecommendMangaDto,
+    @Param('muId', ParseMuIdPipe) muId: number,
+    @Param('targetMuId', ParseMuIdPipe) targetMuId: number,
     @UserDecorator() user: User,
   ): Promise<CommunityRecommendationItemDto> {
-    return this.recommendations.recommend(
-      user.id,
-      muId,
-      targetMuId,
-      body?.title,
-    );
+    // Pas de corps : une œuvre inconnue est créée d'après MangaUpdates,
+    // jamais d'après un titre envoyé par l'application (les anciennes
+    // versions en envoient un ; non lu, donc sans effet).
+    return this.recommendations.recommend(user.id, muId, targetMuId);
   }
 
   @ApiOperation({ summary: 'Retirer sa recommandation' })
@@ -96,8 +87,8 @@ export class CommunityController {
   @Delete(':muId/community-recommendations/:targetMuId')
   @UseGuards(CommunityThrottlerGuard)
   unrecommend(
-    @Param('muId', ParseIntPipe) muId: number,
-    @Param('targetMuId', ParseIntPipe) targetMuId: number,
+    @Param('muId', ParseMuIdPipe) muId: number,
+    @Param('targetMuId', ParseMuIdPipe) targetMuId: number,
     @UserDecorator() user: User,
   ): Promise<CommunityRecommendationItemDto> {
     return this.recommendations.unrecommend(user.id, muId, targetMuId);

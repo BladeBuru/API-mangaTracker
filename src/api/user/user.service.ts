@@ -6,7 +6,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { ILike, QueryFailedError, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { Request } from 'express';
 import { UpdatePasswordDto } from './dto/update-password.dto';
@@ -15,10 +15,18 @@ import { UpdateNameDto } from './dto/update-name.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UserInformationDto } from '@/api/user/dto/user-information.dto';
 import { PublicProfileDto } from '@/api/user/dto/public-profile.dto';
+import { USERNAME_PATTERN } from './auth/username.helper';
 
 /** `_` et `%` sont des jokers de LIKE : « jean_d » ne doit pas trouver « jeanxd ». */
 function escapeLikePattern(value: string): string {
   return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    error instanceof QueryFailedError &&
+    (error as QueryFailedError & { code?: string }).code === '23505'
+  );
 }
 
 @Injectable()
@@ -37,6 +45,15 @@ export class UserService {
   ): Promise<UserInformationDto> {
     const user: User = <User>req.user;
     const name = body.name.trim();
+    // Revalidé APRÈS trim : le DTO valide la valeur brute (`@Trim()` n'est
+    // pas appliqué par le ValidationPipe), donc « ␣␣␣ » passait et devenait
+    // un identifiant vide.
+    if (!USERNAME_PATTERN.test(name)) {
+      throw new BadRequestException(
+        "Le nom d'utilisateur doit faire 3-32 caractères (lettres, chiffres, " +
+          "espaces, '_', '.', '-') et ne peut pas être une adresse email.",
+      );
+    }
     const taken = await this.repository.findOne({
       where: { username: ILike(escapeLikePattern(name)) },
     });
@@ -44,7 +61,16 @@ export class UserService {
       throw new ConflictException("Nom d'utilisateur déjà pris");
     }
     user.username = name;
-    await this.repository.save(user);
+    try {
+      await this.repository.save(user);
+    } catch (error) {
+      // Deux renommages simultanés vers le même nom passent tous deux la
+      // vérification ci-dessus ; l'index unique tranche → 409, pas 500.
+      if (isUniqueViolation(error)) {
+        throw new ConflictException("Nom d'utilisateur déjà pris");
+      }
+      throw error;
+    }
     return UserInformationDto.fromEntity(user);
   }
 
