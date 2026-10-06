@@ -1,4 +1,8 @@
 import { DataSource } from 'typeorm';
+import {
+  hasIntegrationDatabase,
+  openIntegrationDatabase,
+} from '@/shared/testing/integration-db.helper-spec';
 import User from '@/api/user/user.entity';
 import { AuthHelper, REFRESH_REPLAY_GRACE_MS } from './auth.helper';
 import { UserSession } from './user-session.entity';
@@ -8,38 +12,21 @@ import { UserSession } from './user-session.entity';
  * migrations) : c'est elle qui décidait des déconnexions « au hasard ».
  * Ignorée sans base (poste de dev) ; toujours exécutée en CI.
  */
-const hasDatabase = Boolean(process.env.DATABASE_HOST);
 
-function buildDataSource(): DataSource {
-  return new DataSource({
-    type: 'postgres',
-    host: process.env.DATABASE_HOST,
-    port: parseInt(process.env.DATABASE_PORT ?? '5432', 10),
-    database: process.env.DATABASE_NAME,
-    username: process.env.DATABASE_USER,
-    password: process.env.DATABASE_PASSWORD,
-    schema: process.env.DATABASE_SCHEMA ?? 'public',
-    entities: [__dirname + '/../../**/*.entity.ts'],
-    migrations: [__dirname + '/../../../migrations/*.ts'],
-    migrationsTableName: 'typeorm_migrations',
-    synchronize: false,
-    logging: false,
-  });
-}
-
-(hasDatabase ? describe : describe.skip)(
+(hasIntegrationDatabase ? describe : describe.skip)(
   'Rotation des sessions — intégration PostgreSQL',
   () => {
     jest.setTimeout(120_000);
 
     let ds: DataSource;
+    let closeDb: (() => Promise<void>) | undefined;
     let helper: AuthHelper;
     let user: User;
 
     beforeAll(async () => {
-      ds = buildDataSource();
-      await ds.initialize();
-      await ds.runMigrations();
+      const db = await openIntegrationDatabase();
+      ds = db.ds;
+      closeDb = db.close;
       helper = new AuthHelper(null);
       Object.assign(helper, {
         repository: ds.getRepository(User),
@@ -48,7 +35,7 @@ function buildDataSource(): DataSource {
     });
 
     afterAll(async () => {
-      if (ds?.isInitialized) await ds.destroy();
+      await closeDb?.();
     });
 
     beforeEach(async () => {

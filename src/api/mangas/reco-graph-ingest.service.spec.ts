@@ -22,6 +22,8 @@ interface RecordedOp {
  */
 function recordingRepo(ops: RecordedOp[]) {
   return {
+    // Filigrane « voisinage enregistré » (hors des requêtes enregistrées).
+    update: jest.fn(async () => ({})),
     createQueryBuilder: jest.fn(() => {
       const op: RecordedOp = {
         kind: 'insert',
@@ -217,6 +219,18 @@ describe('RecoGraphIngestService', () => {
     expect(outcome).toEqual({ manual: 0, category: 0, related: 0, stubs: 0 });
     expect(recoOps).toHaveLength(0);
     expect(mangaOps).toHaveLength(0);
+  });
+
+  it('horodate le voisinage enregistré, même vide (plus de re-téléchargement)', async () => {
+    const repo = (
+      service as unknown as { mangaRepository: { update: jest.Mock } }
+    ).mangaRepository;
+    await service.ingestSeriesPayload(SOURCE_MU_ID, {});
+
+    expect(repo.update).toHaveBeenCalledWith(
+      { mu_id: SOURCE_MU_ID.toString() },
+      { reco_graph_attempted_at: expect.any(Date) },
+    );
   });
 
   it('saveManualLinks n’écrit que des liens `manual` (chemin historique)', async () => {

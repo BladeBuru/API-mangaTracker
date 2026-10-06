@@ -21,13 +21,23 @@ interface VoteCounts {
   muVotes: number;
   appVotes: number;
   recommendedByMe: boolean;
+  /** Poids de la suggestion MU calculée (`category`) — jamais des votes. */
+  categoryWeight: number;
 }
 
 /**
  * Recommandations « si vous avez aimé A, lisez B » : celles de MangaUpdates
- * (`manga_recommendation`, origine `manual`, poids = nombre de votants MU) et
- * celles des utilisateurs Manga Tracker (`user_manga_recommendation`, une
- * ligne par vote), fusionnées à la lecture.
+ * (`manga_recommendation`) et celles des utilisateurs Manga Tracker
+ * (`user_manga_recommendation`, une ligne par vote), fusionnées à la lecture.
+ *
+ * Côté MangaUpdates, deux origines :
+ * - `manual` : recommandations déposées par ses lecteurs, poids = nombre de
+ *   votes → comptées dans `muVotes` ;
+ * - `category` : suggestions qu'il calcule (≈ 5 par titre, présentes pour
+ *   presque tous les titres) → listées comme « suggérées par MangaUpdates »
+ *   (`muSuggested`), **jamais** comptées comme des votes (leur poids croît
+ *   avec la popularité du titre source). Sans elles, la liste n'existait que
+ *   pour les titres très connus (2,6 % des titres ont des `manual`).
  *
  * Les deux sources restent stockées séparément (le poids MU est réécrit à
  * chaque rafraîchissement de la fiche) ; seul l'affichage additionne.
@@ -50,7 +60,9 @@ export class CommunityRecommendationService {
     userId: number,
   ): Promise<CommunityRecommendationsDto> {
     const counts = await this.countVotes(sourceMuId, userId);
-    const ids = [...counts.keys()];
+    const ids = [...counts.keys()]
+      .sort((a, b) => compareCounts(a, counts.get(a), b, counts.get(b)))
+      .slice(0, COMMUNITY_RECOMMENDATIONS_LIMIT);
     if (ids.length === 0) return { sourceMuId, items: [] };
 
     const mangas = await this.mangaRepository.find({
@@ -58,10 +70,9 @@ export class CommunityRecommendationService {
     });
     const byId = new Map(mangas.map((m) => [m.mu_id.toString(), m]));
 
-    const items = ids
-      .map((id) => this.toItem(id, counts.get(id), byId.get(id)))
-      .sort(compareItems)
-      .slice(0, COMMUNITY_RECOMMENDATIONS_LIMIT);
+    const items = ids.map((id) =>
+      this.toItem(id, counts.get(id), byId.get(id)),
+    );
     return { sourceMuId, items };
   }
 
@@ -127,8 +138,9 @@ export class CommunityRecommendationService {
   }
 
   /**
-   * Votes par cible pour une source : MU (`manual`, poids > 0) + Manga
-   * Tracker (un vote par ligne). [onlyTarget] restreint à une cible.
+   * Votes par cible pour une source : MU (`manual` = votes, `category` =
+   * suggestion) + Manga Tracker (un vote par ligne). [onlyTarget] restreint
+   * à une cible.
    */
   private async countVotes(
     sourceMuId: number,
@@ -140,9 +152,13 @@ export class CommunityRecommendationService {
     const muQuery = this.muRecoRepository
       .createQueryBuilder('r')
       .select('r.recommended_mu_id::text', 'id')
-      .addSelect('MAX(r.weight)', 'weight')
+      .addSelect("MAX(r.weight) FILTER (WHERE r.kind = 'manual')", 'votes')
+      .addSelect(
+        "MAX(r.weight) FILTER (WHERE r.kind = 'category')",
+        'category_weight',
+      )
       .where('r.source_mu_id = :source', { source })
-      .andWhere("r.kind = 'manual'")
+      .andWhere("r.kind IN ('manual', 'category')")
       .andWhere('r.weight > 0')
       .andWhere('r.recommended_mu_id <> r.source_mu_id')
       .groupBy('r.recommended_mu_id');
@@ -151,8 +167,11 @@ export class CommunityRecommendationService {
         target: onlyTarget,
       });
     }
-    const muRows: Array<{ id: string; weight: string }> =
-      await muQuery.getRawMany();
+    const muRows: Array<{
+      id: string;
+      votes: string | null;
+      category_weight: string | null;
+    }> = await muQuery.getRawMany();
 
     const appQuery = this.userRecoRepository
       .createQueryBuilder('u')
@@ -174,13 +193,20 @@ export class CommunityRecommendationService {
     const entry = (id: string): VoteCounts => {
       let c = counts.get(id);
       if (!c) {
-        c = { muVotes: 0, appVotes: 0, recommendedByMe: false };
+        c = {
+          muVotes: 0,
+          appVotes: 0,
+          recommendedByMe: false,
+          categoryWeight: 0,
+        };
         counts.set(id, c);
       }
       return c;
     };
     for (const row of muRows) {
-      entry(row.id).muVotes = parseInt(row.weight, 10) || 0;
+      const c = entry(row.id);
+      c.muVotes = parseInt(row.votes ?? '0', 10) || 0;
+      c.categoryWeight = parseInt(row.category_weight ?? '0', 10) || 0;
     }
     for (const row of appRows) {
       const c = entry(row.id);
@@ -211,6 +237,7 @@ export class CommunityRecommendationService {
       appVotes,
       totalVotes: muVotes + appVotes,
       recommendedByMe: counts?.recommendedByMe ?? false,
+      muSuggested: (counts?.categoryWeight ?? 0) > 0,
     };
   }
 
@@ -252,12 +279,21 @@ export class CommunityRecommendationService {
   }
 }
 
-/** Total décroissant, puis votes Manga Tracker, puis mu_id (ordre stable). */
-function compareItems(
-  a: CommunityRecommendationItemDto,
-  b: CommunityRecommendationItemDto,
+/**
+ * Total de votes décroissant, puis votes Manga Tracker, puis suggestions
+ * MangaUpdates (poids décroissant), puis mu_id (ordre stable).
+ */
+function compareCounts(
+  idA: string,
+  a: VoteCounts | undefined,
+  idB: string,
+  b: VoteCounts | undefined,
 ): number {
+  const total = (c?: VoteCounts) => (c?.muVotes ?? 0) + (c?.appVotes ?? 0);
   return (
-    b.totalVotes - a.totalVotes || b.appVotes - a.appVotes || a.muId - b.muId
+    total(b) - total(a) ||
+    (b?.appVotes ?? 0) - (a?.appVotes ?? 0) ||
+    (b?.categoryWeight ?? 0) - (a?.categoryWeight ?? 0) ||
+    Number(idA) - Number(idB)
   );
 }

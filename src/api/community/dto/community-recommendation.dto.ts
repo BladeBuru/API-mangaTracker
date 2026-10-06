@@ -42,6 +42,13 @@ export class CommunityRecommendationItemDto {
     description: "L'utilisateur connecté recommande-t-il cette œuvre ?",
   })
   recommendedByMe: boolean;
+
+  @ApiProperty({
+    description:
+      'Suggérée par MangaUpdates (suggestion calculée, sans votes). ' +
+      "S'affiche même à 0 vote ; les utilisateurs peuvent la recommander.",
+  })
+  muSuggested: boolean;
 }
 
 export class CommunityRecommendationsDto {

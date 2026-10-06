@@ -18,6 +18,7 @@ import { RecoGraphIngestService } from './reco-graph-ingest.service';
  * pas la persistance des liens (couverte par `reco-graph-ingest.service.spec`).
  */
 const mockRecoGraph = () => ({
+  isNeighbourhoodFresh: jest.fn(async () => false),
   ingestSeriesPayload: jest.fn(async () => ({
     manual: 0,
     category: 0,

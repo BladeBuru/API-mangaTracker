@@ -134,7 +134,24 @@ export class RecoGraphIngestService {
     // NULL), même doctrine que `PROTECTED_NULLABLE_COLUMNS`.
     await this.persistSourceType(sourceMuId, neighbourhood.sourceType);
 
+    // Filigrane « voisinage enregistré » : la synchro nocturne n'y revient
+    // pas, et un titre sans recommandation déposée sur MangaUpdates n'est
+    // plus re-téléchargé à chaque ouverture (cf. `isRecentlyIngested`).
+    await this.mangaRepository.update(
+      { mu_id: sourceMuId.toString() },
+      { reco_graph_attempted_at: new Date() },
+    );
+
     return outcome;
+  }
+
+  /** Voisinage de [muId] enregistré depuis moins de [ttlMs] ? */
+  async isNeighbourhoodFresh(muId: number, ttlMs: number): Promise<boolean> {
+    const row = await this.mangaRepository.findOne({
+      where: { mu_id: muId.toString() },
+      select: ['mu_id', 'reco_graph_attempted_at'],
+    });
+    return isRecentlyIngested(row?.reco_graph_attempted_at, ttlMs);
   }
 
   /**
@@ -300,4 +317,17 @@ export class RecoGraphIngestService {
       );
     }
   }
+}
+
+/**
+ * Voisinage MU enregistré depuis moins de [ttlMs] : une liste `manual` vide
+ * veut alors dire « MangaUpdates n'en a pas », pas « pas encore chargé ».
+ */
+export function isRecentlyIngested(
+  attemptedAt: Date | null | undefined,
+  ttlMs: number,
+  now: number = Date.now(),
+): boolean {
+  if (!attemptedAt) return false;
+  return now - new Date(attemptedAt).getTime() < ttlMs;
 }
