@@ -5,6 +5,22 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ---
 
+## [Unreleased] — retours utilisateurs d'octobre
+
+### Fixed
+
+- **Déconnexions en usage multi-appareils** — rotation du refresh token tolérante (`AuthHelper.rotateSession`, transaction + verrou `pessimistic_write`) : la session échangée est marquée `rotated_at` / `replaced_by_id` au lieu d'être supprimée ; un rejeu dans les **2 minutes** (réponse perdue, deux requêtes simultanées) renvoie la session courante de la chaîne (5 sauts max), au-delà → 401. Sessions tournées purgées après 1 jour (migration `1788825600000`, additive et idempotente).
+- **Gardes JWT en 401** — `JwtAuthGuard` / `RefreshTokenGuard` levaient 403 (`Forbidden`) sur un jeton absent ou expiré : le client ne tentait pas de refresh. Tolérance d'horloge de 30 s sur les deux stratégies ; `POST /auth/refresh` n'est plus limité par le throttler global (un refresh refusé déconnectait).
+- **« Si vous avez aimé » vide pour la plupart des titres** — la liste ne lisait que les liens `manual` MangaUpdates (≈ 2,6 % des titres). Les suggestions calculées (`category`) sont désormais incluses, sans votes, avec `muSuggested: true` ; tri : total, votes app, poids de suggestion, id.
+- **Recommandations par co-lecture** — le demandeur est exclu de ses propres co-lectures (`co-reading.query.ts`).
+- **Graphe MU re-téléchargé à chaque fiche** — `reco_graph_attempted_at` est posé à chaque ingestion ; la fiche détail et le moteur de recommandations n'en redemandent pas pendant la durée du cache.
+
+### Tests
+
+- `npm test` : **703 tests verts** (671 avant), dont `session-rotation.integration.spec.ts` (8) et 3 nouveaux tests d'intégration communauté sur un vrai PostgreSQL. Les suites d'intégration partagent un verrou consultatif (`integration-db.helper-spec.ts`) : plus de collisions en parallèle.
+
+---
+
 ## [Unreleased] — claude/brave-pasteur-gszxre (retours utilisateurs de septembre)
 
 ### Added

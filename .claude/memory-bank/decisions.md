@@ -193,6 +193,26 @@ cachées, sleepers, hydratation) — y mêler des votes locaux les fausserait.
 
 ---
 
+### Refresh token : rotation tolérante plutôt qu'usage unique strict
+**Décision** : un refresh crée une nouvelle `user_session` et marque l'ancienne
+`rotated_at` + `replaced_by_id` (transaction, verrou `pessimistic_write`). Un
+jeton déjà échangé reste accepté **2 minutes** et renvoie la session courante
+de la chaîne ; au-delà → 401. Sessions tournées purgées après 1 jour.
+**Raison** : l'usage unique strict déconnectait les utilisateurs dès qu'une
+réponse de refresh se perdait (réveil, réseau mobile) ou que deux requêtes
+simultanées échangeaient le même jeton — cas fréquent avec tablette + téléphone.
+La fenêtre courte borne l'intérêt d'un jeton volé tout en absorbant ces
+courses ; le verrou de ligne empêche deux rotations concurrentes de créer deux
+branches.
+**Impact** : toute évolution du flux de refresh passe par
+`AuthHelper.rotateSession` (testée sur un vrai PostgreSQL,
+`session-rotation.integration.spec.ts`). Les gardes JWT répondent **401**
+(jamais 403) à un jeton absent / invalide : le client déclenche son refresh sur
+401 uniquement.
+**Date** : 2026-10-06
+
+---
+
 ## Décisions Futures à Prendre
 
 | Sujet | Contexte | Deadline | Options |
