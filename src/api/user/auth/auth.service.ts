@@ -103,45 +103,30 @@ export class AuthService {
   }
 
   /**
-   * Rotation du refresh token : crée d'abord une nouvelle session, puis
-   * invalide l'ancienne SEULEMENT après succès.
+   * Rotation du refresh token (cf. `AuthHelper.rotateSession`).
    *
-   * Ordre critique : si on supprimait l'ancienne avant de créer la nouvelle
-   * et que `createSession` échouait (DB plantée, contrainte violée), l'user
-   * serait définitivement déconnecté car son refresh token actuel pointerait
-   * sur une session qui n'existe plus.
-   *
-   * Avec cet ordre, en cas d'échec création nouvelle session, l'ancienne
-   * reste valide → l'user peut retenter le refresh.
+   * L'ancienne session n'est plus supprimée à l'échange : supprimée trop
+   * tôt, une réponse perdue (veille, coupure réseau) ou deux requêtes
+   * simultanées laissaient l'appareil avec un jeton mort → déconnexions
+   * « au hasard », surtout en lisant sur deux appareils. Elle est marquée,
+   * redonne sa remplaçante pendant le délai de grâce, puis est purgée.
    */
   public async refresh(user: User, sessionId: string): Promise<TokenDto> {
-    const existingSession = await this.helper.findSession(sessionId);
-
-    if (!existingSession) {
+    const currentSessionId = await this.helper.rotateSession(sessionId);
+    if (!currentSessionId) {
       throw new HttpException(
         'Session invalide ou expirée. Reconnectez-vous.',
         HttpStatus.UNAUTHORIZED,
       );
     }
 
-    const newSession = await this.helper.createSession(
-      user,
-      existingSession.deviceInfo,
-    );
-
-    // Nouvelle session OK → on peut maintenant supprimer l'ancienne.
-    // Si delete échoue, c'est non-bloquant (juste session orpheline en BDD,
-    // sera nettoyée par job de purge — l'user a son nouveau token valide).
-    await this.helper.deleteSession(sessionId).catch((err) => {
+    await this.helper.purgeRotatedSessions(user.id).catch((err) => {
       this.logger.warn(
-        `Échec suppression ancienne session ${sessionId} après refresh OK: ${
-          err?.message ?? err
-        }`,
+        `Purge des sessions échangées impossible: ${err?.message ?? err}`,
       );
     });
-
     await this.repository.update(user.id, { lastLoginAt: new Date() });
-    return this.helper.generateToken(user, newSession.id);
+    return this.helper.generateToken(user, currentSessionId);
   }
 
   /** Déconnexion d'un appareil spécifique */

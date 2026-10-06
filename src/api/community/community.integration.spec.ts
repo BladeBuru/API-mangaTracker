@@ -2,6 +2,10 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { MangasService } from '@/api/mangas/mangas.service';
 import { MangaDetailsDto } from '@/api/mangas/dto/manga-details.dto';
 import { DataSource } from 'typeorm';
+import {
+  hasIntegrationDatabase,
+  openIntegrationDatabase,
+} from '@/shared/testing/integration-db.helper-spec';
 import { Manga } from '@/api/mangas/manga.entity';
 import { MangaRecommendation } from '@/api/mangas/manga-recommendation.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
@@ -10,6 +14,7 @@ import { UserMangaRecommendation } from './user-manga-recommendation.entity';
 import { CommunityRecommendationService } from './community-recommendation.service';
 import { RatingSummaryService } from './rating-summary.service';
 import { GdprService } from '@/api/user/gdpr/gdpr.service';
+import { findCoReadings } from '@/api/mangas/co-reading.query';
 import { UserSession } from '@/api/user/auth/user-session.entity';
 
 /**
@@ -21,31 +26,14 @@ import { UserSession } from '@/api/user/auth/user-session.entity';
  * base joignable (poste de dev), la suite est ignorée — elle ne passe
  * jamais « verte » en silence en CI puisque la base y est toujours présente.
  */
-const hasDatabase = Boolean(process.env.DATABASE_HOST);
 
-function buildDataSource(): DataSource {
-  return new DataSource({
-    type: 'postgres',
-    host: process.env.DATABASE_HOST,
-    port: parseInt(process.env.DATABASE_PORT ?? '5432', 10),
-    database: process.env.DATABASE_NAME,
-    username: process.env.DATABASE_USER,
-    password: process.env.DATABASE_PASSWORD,
-    schema: process.env.DATABASE_SCHEMA ?? 'public',
-    entities: [__dirname + '/../../**/*.entity.ts'],
-    migrations: [__dirname + '/../../migrations/*.ts'],
-    migrationsTableName: 'typeorm_migrations',
-    synchronize: false,
-    logging: false,
-  });
-}
-
-(hasDatabase ? describe : describe.skip)(
+(hasIntegrationDatabase ? describe : describe.skip)(
   'Communauté — intégration PostgreSQL',
   () => {
     jest.setTimeout(120_000);
 
     let ds: DataSource;
+    let closeDb: (() => Promise<void>) | undefined;
     let recos: CommunityRecommendationService;
     let ratings: RatingSummaryService;
     let alice: User;
@@ -74,9 +62,9 @@ function buildDataSource(): DataSource {
     });
 
     beforeAll(async () => {
-      ds = buildDataSource();
-      await ds.initialize();
-      await ds.runMigrations();
+      const db = await openIntegrationDatabase();
+      ds = db.ds;
+      closeDb = db.close;
       recos = new CommunityRecommendationService(
         ds.getRepository(Manga),
         ds.getRepository(MangaRecommendation),
@@ -90,7 +78,7 @@ function buildDataSource(): DataSource {
     });
 
     afterAll(async () => {
-      if (ds?.isInitialized) await ds.destroy();
+      await closeDb?.();
     });
 
     beforeEach(async () => {
@@ -126,11 +114,11 @@ function buildDataSource(): DataSource {
       ]);
     });
 
-    it('fusionne les votes MangaUpdates et Manga Tracker, sans les liens de catégorie', async () => {
+    it('fusionne les votes MangaUpdates et Manga Tracker ; les suggestions MU suivent, sans votes', async () => {
       await recos.recommend(alice.id, ONE_PIECE, NARUTO);
       const list = await recos.list(ONE_PIECE, alice.id);
 
-      expect(list.items).toHaveLength(1);
+      expect(list.items).toHaveLength(2);
       expect(list.items[0]).toMatchObject({
         muId: NARUTO,
         title: 'Naruto',
@@ -138,7 +126,70 @@ function buildDataSource(): DataSource {
         appVotes: 1,
         totalVotes: 73,
         recommendedByMe: true,
+        muSuggested: false,
       });
+      // Lien `category` : listé (titre recommandable) mais son poids n'est
+      // jamais présenté comme des votes.
+      expect(list.items[1]).toMatchObject({
+        muId: BLEACH,
+        muVotes: 0,
+        appVotes: 0,
+        totalVotes: 0,
+        muSuggested: true,
+      });
+    });
+
+    it('un titre sans recommandation déposée sur MU a quand même une liste', async () => {
+      await ds.getRepository(Manga).save({ mu_id: '1700', title: 'Manhwa' });
+      await ds.getRepository(MangaRecommendation).save([
+        {
+          source_mu_id: '1700',
+          recommended_mu_id: `${NARUTO}`,
+          kind: 'category',
+          weight: 12_000,
+        },
+        {
+          source_mu_id: '1700',
+          recommended_mu_id: `${BLEACH}`,
+          kind: 'category',
+          weight: 15_000,
+        },
+      ]);
+      const list = await recos.list(1700, alice.id);
+      expect(list.items.map((i) => i.muId)).toEqual([BLEACH, NARUTO]);
+
+      // Un vote fait passer la suggestion devant.
+      await recos.recommend(bob.id, 1700, NARUTO);
+      const after = await recos.list(1700, alice.id);
+      expect(after.items[0]).toMatchObject({
+        muId: NARUTO,
+        appVotes: 1,
+        muSuggested: true,
+      });
+    });
+
+    it('« les lecteurs lisent aussi » ne compte pas le demandeur', async () => {
+      const userMangas = ds.getRepository(UserManga);
+      for (const [user, muId] of [
+        [alice, ONE_PIECE],
+        [alice, NARUTO],
+        [bob, ONE_PIECE],
+        [bob, BLEACH],
+      ] as const) {
+        await userMangas.save(
+          userMangas.create({
+            user: { id: user.id },
+            manga: { mu_id: `${muId}` },
+          } as Partial<UserManga>),
+        );
+      }
+      const forAlice = await findCoReadings(
+        userMangas,
+        ONE_PIECE,
+        10,
+        alice.id,
+      );
+      expect(forAlice.map((r) => r.recommended_mu_id)).toEqual([`${BLEACH}`]);
     });
 
     it('un second vote du même utilisateur ne compte pas', async () => {

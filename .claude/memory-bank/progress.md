@@ -6,6 +6,16 @@
 
 ## ✅ Fonctionnalités complétées
 
+### 🗣️ Retours utilisateurs d'octobre (2026-10-06)
+
+- ✅ **Sessions multi-appareils** : rotation tolérante (rejeu 2 min, verrou de
+  ligne, chaîne `replaced_by_id`), migration `1788825600000`, gardes en 401,
+  `clockTolerance: 30`, `@SkipThrottle()` sur `/auth/refresh`.
+- ✅ **Recommandations communautaires** : suggestions MU `category` incluses
+  (`muSuggested`), co-lecture sans le demandeur, graphe MU non re-téléchargé
+  tant qu'il est frais (`reco_graph_attempted_at`).
+- Tests : 703 verts ; verrou consultatif partagé par les suites d'intégration.
+
 ### 🗣️ Retours utilisateurs de septembre (2026-09-30)
 
 Branche `claude/brave-pasteur-gszxre` (pendant Flutter du même nom — **déployer

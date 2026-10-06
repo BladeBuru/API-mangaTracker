@@ -1,18 +1,15 @@
-import { ExecutionContext, Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { Request } from 'express';
-import User from '@/api/user/user.entity';
 
+/**
+ * Garde de `/auth/refresh` et `/auth/logout` (refresh token).
+ * Jeton refusé → 401 explicite (cf. `JwtAuthGuard`).
+ */
 @Injectable()
 export class RefreshTokenGuard extends AuthGuard('jwt-refresh') {
-  public handleRequest(err: unknown, user: User): any {
+  public handleRequest<TUser>(err: unknown, user: TUser): TUser {
+    if (err) throw err;
+    if (!user) throw new UnauthorizedException();
     return user;
-  }
-  public async canActivate(context: ExecutionContext): Promise<boolean> {
-    await super.canActivate(context);
-
-    const { user }: Request = context.switchToHttp().getRequest();
-
-    return !!user;
   }
 }

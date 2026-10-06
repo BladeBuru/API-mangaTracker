@@ -28,6 +28,7 @@ import {
   buildProtectedColumnsUpdate,
 } from './manga-completeness.util';
 import { RecoGraphIngestService } from './reco-graph-ingest.service';
+import { CoReadingRow, findCoReadings } from './co-reading.query';
 import { RecoLinkKind } from './reco-graph.mapper';
 
 /** Durée de vie du cache des recommandations : 7 jours en ms */
@@ -207,7 +208,9 @@ export class MangasService {
     // n'en lisait que le premier. Ce point est aussi celui qu'emprunte
     // l'hydratation nocturne (800 fiches/nuit), qui alimente donc le graphe
     // sans une requête de plus. Cf. `RecoGraphIngestService`.
-    this.recoGraph
+    // Attendu (base seule, aucun appel MU) : la feuille « Si vous avez aimé »
+    // ouverte juste après lit un voisinage complet.
+    await this.recoGraph
       .ingestSeriesPayload(muId, data)
       .catch((err) =>
         this.logger.warn(`Erreur ingestion graphe pour manga ${muId}: ${err}`),
@@ -306,33 +309,14 @@ export class MangasService {
   async findCommunityRecommendations(
     sourceMuId: number,
     limit = 100,
-  ): Promise<{ recommended_mu_id: string; title: string; count: number }[]> {
-    const rows = await this.userMangaRepository
-      .createQueryBuilder('um2')
-      .innerJoin(
-        'user_manga',
-        'um1',
-        'um1.user_id = um2.user_id AND um1.manga_id = :sourceMuId',
-        { sourceMuId: sourceMuId.toString() },
-      )
-      .innerJoin('um2.manga', 'm')
-      .where('um2.manga_id != :sourceMuId', {
-        sourceMuId: sourceMuId.toString(),
-      })
-      .select('um2.manga_id', 'recommended_mu_id')
-      .addSelect('m.title', 'title')
-      .addSelect('COUNT(DISTINCT um2.user_id)', 'count')
-      .groupBy('um2.manga_id')
-      .addGroupBy('m.title')
-      .orderBy('count', 'DESC')
-      .limit(limit)
-      .getRawMany();
-
-    return rows.map((r) => ({
-      recommended_mu_id: r.recommended_mu_id as string,
-      title: (r.title as string) ?? '',
-      count: Number(r.count),
-    }));
+    excludeUserId?: number,
+  ): Promise<CoReadingRow[]> {
+    return findCoReadings(
+      this.userMangaRepository,
+      sourceMuId,
+      limit,
+      excludeUserId,
+    );
   }
 
   /**
@@ -379,6 +363,11 @@ export class MangasService {
   ): Promise<MangaRecommendation[]> {
     const cached = await this.getCachedRecommendations(muId);
     if (cached.length === 0) {
+      // Voisinage déjà enregistré : MU n'a simplement pas de recommandation
+      // déposée pour ce titre. Ne pas re-télécharger sa fiche à chaque fois.
+      if (await this.recoGraph.isNeighbourhoodFresh(muId, RECO_CACHE_TTL_MS)) {
+        return [];
+      }
       try {
         return await this.fetchAndCacheRecommendations(muId);
       } catch (err) {
@@ -427,7 +416,11 @@ export class MangasService {
     // communauté possèdent aussi en biblio). Avant on était limité aux 5
     // de MU → user veut "toutes les recos de la communauté".
     let recos = await this.getRecommendationsForManga(muId);
-    const communityRecos = await this.findCommunityRecommendations(muId);
+    const communityRecos = await this.findCommunityRecommendations(
+      muId,
+      100,
+      userId,
+    );
 
     // Merge : MU recos en premier (sorted by weight DESC déjà), puis
     // community recos par count DESC, dédupliqués sur mu_id. Tous deux

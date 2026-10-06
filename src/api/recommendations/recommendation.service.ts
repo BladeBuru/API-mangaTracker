@@ -25,6 +25,10 @@ import {
 } from './reco-pagination';
 import { ScoredEntry } from './scored-entry.interface';
 import { SleeperHitsService } from './sleeper-hits.service';
+import { isRecentlyIngested } from '@/api/mangas/reco-graph-ingest.service';
+
+/** Même fraîcheur que le cache des recommandations MU (7 jours). */
+const RECO_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 import { computeTypeProfile } from './type-profile';
 
 /**
@@ -171,7 +175,13 @@ export class RecommendationService {
     cachedPerSource.forEach((cached, index) => {
       const um = userMangas[index];
       if (cached.length === 0) {
-        uncachedIds.push(Number(um.manga.mu_id));
+        // Voisinage déjà enregistré récemment : MU n'a pas de recommandation
+        // déposée pour ce titre — inutile de re-télécharger sa fiche.
+        if (
+          !isRecentlyIngested(um.manga.reco_graph_attempted_at, RECO_TTL_MS)
+        ) {
+          uncachedIds.push(Number(um.manga.mu_id));
+        }
         return;
       }
       this.scoreRecos(

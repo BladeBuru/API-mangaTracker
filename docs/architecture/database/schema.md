@@ -18,7 +18,7 @@
 | Table | Module | Entité TypeORM | Migrations clés |
 |-------|--------|----------------|-----------------|
 | `users` | user | `User` | `1700000000000-InitialSchema`, `1746230600000-AddGdprConsentColumns`, `1746230900000-AddCreatedAtToUser`, `1746231000000-AddProfileFieldsToUser`, `1746231500000-AddUsernameUniqueIndex`, `1746231600000-ChangeAvatarUrlToText` |
-| `user_sessions` | auth | `UserSession` | `1700000000000-InitialSchema` |
+| `user_session` | auth | `UserSession` | `1700000000000-InitialSchema`, `1788825600000-AddRotationToUserSession` |
 | `auth_tokens` | auth/email | `AuthToken` | `1746230700000-CreateAuthTokenAndEmailVerified` |
 | `mangas` | mangas | `Manga` | `1700000000000-InitialSchema`, `1746230500000-AddGenresToManga`, `1746230800000-MakeMangaCoverColumnsNullable`, `1787875200000-AddHydrationAttemptedAtToManga`, `1788220800000-AddTypeToManga`, `1788652800000-AddRatingVotesToManga` |
 | `user_mangas` | library | `UserManga` | `1700000000000-InitialSchema`, `1788048000000-AddReleasesCursorToCatalogSyncState` (index `manga_id`) |
@@ -38,6 +38,19 @@
 ---
 
 ## Détail des tables modifiées récemment
+
+### Table `user_session` — rotation (2026-10-06)
+
+Migration `1788825600000-AddRotationToUserSession` (additive, idempotente) :
+
+| Colonne | Type | Rôle |
+|---|---|---|
+| `rotated_at` | `timestamptz NULL` | Date d'échange du refresh token de cette session (NULL = session courante) |
+| `replaced_by_id` | `uuid NULL` | Session qui l'a remplacée (chaîne suivie pour un rejeu < 2 min) |
+
+Index `IDX_user_session_user_rotated (user_id, rotated_at)` : purge des
+sessions tournées depuis plus d'un jour. Cascade RGPD inchangée
+(`onDelete: 'CASCADE'` sur `user_id`).
 
 ### Table `user_manga_recommendation` (ajoutée 2026-09-30)
 
