@@ -15,6 +15,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKey: config.get('JWT_KEY'),
       ignoreExpiration: false,
+      // Horloges serveur / appareil légèrement décalées : un jeton tout juste
+      // expiré ou émis « dans le futur » n'est pas refusé pour 30 s d'écart.
+      jsonWebTokenOptions: { clockTolerance: 30 },
     });
   }
 

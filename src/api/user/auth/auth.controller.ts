@@ -29,6 +29,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { GoogleOAuthGuard } from './google-oauth.guard';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { UserInformationDto } from '@/api/user/dto/user-information.dto';
+import { SkipThrottle } from '@nestjs/throttler';
 import { EmailService } from './email/email.service';
 
 @ApiTags('Auth')
@@ -81,13 +82,17 @@ export class AuthController {
   }
 
   @ApiOperation({ summary: 'Refresh token avec rotation de session' })
-  @ApiResponse({ status: 403, description: 'Session invalide ou expirée' })
+  @ApiResponse({ status: 401, description: 'Session invalide ou expirée' })
   @ApiResponse({
     status: 201,
     description: 'Nouveaux tokens JWT',
     type: TokenDto,
   })
   @Post('refresh')
+  // Pas de quota global par IP : derrière le proxy, tous les utilisateurs
+  // partagent la même adresse ; un 429 sur le refresh coupait des sessions.
+  // Le jeton signé est requis, et la rotation est sérialisée en base.
+  @SkipThrottle()
   @UseGuards(RefreshTokenGuard)
   private refresh(
     @UserDecorator() payload: { user: User; sessionId: string },
