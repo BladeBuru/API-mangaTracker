@@ -10,9 +10,16 @@ import { ReadingStatus } from './reading-status.enum';
  * paramètre) pour que la bascule reste correcte même si un autre chemin a
  * fait monter le total entre-temps — `total_chapters` est monotone
  * croissant (invariant A-5), la valeur en base est donc toujours la bonne.
+ *
+ * ⚠️ `"manga"` DOIT rester entre guillemets : dans un UPDATE, TypeORM
+ * réécrit tout mot nu égal à une propriété de l'entité, et `manga` est la
+ * relation de `UserManga` → `FROM manga m` devenait `FROM "manga_id" m`
+ * (« relation "manga_id" does not exist »). La bascule échouait ainsi en
+ * silence depuis sa mise en service (2026-09-05) ; seul un test sur un vrai
+ * PostgreSQL l'a révélé (`notifications.integration.spec.ts`).
  */
 const CURRENT_TOTAL_SUBQUERY =
-  'SELECT m.total_chapters FROM manga m WHERE m.mu_id = "user_manga"."manga_id"';
+  'SELECT m.total_chapters FROM "manga" m WHERE m.mu_id = "user_manga"."manga_id"';
 
 /**
  * Bascule automatique « à jour » → « en cours ».

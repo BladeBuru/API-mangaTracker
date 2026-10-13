@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { DataSource, UpdateQueryBuilder } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { ReadingStatus } from './reading-status.enum';
@@ -30,6 +31,44 @@ describe('ReadingStatusAutoUpdateService', () => {
     service = module.get(ReadingStatusAutoUpdateService);
   }
 
+  it('génère un SQL que TypeORM ne réécrit pas (régression « relation "manga_id" does not exist »)', async () => {
+    // Vraies métadonnées TypeORM, sans connexion : seul le SQL produit
+    // compte. Dans un UPDATE, TypeORM réécrit les mots nus égaux à une
+    // propriété (`manga` → `"manga_id"`) : la sous-requête doit y échapper.
+    const ds = new DataSource({
+      type: 'postgres',
+      entities: [__dirname + '/../../**/*.entity.ts'],
+    });
+    await (
+      ds as unknown as { buildMetadatas(): Promise<void> }
+    ).buildMetadatas();
+    let sql = '';
+    const execute = jest
+      .spyOn(UpdateQueryBuilder.prototype, 'execute')
+      .mockImplementation(async function (this: UpdateQueryBuilder<unknown>) {
+        sql = this.getQuery();
+        return { affected: 1, raw: [], generatedMaps: [] };
+      });
+    const realRepo = ds.getRepository(UserManga);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReadingStatusAutoUpdateService,
+        {
+          provide: getRepositoryToken(UserManga),
+          useValue: { createQueryBuilder: () => realRepo.createQueryBuilder() },
+        },
+      ],
+    }).compile();
+
+    await module.get(ReadingStatusAutoUpdateService).flipCaughtUpToReading(42);
+
+    execute.mockRestore();
+    expect(sql).toContain(
+      'FROM "manga" m WHERE m.mu_id = "user_manga"."manga_id"',
+    );
+    expect(sql).not.toContain('"manga_id" m');
+  });
+
   it('bascule « à jour » → « en cours » en UNE requête ensembliste par manga', async () => {
     const qb = createUpdateQb(3);
     await build(qb);
@@ -53,7 +92,7 @@ describe('ReadingStatusAutoUpdateService', () => {
     });
     const progressClause: string = qb.andWhere.mock.calls[1][0];
     expect(progressClause).toContain('user_read_chapters <');
-    expect(progressClause).toContain('SELECT m.total_chapters FROM manga m');
+    expect(progressClause).toContain('SELECT m.total_chapters FROM "manga" m');
     expect(progressClause).toContain('m.mu_id = "user_manga"."manga_id"');
   });
 
