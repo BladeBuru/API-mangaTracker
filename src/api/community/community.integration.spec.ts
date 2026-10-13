@@ -16,6 +16,7 @@ import { RatingSummaryService } from './rating-summary.service';
 import { GdprService } from '@/api/user/gdpr/gdpr.service';
 import { findCoReadings } from '@/api/mangas/co-reading.query';
 import { UserSession } from '@/api/user/auth/user-session.entity';
+import { Notification } from '@/api/notifications/notification.entity';
 
 /**
  * Tests d'intégration sur un VRAI PostgreSQL (migrations comprises) : les
@@ -275,6 +276,7 @@ import { UserSession } from '@/api/user/auth/user-session.entity';
         ds.getRepository(UserManga),
         ds.getRepository(UserSession),
         ds.getRepository(UserMangaRecommendation),
+        ds.getRepository(Notification),
       );
       const exported = await gdpr.exportUserData(alice.id);
       expect(exported.communityRecommendations).toEqual([

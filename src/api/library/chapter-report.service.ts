@@ -219,9 +219,13 @@ export class ChapterReportService {
       .execute();
 
     // Nouveaux chapitres confirmés par la communauté → les lecteurs
-    // « à jour » de ce manga ne le sont plus.
+    // « à jour » de ce manga ne le sont plus, les lecteurs en retard sont
+    // notifiés (total d'avant = celui lu en tête de méthode).
     if (Number(totalUpdate?.affected ?? 0) > 0) {
-      await this.readingStatusAutoUpdate.flipCaughtUpToReading(muId);
+      await this.readingStatusAutoUpdate.onTotalChaptersIncreased(
+        muId,
+        manga.total_chapters,
+      );
     }
 
     await this.reportRepository

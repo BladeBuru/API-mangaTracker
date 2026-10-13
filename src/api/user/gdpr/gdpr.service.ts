@@ -5,6 +5,7 @@ import User from '@/api/user/user.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { UserSession } from '@/api/user/auth/user-session.entity';
 import { UserMangaRecommendation } from '@/api/community/user-manga-recommendation.entity';
+import { Notification } from '@/api/notifications/notification.entity';
 
 /**
  * Versions des documents légaux. Doit être incrémenté à chaque changement
@@ -68,6 +69,18 @@ export interface GdprExport {
     recommendedMuId: string;
     createdAt: string;
   }>;
+  /**
+   * Notifications reçues (centre de notifications in-app). Sans l'identité
+   * de l'auteur de l'événement : c'est une donnée d'un TIERS (article 20 §4).
+   * `data` = identifiants et compteurs stockés (cf. `notification-type.ts`).
+   */
+  notifications: Array<{
+    type: string;
+    createdAt: string;
+    readAt: string | null;
+    mangaMuId: string | null;
+    data: Record<string, unknown>;
+  }>;
 }
 
 @Injectable()
@@ -83,6 +96,8 @@ export class GdprService {
     private readonly sessionRepository: Repository<UserSession>,
     @InjectRepository(UserMangaRecommendation)
     private readonly recommendationRepository: Repository<UserMangaRecommendation>,
+    @InjectRepository(Notification)
+    private readonly notificationRepository: Repository<Notification>,
   ) {}
 
   /**
@@ -95,6 +110,8 @@ export class GdprService {
     sessionsCount: number;
     /** Recommandations publiées (« si vous avez aimé… »). */
     recommendationsCount: number;
+    /** Notifications reçues (centre de notifications). */
+    notificationsCount: number;
   }> {
     const account = await this.userRepository.findOne({
       where: { id: userId },
@@ -105,17 +122,28 @@ export class GdprService {
     delete (account as any).password;
     delete (account as any).googleId;
 
-    const [libraryCount, sessionsCount, recommendationsCount] =
-      await Promise.all([
-        this.userMangaRepository.count({ where: { user: { id: userId } } }),
-        this.sessionRepository.count({ where: { user: { id: userId } } }),
-        this.recommendationRepository.count({
-          where: { user: { id: userId } },
-        }),
-      ]);
+    const [
+      libraryCount,
+      sessionsCount,
+      recommendationsCount,
+      notificationsCount,
+    ] = await Promise.all([
+      this.userMangaRepository.count({ where: { user: { id: userId } } }),
+      this.sessionRepository.count({ where: { user: { id: userId } } }),
+      this.recommendationRepository.count({
+        where: { user: { id: userId } },
+      }),
+      this.notificationRepository.count({ where: { userId } }),
+    ]);
 
     this.logger.log(`GDPR data summary requested by userId=${userId}`);
-    return { account, libraryCount, sessionsCount, recommendationsCount };
+    return {
+      account,
+      libraryCount,
+      sessionsCount,
+      recommendationsCount,
+      notificationsCount,
+    };
   }
 
   /**
@@ -132,19 +160,24 @@ export class GdprService {
     });
     if (!account) throw new NotFoundException('User not found');
 
-    const [library, sessions, recommendations] = await Promise.all([
-      this.userMangaRepository.find({
-        where: { user: { id: userId } },
-        relations: ['manga'],
-      }),
-      this.sessionRepository.find({
-        where: { user: { id: userId } },
-      }),
-      this.recommendationRepository.find({
-        where: { user: { id: userId } },
-        relations: ['source', 'recommended'],
-      }),
-    ]);
+    const [library, sessions, recommendations, notifications] =
+      await Promise.all([
+        this.userMangaRepository.find({
+          where: { user: { id: userId } },
+          relations: ['manga'],
+        }),
+        this.sessionRepository.find({
+          where: { user: { id: userId } },
+        }),
+        this.recommendationRepository.find({
+          where: { user: { id: userId } },
+          relations: ['source', 'recommended'],
+        }),
+        this.notificationRepository.find({
+          where: { userId },
+          order: { createdAt: 'DESC' },
+        }),
+      ]);
 
     this.logger.log(`GDPR data export requested by userId=${userId}`);
 
@@ -194,6 +227,13 @@ export class GdprService {
         sourceMuId: r.source?.mu_id ?? '',
         recommendedMuId: r.recommended?.mu_id ?? '',
         createdAt: r.created_at.toISOString(),
+      })),
+      notifications: notifications.map((n) => ({
+        type: n.type,
+        createdAt: n.createdAt.toISOString(),
+        readAt: n.readAt?.toISOString() ?? null,
+        mangaMuId: n.muId ?? null,
+        data: n.data ?? {},
       })),
     };
   }

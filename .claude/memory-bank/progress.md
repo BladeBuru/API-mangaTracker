@@ -1,10 +1,53 @@
 # Progrès — Manga Tracker API
 
-> Dernière mise à jour : 2026-09-30
+> Dernière mise à jour : 2026-10-13
 
 ---
 
 ## ✅ Fonctionnalités complétées
+
+### 🔔 Lot d'octobre — notifications, amis, robustesse (2026-10-13)
+
+Branche `fix/lot-octobre-api` (pendant Flutter développé en parallèle —
+**déployer l'API d'abord**).
+
+- ✅ **Centre de notifications** (`src/api/notifications/`, module feuille) :
+  table `notification` (migration `1788912000000`), `GET /notifications`
+  (curseur `before`, ex æquo servis ensemble), `GET /unread-count`,
+  `POST /:id/read`, `POST /read-all` (200, propriétaire seul, 404 sinon).
+  Producteurs best-effort dans Friends (demande, acceptation, annulation),
+  Sharing (partages créés, mark-seen), ReadingGroups (invitations) et
+  nouveaux chapitres via `ReadingStatusAutoUpdateService.onTotalChaptersIncreased`
+  (point d'entrée UNIQUE des hausses de total : sorties 02:00, signalement
+  communautaire, rafraîchissement des fiches) — upsert ensembliste dédoublonné
+  par index unique partiel. Purge 03:15 (lues > 30 j, toutes > 90 j). Export
+  et résumé RGPD.
+- ✅ **Amis** : recherche username + displayName sans casse ni accents
+  (`translate()`, `user-search.query.ts`), champ `relation`, bloqués masqués ;
+  `GET /friends/sent` ; 409 « Demande d'amitié déjà envoyée » / « Vous êtes
+  déjà amis » (+ violation d'unicité concurrente → 409).
+- ✅ **Rate limiting** : `ClientIpThrottlerGuard` (APP_GUARD, IP client réelle)
+  + quotas par utilisateur sur demande d'ami, commentaires / réponses /
+  signalements, groupes de lecture, partages.
+- ✅ **Bibliothèque** : `LibraryMangaResolverService` (refresh MU best-effort
+  si ligne locale), `getMangaDetails` sans TypeError sur timeout, total 0 =
+  inconnu (pas de 406), `rating` numérique, 409 sur ajout en double.
+- ✅ **Codes 200** : `POST /sharing/inbox/mark-seen`, `POST /mangas/comments/:id/report`.
+- 🐛 **Corrigé au passage** : la bascule « à jour » → « en cours » n'avait
+  JAMAIS fonctionné en production (sous-requête réécrite par TypeORM, cf.
+  known-issues.md).
+- Tests : 792 verts avec PostgreSQL (703 avant) ; smoke HTTP local de l'API
+  compilée (codes, contrat JSON, 429 par utilisateur).
+
+**Reste à faire / à surveiller après déploiement** :
+1. Vérifier en prod que NPMplus ajoute bien l'edge Cloudflare en DERNIER
+   élément de `X-Forwarded-For` (`$proxy_add_x_forwarded_for`, défaut NPM) :
+   `X-RateLimit-Remaining` doit décroître par client, pas globalement. Option
+   réseau : n'accepter sur NPMplus que les plages Cloudflare (cf. known-issues.md).
+2. Premier cron 02:00 : logs `notification(s) « nouveaux chapitres »` et
+   `basculée(s) en « en cours »` (première bascule réelle depuis 2026-09-05).
+3. Collection Postman distante : adapter les assertions 400 → 409 (doublons)
+   et 201 → 200 (mark-seen, report) si elle les teste.
 
 ### 🗣️ Retours utilisateurs d'octobre (2026-10-06)
 

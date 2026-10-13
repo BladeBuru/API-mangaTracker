@@ -5,7 +5,9 @@ import { MangasService } from './mangas.service';
 import { HttpModule, HttpService } from '@nestjs/axios';
 import { HelperService } from './helper.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
+import { AxiosError, AxiosResponse } from 'axios';
+import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Manga } from './manga.entity';
 import { MangaRecommendation } from './manga-recommendation.entity';
 import { UserManga } from './user-manga.entity';
@@ -70,7 +72,7 @@ describe('MangasService', () => {
         },
         {
           provide: ReadingStatusAutoUpdateService,
-          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
+          useValue: { onTotalChaptersIncreased: jest.fn(async () => 0) },
         },
         { provide: RecoGraphIngestService, useValue: mockRecoGraph() },
       ],
@@ -172,7 +174,7 @@ describe('MangasService — getMangaDetails : UPDATE null-safe', () => {
         },
         {
           provide: ReadingStatusAutoUpdateService,
-          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
+          useValue: { onTotalChaptersIncreased: jest.fn(async () => 0) },
         },
         { provide: RecoGraphIngestService, useValue: mockRecoGraph() },
       ],
@@ -241,9 +243,9 @@ describe('MangasService — getMangaDetails : UPDATE null-safe', () => {
       mangaRepoFindOne = mangaRepo.findOne;
       flip = (
         service as unknown as {
-          readingStatusAutoUpdate: { flipCaughtUpToReading: jest.Mock };
+          readingStatusAutoUpdate: { onTotalChaptersIncreased: jest.Mock };
         }
-      ).readingStatusAutoUpdate.flipCaughtUpToReading;
+      ).readingStatusAutoUpdate.onTotalChaptersIncreased;
     });
 
     it('bascule quand MU annonce plus de chapitres que le total en base (39 → 40)', async () => {
@@ -257,7 +259,8 @@ describe('MangasService — getMangaDetails : UPDATE null-safe', () => {
         expect.objectContaining({ where: { mu_id: '123' } }),
       );
       expect(flip).toHaveBeenCalledTimes(1);
-      expect(flip).toHaveBeenCalledWith(123);
+      // Avec le total d'avant (notification « nouveaux chapitres » 39 → 40).
+      expect(flip).toHaveBeenCalledWith(123, 39);
     });
 
     it('ne bascule PAS sur un simple rafraîchissement sans nouveau chapitre (40 → 40)', async () => {
@@ -285,6 +288,41 @@ describe('MangasService — getMangaDetails : UPDATE null-safe', () => {
       await service.getMangaDetails(123);
 
       expect(flip).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('erreurs MangaUpdates', () => {
+    it('lève 503 (et non un TypeError → 500) quand MU ne répond pas du tout (timeout)', async () => {
+      // Timeout / coupure réseau : AxiosError SANS `response`.
+      getMock.mockReturnValue(
+        throwError(
+          () => new AxiosError('timeout of 8000ms exceeded', 'ECONNABORTED'),
+        ),
+      );
+
+      await expect(service.getMangaDetails(123)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+    });
+
+    it('lève 404 quand MU répond 404', async () => {
+      const response = { status: 404, data: {} } as AxiosResponse;
+      getMock.mockReturnValue(
+        throwError(
+          () =>
+            new AxiosError(
+              'Not Found',
+              'ERR_BAD_REQUEST',
+              undefined,
+              undefined,
+              response,
+            ),
+        ),
+      );
+
+      await expect(service.getMangaDetails(123)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 
@@ -373,7 +411,7 @@ describe('MangasService — searchManga', () => {
         },
         {
           provide: ReadingStatusAutoUpdateService,
-          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
+          useValue: { onTotalChaptersIncreased: jest.fn(async () => 0) },
         },
         { provide: RecoGraphIngestService, useValue: mockRecoGraph() },
       ],
@@ -546,7 +584,7 @@ describe('MangasService — getRecommendationsAsQuickView : exclusion des titres
         { provide: DismissalService, useValue: { getDismissedMuIds } },
         {
           provide: ReadingStatusAutoUpdateService,
-          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
+          useValue: { onTotalChaptersIncreased: jest.fn(async () => 0) },
         },
         { provide: RecoGraphIngestService, useValue: mockRecoGraph() },
       ],
@@ -677,7 +715,7 @@ describe('MangasService — graphe de voisinage MangaUpdates', () => {
         },
         {
           provide: ReadingStatusAutoUpdateService,
-          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
+          useValue: { onTotalChaptersIncreased: jest.fn(async () => 0) },
         },
         { provide: RecoGraphIngestService, useValue: recoGraph },
       ],

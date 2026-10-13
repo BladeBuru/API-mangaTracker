@@ -54,13 +54,16 @@ Le module exporte `FriendsService`, ce qui permet à d'autres modules NestJS d'i
 
 | Méthode | Route | Description | Auth | Throttle |
 |---------|-------|-------------|------|----------|
-| `POST` | `/friends/request` | Envoyer une demande d'amitié | JWT | 5 req/min (renforcé) |
+| `POST` | `/friends/request` | Envoyer une demande d'amitié — 409 « Demande d'amitié déjà envoyée » / « Vous êtes déjà amis » | JWT | 5 req/min **par utilisateur** (`FriendRequestThrottlerGuard`) |
 | `GET` | `/friends` | Lister les amis acceptés | JWT | global |
 | `GET` | `/friends/pending` | Lister les demandes reçues en attente | JWT | global |
-| `GET` | `/friends/search?q=` | Recherche d'utilisateurs pour autocomplete | JWT | global |
+| `GET` | `/friends/sent` | Lister les demandes envoyées en attente (2026-10-13) | JWT | global |
+| `GET` | `/friends/search?q=` | Recherche (username OU displayName, sans casse ni accents) avec `relation` (`none` / `pending_sent` / `pending_received` / `friends`), bloqués masqués — `user-search.query.ts` | JWT | global |
 | `GET` | `/friends/:id/library` | Bibliothèque d'un ami — 403 si amitié non acceptée | JWT | global |
 | `PATCH` | `/friends/:id` | Accepter / rejeter / bloquer (addressee uniquement) | JWT | global |
-| `DELETE` | `/friends/:id` | Supprimer une relation (les deux parties) | JWT | global |
+| `DELETE` | `/friends/:id` | Supprimer une relation (les deux parties) — annule / refuse une demande en attente et retire la notification `friend_request` | JWT | global |
+
+**Notifications (2026-10-13)** : `sendRequest` → `friend_request` (destinataire) ; acceptation (PATCH ou demande croisée) → `friend_accepted` (demandeur d'origine) + `friend_request` lue ; blocage d'une demande → lue ; suppression d'une demande en attente → supprimée. Cf. `NotificationProducerService`.
 
 ### GET /friends/:id/library — détail
 

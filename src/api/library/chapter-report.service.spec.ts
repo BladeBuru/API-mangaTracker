@@ -48,7 +48,7 @@ describe('ChapterReportService', () => {
   };
   let mangaRepo: { findOneBy: jest.Mock; createQueryBuilder: jest.Mock };
   let userMangaRepo: { findOne: jest.Mock };
-  let statusAutoUpdate: { flipCaughtUpToReading: jest.Mock };
+  let statusAutoUpdate: { onTotalChaptersIncreased: jest.Mock };
 
   const mangaWithTotal = (total: number) => ({
     mu_id: '42',
@@ -64,7 +64,7 @@ describe('ChapterReportService', () => {
     };
     mangaRepo = { findOneBy: jest.fn(), createQueryBuilder: jest.fn() };
     userMangaRepo = { findOne: jest.fn() };
-    statusAutoUpdate = { flipCaughtUpToReading: jest.fn(async () => 0) };
+    statusAutoUpdate = { onTotalChaptersIncreased: jest.fn(async () => 0) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -250,8 +250,14 @@ describe('ChapterReportService', () => {
       expect(updateQb.andWhere).toHaveBeenCalledWith(
         'total_chapters < :newTotal',
       );
-      expect(statusAutoUpdate.flipCaughtUpToReading).toHaveBeenCalledTimes(1);
-      expect(statusAutoUpdate.flipCaughtUpToReading).toHaveBeenCalledWith(42);
+      expect(statusAutoUpdate.onTotalChaptersIncreased).toHaveBeenCalledTimes(
+        1,
+      );
+      // Total d'avant la consolidation : notification « 90 → 95 ».
+      expect(statusAutoUpdate.onTotalChaptersIncreased).toHaveBeenCalledWith(
+        42,
+        90,
+      );
     });
 
     it('ne bascule rien si un chemin concurrent avait déjà monté le total (0 ligne touchée)', async () => {
@@ -270,7 +276,7 @@ describe('ChapterReportService', () => {
 
       await service.consolidate(42);
 
-      expect(statusAutoUpdate.flipCaughtUpToReading).not.toHaveBeenCalled();
+      expect(statusAutoUpdate.onTotalChaptersIncreased).not.toHaveBeenCalled();
     });
   });
 

@@ -14,10 +14,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { ReadingGroupsService } from './reading-groups.service';
+import { ReadingGroupWriteThrottlerGuard } from './reading-group-write-throttler.guard';
 import {
   CreateReadingGroupDto,
   InviteToGroupDto,
@@ -26,7 +26,8 @@ import {
 
 /**
  * Endpoints "lecture à deux" (Phase 8.3). Throttle modéré sur les mutations
- * (10/min suffisent pour l'usage attendu : créer un groupe = action rare).
+ * (10/min PAR UTILISATEUR suffisent pour l'usage attendu : créer un groupe =
+ * action rare) — `ReadingGroupWriteThrottlerGuard`.
  */
 @ApiTags('Reading Groups')
 @ApiBearerAuth()
@@ -37,7 +38,7 @@ export class ReadingGroupsController {
 
   @ApiOperation({ summary: 'Créer un groupe de lecture à deux' })
   @ApiResponse({ status: 201, type: ReadingGroupDto })
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @UseGuards(ReadingGroupWriteThrottlerGuard)
   @Post()
   async create(
     @Body() body: CreateReadingGroupDto,
@@ -70,7 +71,7 @@ export class ReadingGroupsController {
     summary: 'Inviter un ami (propriétaire uniquement)',
   })
   @ApiResponse({ status: 200, type: ReadingGroupDto })
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @UseGuards(ReadingGroupWriteThrottlerGuard)
   @Post(':id/invite')
   async invite(
     @Param('id', ParseIntPipe) id: number,

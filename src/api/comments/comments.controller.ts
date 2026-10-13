@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -16,10 +17,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { CommentsService } from './comments.service';
+import { CommentWriteThrottlerGuard } from './comment-write-throttler.guard';
 import {
   CommentDto,
   CreateCommentDto,
@@ -31,8 +32,9 @@ import {
 /**
  * Endpoints commentaires (Phase 7).
  *
- * Throttle agressif sur les écritures : 10 commentaires / heure / user
- * (anti-spam). Lectures non throttlées au-delà du throttler global.
+ * Throttle agressif sur les écritures : 10 commentaires / heure PAR
+ * UTILISATEUR et par route (`CommentWriteThrottlerGuard`, anti-spam).
+ * Lectures non throttlées au-delà du throttler global.
  */
 @ApiTags('Comments')
 @ApiBearerAuth()
@@ -62,7 +64,7 @@ export class CommentsController {
 
   @ApiOperation({ summary: 'Poster un commentaire top-level' })
   @ApiResponse({ status: 201, type: CommentDto })
-  @Throttle({ default: { ttl: 3_600_000, limit: 10 } })
+  @UseGuards(CommentWriteThrottlerGuard)
   @Post(':muId/comments')
   async create(
     @Param('muId', ParseIntPipe) muId: number,
@@ -74,7 +76,7 @@ export class CommentsController {
 
   @ApiOperation({ summary: 'Répondre à un commentaire' })
   @ApiResponse({ status: 201, type: CommentDto })
-  @Throttle({ default: { ttl: 3_600_000, limit: 10 } })
+  @UseGuards(CommentWriteThrottlerGuard)
   @Post('comments/:commentId/reply')
   async reply(
     @Param('commentId', ParseIntPipe) commentId: number,
@@ -107,7 +109,10 @@ export class CommentsController {
   }
 
   @ApiOperation({ summary: 'Signaler un commentaire (modération)' })
-  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 200, description: '{ reported: true }' })
+  // 200 explicite : l'app teste `== 200` (un POST Nest répond 201 par défaut).
+  @HttpCode(200)
+  @UseGuards(CommentWriteThrottlerGuard)
   @Post('comments/:commentId/report')
   async report(
     @Param('commentId', ParseIntPipe) commentId: number,

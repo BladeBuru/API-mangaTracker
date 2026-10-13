@@ -67,7 +67,7 @@ describe('CatalogReleasesService', () => {
   let postMock: jest.Mock;
   let stateRepo: { findOneBy: jest.Mock; create: jest.Mock; save: jest.Mock };
   let mangaRepo: { find: jest.Mock; createQueryBuilder: jest.Mock };
-  let statusAutoUpdate: { flipCaughtUpToReading: jest.Mock };
+  let statusAutoUpdate: { onTotalChaptersIncreased: jest.Mock };
   let updateCalls: UpdateCall[];
   let sleepMock: jest.Mock;
   let savedState: CatalogSyncState;
@@ -77,10 +77,10 @@ describe('CatalogReleasesService', () => {
    */
   let affectedByMuId: Record<string, number>;
 
-  /** Déclare les mu_id que la base est censée connaître. */
+  /** Déclare les mu_id que la base est censée connaître (total 39 par défaut). */
   function dbKnows(...muIds: string[]): void {
     mangaRepo.find.mockImplementation(() =>
-      Promise.resolve(muIds.map((mu_id) => ({ mu_id }))),
+      Promise.resolve(muIds.map((mu_id) => ({ mu_id, total_chapters: 39 }))),
     );
   }
 
@@ -123,7 +123,7 @@ describe('CatalogReleasesService', () => {
     affectedByMuId = {};
     postMock = jest.fn();
     sleepMock = jest.fn().mockResolvedValue(undefined);
-    statusAutoUpdate = { flipCaughtUpToReading: jest.fn(async () => 0) };
+    statusAutoUpdate = { onTotalChaptersIncreased: jest.fn(async () => 0) };
 
     savedState = Object.assign(new CatalogSyncState(), {
       job_name: 'releases',
@@ -380,7 +380,7 @@ describe('CatalogReleasesService', () => {
       // 111 : total monte (1 ligne touchée). 222 : sortie d'un chapitre déjà
       // couvert par le total en base → GREATEST sans effet (0 ligne).
       affectedByMuId = { '111': 1, '222': 0 };
-      statusAutoUpdate.flipCaughtUpToReading.mockResolvedValue(2);
+      statusAutoUpdate.onTotalChaptersIncreased.mockResolvedValue(2);
       postMock.mockReturnValue(
         of(
           muReleasesPage({
@@ -393,9 +393,13 @@ describe('CatalogReleasesService', () => {
 
       const outcome = await service.runOnce();
 
-      expect(statusAutoUpdate.flipCaughtUpToReading).toHaveBeenCalledTimes(1);
-      expect(statusAutoUpdate.flipCaughtUpToReading).toHaveBeenCalledWith(
+      expect(statusAutoUpdate.onTotalChaptersIncreased).toHaveBeenCalledTimes(
+        1,
+      );
+      // Avec le total AVANT la hausse (notification « 39 → 40 »).
+      expect(statusAutoUpdate.onTotalChaptersIncreased).toHaveBeenCalledWith(
         '111',
+        39,
       );
       // Une requête ensembliste par série, comptée dans le bilan du run.
       expect(outcome?.statusFlips).toBe(2);
@@ -411,7 +415,7 @@ describe('CatalogReleasesService', () => {
 
       const outcome = await service.runOnce();
 
-      expect(statusAutoUpdate.flipCaughtUpToReading).not.toHaveBeenCalled();
+      expect(statusAutoUpdate.onTotalChaptersIncreased).not.toHaveBeenCalled();
       expect(outcome?.statusFlips).toBe(0);
     });
   });

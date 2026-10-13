@@ -92,6 +92,17 @@ export class FriendshipDto {
   }
 }
 
+/**
+ * Relation entre l'utilisateur courant et un résultat de recherche.
+ * Les relations bloquées ne sont jamais renvoyées (résultat masqué).
+ */
+export enum FriendRelation {
+  None = 'none',
+  PendingSent = 'pending_sent',
+  PendingReceived = 'pending_received',
+  Friends = 'friends',
+}
+
 /** Résultat d'une recherche d'utilisateur pour autocomplete. */
 export class UserSearchResultDto {
   @ApiProperty()
@@ -106,7 +117,19 @@ export class UserSearchResultDto {
   @ApiPropertyOptional()
   avatarUrl?: string | null;
 
-  static fromEntity(user: User): UserSearchResultDto {
+  @ApiProperty({
+    enum: FriendRelation,
+    description:
+      "Relation avec moi : 'none', 'pending_sent' (j'ai envoyé une demande), " +
+      "'pending_received' (j'ai reçu une demande), 'friends'",
+    example: FriendRelation.None,
+  })
+  relation: FriendRelation;
+
+  static fromEntity(
+    user: User,
+    relation: FriendRelation = FriendRelation.None,
+  ): UserSearchResultDto {
     const dto = new UserSearchResultDto();
     dto.id = user.id;
     dto.username = stripEmailFormat(user.username);
@@ -114,6 +137,7 @@ export class UserSearchResultDto {
       ? stripEmailFormat(user.displayName)
       : null;
     dto.avatarUrl = user.avatarUrl ?? null;
+    dto.relation = relation;
     return dto;
   }
 }

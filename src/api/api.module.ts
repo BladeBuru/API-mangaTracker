@@ -11,6 +11,7 @@ import { CommentsModule } from './comments/comments.module';
 import { SharingModule } from './sharing/sharing.module';
 import { CommunityModule } from './community/community.module';
 import { AuthorsModule } from './authors/authors.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -30,6 +31,8 @@ import { AuthorsModule } from './authors/authors.module';
     CommunityModule,
     // Pages auteur : mini bio + œuvres, depuis MangaUpdates (2026-09-30).
     AuthorsModule,
+    // Centre de notifications in-app unifié (2026-10).
+    NotificationsModule,
   ],
 })
 export class ApiModule {}

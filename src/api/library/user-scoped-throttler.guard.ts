@@ -1,13 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import {
+  ClientIpRequest,
+  extractClientIp,
+} from '@/shared/throttling/client-ip.util';
 
 /**
  * Forme minimale de la requête HTTP exploitée par le tracker.
- * `user` est injecté par `JwtAuthGuard` (passport) ; `ip` est le fallback.
+ * `user` est injecté par `JwtAuthGuard` (passport) ; l'IP réelle du client
+ * (cf. `extractClientIp`) est le fallback.
  */
-interface ThrottledRequest {
+interface ThrottledRequest extends ClientIpRequest {
   user?: { id?: number | string };
-  ip?: string;
 }
 
 /** Configuration d'un throttler nommé, isolé du `default` global. */
@@ -56,14 +60,16 @@ export abstract class UserScopedThrottlerGuard extends ThrottlerGuard {
 
   /**
    * Clé de rate-limit = `user-<id>` (bucket par utilisateur) ; fallback sur
-   * l'IP si aucun user (routes protégées par `JwtAuthGuard` → cas défensif).
+   * l'IP RÉELLE du client si aucun user (routes protégées par
+   * `JwtAuthGuard` → cas défensif) — jamais `req.ip`, qui vaut l'adresse du
+   * reverse proxy pour tout le monde.
    */
   protected async getTracker(req: Record<string, unknown>): Promise<string> {
-    const { user, ip } = req as ThrottledRequest;
-    const userId = user?.id;
+    const request = req as ThrottledRequest;
+    const userId = request.user?.id;
     if (userId !== undefined && userId !== null) {
       return `user-${userId}`;
     }
-    return ip ?? 'unknown';
+    return extractClientIp(request);
   }
 }

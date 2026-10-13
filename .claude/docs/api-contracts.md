@@ -111,6 +111,59 @@ Les trois listes respectent le **profil de type** de la bibliothèque (part pond
 | `PATCH` | `/users/password` | JWT | `{ currentPassword, newPassword }` | `{ message }` |
 | `DELETE` | `/users` | JWT | — | `{ message }` |
 
+### Notifications (`/notifications`) — contrat partagé avec l'app (2026-10-13)
+
+Toutes les routes : JWT, données de l'utilisateur courant uniquement.
+
+| Méthode | Route | Réponse |
+|---------|-------|---------|
+| `GET` | `/notifications?limit=30&before=<ISO>` | 200 `{ items: NotificationDto[], unreadCount, nextBefore }` — tri `createdAt` décroissant ; `limit` défaut 30, valeurs > 50 ramenées à 50 ; `limit < 1` ou `before` non ISO → 400 |
+| `GET` | `/notifications/unread-count` | 200 `{ count: number }` |
+| `POST` | `/notifications/:id/read` | **200** `{ ok: true }` — idempotent ; 404 si inconnue, d'un autre utilisateur ou id non UUID |
+| `POST` | `/notifications/read-all` | **200** `{ updated: number }` |
+
+```typescript
+NotificationDto {
+  id: string;                 // uuid
+  type: 'friend_request' | 'friend_accepted' | 'manga_share'
+      | 'reading_group_invite' | 'new_chapters';
+  createdAt: string;          // ISO 8601, précision ms
+  readAt: string | null;
+  actor: { id: number; username: string; displayName: string | null } | null;
+  manga: { muId: number; title: string; coverUrl: string | null } | null;
+  data:
+    | { friendshipId: number }                                   // friend_request, friend_accepted
+    | { shareId: number; message: string | null }                // manga_share
+    | { groupId: number; groupName: string | null }              // reading_group_invite
+    | { latestChapter: number; previousTotal: number; readChapters: number }; // new_chapters
+}
+```
+
+- **Pagination** : repasser `nextBefore` en `before` ; `null` = dernière page. Les notifications qui partagent la date de la dernière ligne sont servies ensemble (une page peut alors dépasser `limit`).
+- **`coverUrl`** = même URL que `mediumCoverUrl` des cartes manga (`manga.medium_cover_url`), `null` si inconnue.
+- **`actor`** : `null` pour `new_chapters` et quand l'auteur a supprimé son compte.
+- **`message` / `groupName`** relus en direct : `null` si le partage / le groupe a été supprimé.
+- **`new_chapters`** : une seule non lue par (utilisateur, manga) — les hausses suivantes mettent à jour `latestChapter` / `readChapters`, gardent le `previousTotal` d'origine et remontent la notification en tête.
+- **Effets de bord** : `friend_request` passe en lue à l'acceptation (ou au blocage) et disparaît si la demande est annulée / refusée (`DELETE /friends/:id`) ; `POST /sharing/inbox/mark-seen` marque aussi les `manga_share` lues.
+- **Rétention** : lues supprimées après 30 jours, toutes après 90 jours (purge 03:15).
+
+### Amis (`/friends`) — évolutions 2026-10-13
+
+| Méthode | Route | Évolution |
+|---------|-------|-----------|
+| `GET` | `/friends/search?q=` | Cherche dans `username` **et** `displayName`, sans casse ni accents ; renvoie aussi les utilisateurs déjà en relation avec un champ **`relation`** : `'none' \| 'pending_sent' \| 'pending_received' \| 'friends'` (champs existants inchangés, 20 résultats max). Les relations bloquées restent masquées. |
+| `GET` | `/friends/sent` | **Nouveau** — demandes envoyées en attente, même forme que `/friends/pending` (`FriendshipDto`, `direction: 'sent'`, l'autre utilisateur = le destinataire). |
+| `POST` | `/friends/request` | Relation existante → **409** `"Demande d'amitié déjà envoyée"` ou `"Vous êtes déjà amis"` (400 avant) ; bloquée → 403 inchangé. |
+| `DELETE` | `/friends/:id` | Le demandeur peut annuler sa demande en attente (déjà possible) ; la `friend_request` du destinataire est supprimée. |
+
+### Codes et quotas modifiés (2026-10-13)
+
+- `POST /sharing/inbox/mark-seen` et `POST /mangas/comments/:id/report` répondent **200** (201 avant).
+- `POST /library/save` sur un manga déjà présent : **409** (400 avant).
+- `PUT /library/chapter` : `total_chapters = 0` signifie « inconnu » → plus de 406, statut `reading` ; `readChapters` ≤ 100 000.
+- `MangaQuickViewDto.rating` de `GET /library/all` (et bibliothèque d'un ami) : **nombre** (`7.5`), plus la chaîne décimale `"7.50"` ; `null` conservé.
+- Rate limiting : le quota global (100/min) et les `@Throttle()` des routes publiques (auth, email) sont comptés par **IP client réelle** (dernier saut de `X-Forwarded-For` posé par NPMplus ; `CF-Connecting-IP` seulement si ce saut est un edge Cloudflare — en-têtes forgés ignorés) ; demande d'ami (5/min), commentaires / réponses / signalements (10/h), groupes de lecture (10/min), partage (30/min) sont comptés **par utilisateur**. En-têtes `X-RateLimit-*-<nom>` pour ces quotas nommés.
+
 ---
 
 ## DTOs principaux

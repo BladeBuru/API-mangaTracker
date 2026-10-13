@@ -16,6 +16,7 @@ import { LibraryModule } from '../library/library.module';
 import { LibraryService } from '../library/library.service';
 import { ChapterLogService } from '../library/chapter-log.service';
 import { ChapterReportService } from '../library/chapter-report.service';
+import { LibraryMangaResolverService } from '../library/library-manga-resolver.service';
 import { ReadingStatusAutoUpdateService } from '../library/reading-status-auto-update.service';
 import { UserMangaChapterLog } from '../library/user-manga-chapter-log.entity';
 import { MangaChapterReport } from '../library/manga-chapter-report.entity';
@@ -39,6 +40,7 @@ import { MangaTranslation } from './manga-translation.entity';
 import { DescriptionTranslationService } from './translation/description-translation.service';
 import { DeeplProvider } from './translation/deepl.provider';
 import { GtxProvider } from './translation/gtx.provider';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -66,6 +68,9 @@ import { GtxProvider } from './translation/gtx.provider';
     // Verrou MU partagé — instance unique pour TOUS les jobs MangaUpdates,
     // y compris ceux qui vivent hors de ce module (`ReaderSignalModule`).
     MuJobLockModule,
+    // Notifications « nouveaux chapitres » : ReadingStatusAutoUpdateService
+    // est re-déclaré ici. Module feuille → pas de cycle.
+    NotificationsModule,
   ],
   controllers: [
     MangasController,
@@ -80,6 +85,8 @@ import { GtxProvider } from './translation/gtx.provider';
     LibraryService,
     ChapterLogService,
     ChapterReportService,
+    // Fiche locale des écritures de bibliothèque (tolère une panne MU).
+    LibraryMangaResolverService,
     // Même doctrine que ChapterReportService : re-déclaré ici pour être
     // résolu dans CE contexte (MangasService, CatalogReleasesService et
     // ChapterReportService en dépendent). Stateless → deux instances OK.

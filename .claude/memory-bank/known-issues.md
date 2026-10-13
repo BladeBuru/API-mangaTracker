@@ -1,10 +1,59 @@
 # Problèmes Connus — Manga Tracker API
 
-**Dernière mise à jour :** 2026-09-09
+**Dernière mise à jour :** 2026-10-13
 
 ---
 
 ## 🐛 Problèmes Actifs (sécurité — détectés à l'évolution)
+
+### `/admin/sync-all` protégé par `?secret=` = mot de passe de la base
+- **Module** : mangas (`manga-covers.controller.ts`, `POST /mangas/admin/sync-all`)
+- **Sévérité** : 🟠 Haute (dette de sécurité)
+- **Découvert le** : 2026-10-13
+- **Statut** : Actif — hors périmètre du lot d'octobre, NON modifié
+
+**Description** : la route compare le paramètre de requête `secret` à
+`DATABASE_PASSWORD`. Le mot de passe de la base transite donc dans une URL :
+il finit dans les logs d'accès (Cloudflare, NPMplus), l'historique du client
+et les éventuels outils de monitoring. Une seule fuite de log = accès à la base.
+Pas de quota dédié non plus (seul le global 100/min par IP).
+
+**Solution envisagée** : secret dédié (`ADMIN_SYNC_SECRET`, ≥ 32 caractères)
+passé en en-tête (`Authorization: Bearer` ou `X-Admin-Secret`), comparaison à
+temps constant (`crypto.timingSafeEqual`), `@Throttle` strict, puis rotation
+du mot de passe de la base s'il a déjà été utilisé dans une URL.
+
+---
+
+### Rate limiting : en-têtes d'IP falsifiables (origine joignable sans Cloudflare)
+- **Module** : shared/throttling (`client-ip.util.ts`)
+- **Sévérité** : 🟡 Moyenne
+- **Découvert le** : 2026-10-13
+- **Statut** : Corrigé côté API le 2026-10-13 — durcissement réseau
+  recommandé (optionnel)
+
+**Constat** : l'origine est joignable SANS Cloudflare (`bladeburu.com`
+résout directement l'IP du NAS — le SSH :2222 l'utilise). Un attaquant peut
+donc écrire lui-même `CF-Connecting-IP` et `X-Forwarded-For` ; la première
+version du tracker les croyait et permettait de contourner les quotas par IP
+(login, register, email) en changeant d'en-tête à chaque requête.
+
+**Correction** (`extractClientIp`) : le pair = DERNIER élément de
+`X-Forwarded-For` (ajouté par NPMplus via `$proxy_add_x_forwarded_for`, non
+falsifiable), sinon `req.ip`, normalisé (`::ffff:`, port). `CF-Connecting-IP`
+n'est lu que si ce pair appartient aux plages Cloudflare publiées (codées en
+dur, relevées le 2026-10-13, `net.BlockList`) ; sinon le pair lui-même est le
+client. Juste aussi si NPMplus active `real_ip` (le dernier saut est alors le
+vrai client, hors plages Cloudflare).
+
+**Reste (réseau, hors code)** : n'accepter sur NPMplus (443) que les plages
+Cloudflare limiterait encore l'exposition. À revérifier si Cloudflare publie
+de nouvelles plages (un oubli n'ouvre pas de faille : le trafic concerné est
+compté par IP d'edge, donc plus sévèrement). Hypothèse : NPMplus reste le
+SEUL proxy devant le conteneur ; un proxy supplémentaire décalerait le
+« dernier saut ».
+
+---
 
 ### `synchronize: true` en TypeORM
 - **Module** : shared/typeorm
@@ -43,7 +92,10 @@
 - **Module** : main.ts / app.module.ts
 - **Sévérité** : 🟠 Haute
 - **Découvert le** : 2026-05
-- **Statut** : Actif
+- **Statut** : Résolu en grande partie — throttler global installé ; depuis
+  2026-10-13 compté par IP client réelle (`ClientIpThrottlerGuard`). Reste :
+  `@Throttle` renforcé sur `/auth/login` et `/auth/register` (absent du code,
+  à ajouter maintenant que le tracker par IP est fiable).
 
 **Description** : Aucun throttler configuré. `/auth/login` peut être brute-forcé sans limite côté serveur.
 
@@ -76,6 +128,55 @@
 ---
 
 ## ✅ Problèmes Résolus
+
+### Bascule « à jour » → « en cours » jamais exécutée en production
+- **Module** : library (`reading-status-auto-update.service.ts`)
+- **Résolu le** : 2026-10-13 (branche `fix/lot-octobre-api`)
+- **Symptôme** : un manga « à jour » restait « à jour » après la parution d'un
+  chapitre, alors que la règle produit est livrée depuis le 2026-09-05.
+- **Cause** : dans un UPDATE, TypeORM réécrit tout mot nu égal à une
+  propriété de l'entité. `manga` étant la relation de `UserManga`, la
+  sous-requête `FROM manga m` devenait `FROM "manga_id" m` → « relation
+  "manga_id" does not exist ». L'erreur était avalée (best-effort) : seul un
+  `Logger.error` par hausse de total. Les tests unitaires (mocks) ne voyaient
+  que la chaîne, jamais le SQL final.
+- **Solution** : `FROM "manga" m` (guillemets) + test qui inspecte le SQL
+  réellement produit par TypeORM, sans base.
+- **⚠️ Piège** : dans `createQueryBuilder().update(Entity)` / `.delete()`,
+  citer entre guillemets toute table ou colonne d'une sous-requête brute dont
+  le nom coïncide avec une propriété de l'entité (`manga`, `user`…).
+
+### Quotas de rate limiting partagés par tous les utilisateurs
+- **Module** : app.module / throttling
+- **Résolu le** : 2026-10-13
+- **Cause** : `ThrottlerGuard` global tracké par `req.ip`, qui vaut l'adresse
+  du reverse proxy (Cloudflare → NPMplus) pour tout le monde : 100 req/min et
+  les `@Throttle()` (5 demandes d'ami/min, 10 commentaires/h…) étaient un
+  budget global.
+- **Solution** : `ClientIpThrottlerGuard` en APP_GUARD (pair = dernier saut
+  de X-Forwarded-For, `CF-Connecting-IP` cru seulement depuis un edge
+  Cloudflare) ; écritures sociales sur des gardes par utilisateur
+  (`UserScopedThrottlerGuard`).
+
+### `PUT /library/chapter` en 503/500 quand MangaUpdates est indisponible
+- **Module** : library / mangas
+- **Résolu le** : 2026-10-13
+- **Cause** : `checkManga` rafraîchissait la fiche (> 6 h) de façon bloquante ;
+  un échec MU faisait échouer l'écriture de progression. `getMangaDetails`
+  lisait `error.response.status` sans garde → TypeError (500) sur timeout.
+- **Solution** : `LibraryMangaResolverService` retombe sur la ligne locale
+  (warn) ; garde `error.response?.status` (503).
+
+### Total de chapitres inconnu (0) → toute progression refusée (406)
+- **Module** : library
+- **Résolu le** : 2026-10-13
+- **Solution** : pas de plafond quand le total effectif vaut 0, statut
+  `reading`. Le plafond des signalements (`total + 200`) est conservé : il
+  borne la collusion sur un total monotone (A-5).
+
+### Note de la bibliothèque renvoyée en texte (`"7.50"`)
+- **Module** : mangas (`MangaQuickViewDto.fromLibrary`)
+- **Résolu le** : 2026-10-13 — `Number(rating)`, null conservé.
 
 ### Recommandations : ordre différent entre l'accueil et « Voir tout »
 

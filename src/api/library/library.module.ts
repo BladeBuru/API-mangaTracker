@@ -13,6 +13,7 @@ import { UserMangaChapterLog } from './user-manga-chapter-log.entity';
 import { ChapterLogService } from './chapter-log.service';
 import { MangaChapterReport } from './manga-chapter-report.entity';
 import { ChapterReportService } from './chapter-report.service';
+import { LibraryMangaResolverService } from './library-manga-resolver.service';
 import { ChapterReportController } from './chapter-report.controller';
 import { UserThrottlerGuard } from './user-throttler.guard';
 import { RecoCacheModule } from '../recommendations/reco-cache.module';
@@ -20,6 +21,7 @@ import { ReadingStatusAutoUpdateService } from './reading-status-auto-update.ser
 import { ReadingPositionController } from './reading-position.controller';
 import { ReadingPositionService } from './reading-position.service';
 import { ReadingPositionThrottlerGuard } from './reading-position-throttler.guard';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -28,6 +30,9 @@ import { ReadingPositionThrottlerGuard } from './reading-position-throttler.guar
     // mutation de sa bibliothèque (hotfix-v0-10-1 US-4). Module autonome
     // sans dépendance → pas de cycle library → recommendations.
     RecoCacheModule,
+    // Notifications « nouveaux chapitres » (ReadingStatusAutoUpdateService).
+    // Module feuille, sans dépendance métier → pas de cycle.
+    NotificationsModule,
     HttpModule,
     TypeOrmModule.forFeature([
       Manga,
@@ -50,6 +55,8 @@ import { ReadingPositionThrottlerGuard } from './reading-position-throttler.guar
     UpdateMangaService,
     ChapterLogService,
     ChapterReportService,
+    // Fiche locale des écritures de bibliothèque (tolère une panne MU).
+    LibraryMangaResolverService,
     // Bascule auto « à jour » → « en cours » quand le total de chapitres
     // augmente (consolidation communautaire ici ; sorties MU et refresh des
     // détails côté MangasModule).

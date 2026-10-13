@@ -1,9 +1,11 @@
 import { Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { DataSource, UpdateQueryBuilder } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { ReadingStatus } from './reading-status.enum';
 import { ReadingStatusAutoUpdateService } from './reading-status-auto-update.service';
+import { NotificationProducerService } from '@/api/notifications/notification-producer.service';
 
 /** Query builder d'UPDATE chainable, avec capture des clauses. */
 function createUpdateQb(affected: number | undefined) {
@@ -18,17 +20,82 @@ function createUpdateQb(affected: number | undefined) {
 describe('ReadingStatusAutoUpdateService', () => {
   let service: ReadingStatusAutoUpdateService;
   let userMangaRepo: { createQueryBuilder: jest.Mock };
+  let notifications: { newChapters: jest.Mock };
 
   async function build(qb: Record<string, jest.Mock>): Promise<void> {
     userMangaRepo = { createQueryBuilder: jest.fn(() => qb) };
+    notifications = { newChapters: jest.fn(async () => 2) };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReadingStatusAutoUpdateService,
         { provide: getRepositoryToken(UserManga), useValue: userMangaRepo },
+        { provide: NotificationProducerService, useValue: notifications },
       ],
     }).compile();
     service = module.get(ReadingStatusAutoUpdateService);
   }
+
+  it('génère un SQL que TypeORM ne réécrit pas (régression « relation "manga_id" does not exist »)', async () => {
+    // Vraies métadonnées TypeORM, sans connexion : seul le SQL produit
+    // compte. Dans un UPDATE, TypeORM réécrit les mots nus égaux à une
+    // propriété (`manga` → `"manga_id"`) : la sous-requête doit y échapper.
+    const ds = new DataSource({
+      type: 'postgres',
+      entities: [__dirname + '/../../**/*.entity.ts'],
+    });
+    await (
+      ds as unknown as { buildMetadatas(): Promise<void> }
+    ).buildMetadatas();
+    let sql = '';
+    const execute = jest
+      .spyOn(UpdateQueryBuilder.prototype, 'execute')
+      .mockImplementation(async function (this: UpdateQueryBuilder<unknown>) {
+        sql = this.getQuery();
+        return { affected: 1, raw: [], generatedMaps: [] };
+      });
+    const realRepo = ds.getRepository(UserManga);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReadingStatusAutoUpdateService,
+        {
+          provide: getRepositoryToken(UserManga),
+          useValue: { createQueryBuilder: () => realRepo.createQueryBuilder() },
+        },
+        { provide: NotificationProducerService, useValue: {} },
+      ],
+    }).compile();
+
+    await module.get(ReadingStatusAutoUpdateService).flipCaughtUpToReading(42);
+
+    execute.mockRestore();
+    expect(sql).toContain(
+      'FROM "manga" m WHERE m.mu_id = "user_manga"."manga_id"',
+    );
+    expect(sql).not.toContain('"manga_id" m');
+  });
+
+  describe('onTotalChaptersIncreased (point d’entrée unique d’une hausse)', () => {
+    it('bascule les « à jour » ET notifie les lecteurs en retard, avec le total d’avant', async () => {
+      const qb = createUpdateQb(3);
+      await build(qb);
+
+      const flipped = await service.onTotalChaptersIncreased('42', 39);
+
+      expect(flipped).toBe(3);
+      expect(qb.execute).toHaveBeenCalledTimes(1);
+      expect(notifications.newChapters).toHaveBeenCalledWith('42', 39);
+    });
+
+    it('notifie même quand la bascule échoue (best-effort indépendants)', async () => {
+      const qb = createUpdateQb(0);
+      qb.execute.mockRejectedValue(new Error('db down'));
+      await build(qb);
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+      await expect(service.onTotalChaptersIncreased(42, 10)).resolves.toBe(0);
+      expect(notifications.newChapters).toHaveBeenCalledWith(42, 10);
+    });
+  });
 
   it('bascule « à jour » → « en cours » en UNE requête ensembliste par manga', async () => {
     const qb = createUpdateQb(3);
@@ -53,7 +120,7 @@ describe('ReadingStatusAutoUpdateService', () => {
     });
     const progressClause: string = qb.andWhere.mock.calls[1][0];
     expect(progressClause).toContain('user_read_chapters <');
-    expect(progressClause).toContain('SELECT m.total_chapters FROM manga m');
+    expect(progressClause).toContain('SELECT m.total_chapters FROM "manga" m');
     expect(progressClause).toContain('m.mu_id = "user_manga"."manga_id"');
   });
 

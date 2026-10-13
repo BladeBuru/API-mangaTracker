@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -25,6 +24,7 @@ import {
 import { RecoCacheService } from '@/api/recommendations/reco-cache.service';
 import { ChapterLogService } from './chapter-log.service';
 import { ChapterReportService } from './chapter-report.service';
+import { LibraryMangaResolverService } from './library-manga-resolver.service';
 import {
   NEW_READ_CHAPTERS_PARAM,
   readingPositionInvalidationSet,
@@ -41,12 +41,11 @@ export class LibraryService {
     private readonly recoCache: RecoCacheService,
     private readonly chapterLogService: ChapterLogService,
     private readonly chapterReportService: ChapterReportService,
+    private readonly mangaResolver: LibraryMangaResolverService,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    @InjectRepository(Manga)
-    private readonly mangaRepository: Repository<Manga>,
     @InjectRepository(UserManga)
     private readonly userMangaRepository: Repository<UserManga>,
   ) {}
@@ -61,8 +60,10 @@ export class LibraryService {
       .andWhere('manga_id = :muId', { muId: muId.toString() })
       .getOne();
 
+    // 409 (et non 400) : le rejeu hors-ligne de l'app traite 409 comme
+    // « déjà fait » et passe à l'action suivante.
     if (existingUserMangaEntity !== null)
-      throw new BadRequestException('Manga already saved');
+      throw new ConflictException('Manga already saved');
 
     const userManga = new UserManga();
     userManga.user = userEntity;
@@ -160,13 +161,16 @@ export class LibraryService {
       mangaEntity.total_chapters,
     );
 
-    if (readChapters > effectiveTotal)
+    // `0` = total INCONNU (MU ne l'a pas encore fourni), pas « 0 chapitre » :
+    // plafonner refuserait toute progression sur ces titres.
+    const totalKnown = effectiveTotal > 0;
+    if (totalKnown && readChapters > effectiveTotal)
       throw new ChapterException(
         `${readChapters} (new value) is above ${effectiveTotal} (effective total number of chapters)`,
       );
 
     const readingStatus =
-      readChapters < effectiveTotal
+      !totalKnown || readChapters < effectiveTotal
         ? ReadingStatus.Reading
         : mangaEntity.completed
         ? ReadingStatus.Completed
@@ -328,40 +332,13 @@ export class LibraryService {
     return userEntity;
   }
 
+  /**
+   * Fiche locale du manga (créée / rafraîchie depuis MU au besoin) — cf.
+   * `LibraryMangaResolverService`, qui tolère une panne MU quand une ligne
+   * locale existe.
+   */
   async checkManga(muId: number): Promise<Manga> {
-    const mangaEntity = await this.mangasService.returnMangaIfExist(
-      muId.toString(),
-    );
-
-    if (mangaEntity === null) {
-      await this.mangaRepository.save(
-        Manga.fromMU(await this.mangasService.getMangaDetails(muId)),
-      );
-    } else if (
-      mangaEntity.updated_at < new Date(new Date().getTime() - 21600000) ||
-      mangaEntity.completed === null
-    ) {
-      const mangaDetails = Manga.fromMU(
-        await this.mangasService.getMangaDetails(muId),
-      );
-
-      // A-5 : GREATEST inconditionnel — total_chapters ne régresse jamais
-      // (regex status MU peu fiable, cf. decisions.md). completed écrasé.
-      // Bascule « à jour » → « en cours » : déjà déclenchée par
-      // `getMangaDetails` ci-dessus (même `newTotal`) — rien à faire ici.
-      await this.mangaRepository
-        .createQueryBuilder()
-        .update(Manga)
-        .set({
-          completed: mangaDetails.completed,
-          total_chapters: () => 'GREATEST(total_chapters, :newTotal)',
-        })
-        .setParameter('newTotal', Number(mangaDetails.total_chapters) || 0)
-        .where('mu_id = :muId', { muId: muId.toString() })
-        .execute();
-    }
-
-    return await this.mangasService.returnMangaIfExist(muId.toString());
+    return this.mangaResolver.resolve(muId);
   }
 
   async getUserManga(userId: number, muId: number): Promise<UserManga | null> {
