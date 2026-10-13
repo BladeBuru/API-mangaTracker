@@ -5,6 +5,7 @@ import { UserManga } from '@/api/mangas/user-manga.entity';
 import { UserFriendship } from './user-friendship.entity';
 import { FriendsService } from './friends.service';
 import { FriendsController } from './friends.controller';
+import { FriendRequestThrottlerGuard } from './friend-request-throttler.guard';
 
 /**
  * Module Amis (Phase 6). Expose CRUD complet sur les relations
@@ -14,7 +15,9 @@ import { FriendsController } from './friends.controller';
 @Module({
   imports: [TypeOrmModule.forFeature([User, UserFriendship, UserManga])],
   controllers: [FriendsController],
-  providers: [FriendsService],
+  // Garde de quota par utilisateur déclaré en provider (injection throttler
+  // + onModuleInit), comme dans LibraryModule.
+  providers: [FriendsService, FriendRequestThrottlerGuard],
   exports: [FriendsService],
 })
 export class FriendsModule {}

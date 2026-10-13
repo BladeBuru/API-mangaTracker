@@ -9,6 +9,8 @@ import { SharingService } from './sharing.service';
 import { SharingController } from './sharing.controller';
 import { ReadingGroupsService } from './reading-groups.service';
 import { ReadingGroupsController } from './reading-groups.controller';
+import { MangaShareThrottlerGuard } from './manga-share-throttler.guard';
+import { ReadingGroupWriteThrottlerGuard } from './reading-group-write-throttler.guard';
 
 /**
  * Module Sharing (Phase 8 + 8.3). Partage de manga entre amis +
@@ -26,7 +28,13 @@ import { ReadingGroupsController } from './reading-groups.controller';
     ]),
   ],
   controllers: [SharingController, ReadingGroupsController],
-  providers: [SharingService, ReadingGroupsService],
+  providers: [
+    SharingService,
+    ReadingGroupsService,
+    // Gardes de quota par utilisateur (injection throttler + onModuleInit).
+    MangaShareThrottlerGuard,
+    ReadingGroupWriteThrottlerGuard,
+  ],
   exports: [SharingService, ReadingGroupsService],
 })
 export class SharingModule {}

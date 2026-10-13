@@ -5,6 +5,7 @@ import { MangaComment } from './manga-comment.entity';
 import { CommentReport } from './comment-report.entity';
 import { CommentsService } from './comments.service';
 import { CommentsController } from './comments.controller';
+import { CommentWriteThrottlerGuard } from './comment-write-throttler.guard';
 
 /**
  * Module Commentaires (Phase 7). Expose CRUD complet + threading +
@@ -13,7 +14,7 @@ import { CommentsController } from './comments.controller';
 @Module({
   imports: [TypeOrmModule.forFeature([Manga, MangaComment, CommentReport])],
   controllers: [CommentsController],
-  providers: [CommentsService],
+  providers: [CommentsService, CommentWriteThrottlerGuard],
   exports: [CommentsService],
 })
 export class CommentsModule {}

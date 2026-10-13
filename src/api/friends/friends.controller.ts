@@ -16,11 +16,11 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '@/api/user/auth/guard/auth.guard';
 import { UserDecorator } from '@/shared/Decorator/user.decorator';
 import { MangaQuickViewDto } from '@/api/mangas/dto/manga-quick-view.dto';
 import { FriendsService } from './friends.service';
+import { FriendRequestThrottlerGuard } from './friend-request-throttler.guard';
 import {
   FriendshipDto,
   SendFriendRequestDto,
@@ -43,8 +43,9 @@ export class FriendsController {
   })
   @ApiResponse({ status: 403, description: 'Relation bloquée' })
   @ApiResponse({ status: 404, description: 'Utilisateur introuvable' })
-  // Anti-spam : 5 demandes par minute par user (throttler explicite).
-  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  // Anti-spam : 5 demandes par minute PAR UTILISATEUR (garde nominatif,
+  // exécuté après le JwtAuthGuard de la classe).
+  @UseGuards(FriendRequestThrottlerGuard)
   @Post('request')
   async request(
     @Body() body: SendFriendRequestDto,
