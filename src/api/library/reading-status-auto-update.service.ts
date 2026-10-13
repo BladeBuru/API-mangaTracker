@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UserManga } from '@/api/mangas/user-manga.entity';
+import { NotificationProducerService } from '@/api/notifications/notification-producer.service';
 import { ReadingStatus } from './reading-status.enum';
 
 /**
@@ -22,7 +23,10 @@ const CURRENT_TOTAL_SUBQUERY =
   'SELECT m.total_chapters FROM "manga" m WHERE m.mu_id = "user_manga"."manga_id"';
 
 /**
- * Bascule automatique « à jour » → « en cours ».
+ * Bascule automatique « à jour » → « en cours », et point d'entrée UNIQUE
+ * des effets d'une hausse de `manga.total_chapters`
+ * (`onTotalChaptersIncreased` : bascule + notification « nouveaux
+ * chapitres »).
  *
  * Règle produit : *« si on détecte un nouveau chapitre sur un manga que j'ai
  * marqué "à jour", c'est qu'on n'est plus à jour : on est "en cours" »*.
@@ -53,7 +57,31 @@ export class ReadingStatusAutoUpdateService {
   constructor(
     @InjectRepository(UserManga)
     private readonly userMangaRepository: Repository<UserManga>,
+    private readonly notifications: NotificationProducerService,
   ) {}
+
+  /**
+   * À appeler par TOUT chemin qui vient de faire monter le total de `muId`
+   * (sorties MU, signalement communautaire, rafraîchissement des détails).
+   *
+   * 1. bascule « à jour » → « en cours » ;
+   * 2. notification « nouveaux chapitres » pour chaque lecteur « en cours »
+   *    ou « à jour » en retard sur le nouveau total — une requête
+   *    ensembliste, dédoublonnée par (utilisateur, manga).
+   *
+   * Best-effort de bout en bout : ni l'une ni l'autre ne lève.
+   *
+   * @param previousTotal Total AVANT la hausse (affiché « 40 → 47 »).
+   * @returns Nombre d'entrées basculées.
+   */
+  async onTotalChaptersIncreased(
+    muId: number | string,
+    previousTotal: number,
+  ): Promise<number> {
+    const flipped = await this.flipCaughtUpToReading(muId);
+    await this.notifications.newChapters(muId, previousTotal);
+    return flipped;
+  }
 
   /**
    * À appeler juste APRÈS une hausse de `manga.total_chapters` pour `muId`.

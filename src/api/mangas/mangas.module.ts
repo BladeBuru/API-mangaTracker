@@ -40,6 +40,7 @@ import { MangaTranslation } from './manga-translation.entity';
 import { DescriptionTranslationService } from './translation/description-translation.service';
 import { DeeplProvider } from './translation/deepl.provider';
 import { GtxProvider } from './translation/gtx.provider';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -67,6 +68,9 @@ import { GtxProvider } from './translation/gtx.provider';
     // Verrou MU partagé — instance unique pour TOUS les jobs MangaUpdates,
     // y compris ceux qui vivent hors de ce module (`ReaderSignalModule`).
     MuJobLockModule,
+    // Notifications « nouveaux chapitres » : ReadingStatusAutoUpdateService
+    // est re-déclaré ici. Module feuille → pas de cycle.
+    NotificationsModule,
   ],
   controllers: [
     MangasController,

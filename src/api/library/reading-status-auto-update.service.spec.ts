@@ -5,6 +5,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { ReadingStatus } from './reading-status.enum';
 import { ReadingStatusAutoUpdateService } from './reading-status-auto-update.service';
+import { NotificationProducerService } from '@/api/notifications/notification-producer.service';
 
 /** Query builder d'UPDATE chainable, avec capture des clauses. */
 function createUpdateQb(affected: number | undefined) {
@@ -19,13 +20,16 @@ function createUpdateQb(affected: number | undefined) {
 describe('ReadingStatusAutoUpdateService', () => {
   let service: ReadingStatusAutoUpdateService;
   let userMangaRepo: { createQueryBuilder: jest.Mock };
+  let notifications: { newChapters: jest.Mock };
 
   async function build(qb: Record<string, jest.Mock>): Promise<void> {
     userMangaRepo = { createQueryBuilder: jest.fn(() => qb) };
+    notifications = { newChapters: jest.fn(async () => 2) };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReadingStatusAutoUpdateService,
         { provide: getRepositoryToken(UserManga), useValue: userMangaRepo },
+        { provide: NotificationProducerService, useValue: notifications },
       ],
     }).compile();
     service = module.get(ReadingStatusAutoUpdateService);
@@ -57,6 +61,7 @@ describe('ReadingStatusAutoUpdateService', () => {
           provide: getRepositoryToken(UserManga),
           useValue: { createQueryBuilder: () => realRepo.createQueryBuilder() },
         },
+        { provide: NotificationProducerService, useValue: {} },
       ],
     }).compile();
 
@@ -67,6 +72,29 @@ describe('ReadingStatusAutoUpdateService', () => {
       'FROM "manga" m WHERE m.mu_id = "user_manga"."manga_id"',
     );
     expect(sql).not.toContain('"manga_id" m');
+  });
+
+  describe('onTotalChaptersIncreased (point d’entrée unique d’une hausse)', () => {
+    it('bascule les « à jour » ET notifie les lecteurs en retard, avec le total d’avant', async () => {
+      const qb = createUpdateQb(3);
+      await build(qb);
+
+      const flipped = await service.onTotalChaptersIncreased('42', 39);
+
+      expect(flipped).toBe(3);
+      expect(qb.execute).toHaveBeenCalledTimes(1);
+      expect(notifications.newChapters).toHaveBeenCalledWith('42', 39);
+    });
+
+    it('notifie même quand la bascule échoue (best-effort indépendants)', async () => {
+      const qb = createUpdateQb(0);
+      qb.execute.mockRejectedValue(new Error('db down'));
+      await build(qb);
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+      await expect(service.onTotalChaptersIncreased(42, 10)).resolves.toBe(0);
+      expect(notifications.newChapters).toHaveBeenCalledWith(42, 10);
+    });
   });
 
   it('bascule « à jour » → « en cours » en UNE requête ensembliste par manga', async () => {

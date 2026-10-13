@@ -72,7 +72,7 @@ describe('MangasService', () => {
         },
         {
           provide: ReadingStatusAutoUpdateService,
-          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
+          useValue: { onTotalChaptersIncreased: jest.fn(async () => 0) },
         },
         { provide: RecoGraphIngestService, useValue: mockRecoGraph() },
       ],
@@ -174,7 +174,7 @@ describe('MangasService — getMangaDetails : UPDATE null-safe', () => {
         },
         {
           provide: ReadingStatusAutoUpdateService,
-          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
+          useValue: { onTotalChaptersIncreased: jest.fn(async () => 0) },
         },
         { provide: RecoGraphIngestService, useValue: mockRecoGraph() },
       ],
@@ -243,9 +243,9 @@ describe('MangasService — getMangaDetails : UPDATE null-safe', () => {
       mangaRepoFindOne = mangaRepo.findOne;
       flip = (
         service as unknown as {
-          readingStatusAutoUpdate: { flipCaughtUpToReading: jest.Mock };
+          readingStatusAutoUpdate: { onTotalChaptersIncreased: jest.Mock };
         }
-      ).readingStatusAutoUpdate.flipCaughtUpToReading;
+      ).readingStatusAutoUpdate.onTotalChaptersIncreased;
     });
 
     it('bascule quand MU annonce plus de chapitres que le total en base (39 → 40)', async () => {
@@ -259,7 +259,8 @@ describe('MangasService — getMangaDetails : UPDATE null-safe', () => {
         expect.objectContaining({ where: { mu_id: '123' } }),
       );
       expect(flip).toHaveBeenCalledTimes(1);
-      expect(flip).toHaveBeenCalledWith(123);
+      // Avec le total d'avant (notification « nouveaux chapitres » 39 → 40).
+      expect(flip).toHaveBeenCalledWith(123, 39);
     });
 
     it('ne bascule PAS sur un simple rafraîchissement sans nouveau chapitre (40 → 40)', async () => {
@@ -410,7 +411,7 @@ describe('MangasService — searchManga', () => {
         },
         {
           provide: ReadingStatusAutoUpdateService,
-          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
+          useValue: { onTotalChaptersIncreased: jest.fn(async () => 0) },
         },
         { provide: RecoGraphIngestService, useValue: mockRecoGraph() },
       ],
@@ -583,7 +584,7 @@ describe('MangasService — getRecommendationsAsQuickView : exclusion des titres
         { provide: DismissalService, useValue: { getDismissedMuIds } },
         {
           provide: ReadingStatusAutoUpdateService,
-          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
+          useValue: { onTotalChaptersIncreased: jest.fn(async () => 0) },
         },
         { provide: RecoGraphIngestService, useValue: mockRecoGraph() },
       ],
@@ -714,7 +715,7 @@ describe('MangasService — graphe de voisinage MangaUpdates', () => {
         },
         {
           provide: ReadingStatusAutoUpdateService,
-          useValue: { flipCaughtUpToReading: jest.fn(async () => 0) },
+          useValue: { onTotalChaptersIncreased: jest.fn(async () => 0) },
         },
         { provide: RecoGraphIngestService, useValue: recoGraph },
       ],

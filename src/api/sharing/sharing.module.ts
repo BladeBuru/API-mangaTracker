@@ -11,6 +11,7 @@ import { ReadingGroupsService } from './reading-groups.service';
 import { ReadingGroupsController } from './reading-groups.controller';
 import { MangaShareThrottlerGuard } from './manga-share-throttler.guard';
 import { ReadingGroupWriteThrottlerGuard } from './reading-group-write-throttler.guard';
+import { NotificationsModule } from '@/api/notifications/notifications.module';
 
 /**
  * Module Sharing (Phase 8 + 8.3). Partage de manga entre amis +
@@ -26,6 +27,8 @@ import { ReadingGroupWriteThrottlerGuard } from './reading-group-write-throttler
       ReadingGroupMember,
       UserFriendship,
     ]),
+    // Partages et invitations → centre de notifications (module feuille).
+    NotificationsModule,
   ],
   controllers: [SharingController, ReadingGroupsController],
   providers: [

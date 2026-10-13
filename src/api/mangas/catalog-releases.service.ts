@@ -309,17 +309,22 @@ export class CatalogReleasesService {
     if (updates.length === 0) return { updated: 0, unknown: 0, statusFlips: 0 };
 
     // Un seul SELECT pour savoir lesquelles existent, plutôt qu'un UPDATE à
-    // vide par série inconnue (la grande majorité du flux MU).
+    // vide par série inconnue (la grande majorité du flux MU). Le total lu
+    // ici est celui AVANT la hausse (affiché « 40 → 47 » par la
+    // notification « nouveaux chapitres »).
     const known = await this.mangaRepository.find({
       where: { mu_id: In(updates.map((u) => u.muId)) },
-      select: ['mu_id'],
+      select: ['mu_id', 'total_chapters'],
     });
-    const knownIds = new Set(known.map((m) => String(m.mu_id)));
+    const previousTotals = new Map(
+      known.map((m) => [String(m.mu_id), Number(m.total_chapters) || 0]),
+    );
 
     let updated = 0;
     let statusFlips = 0;
     for (const update of updates) {
-      if (!knownIds.has(update.muId)) continue;
+      const previousTotal = previousTotals.get(update.muId);
+      if (previousTotal === undefined) continue;
       // Invariant A-5 : `total_chapters` est monotone croissant. Une sortie
       // isolée d'un vieux chapitre (rescan, retraduction) ne doit JAMAIS faire
       // régresser un total déjà plus élevé — d'où GREATEST plutôt qu'une
@@ -337,11 +342,17 @@ export class CatalogReleasesService {
       updated += 1;
 
       // Nouveau chapitre paru → les lecteurs « à jour » de cette série ne le
-      // sont plus. Une requête ensembliste par série dont le total a monté,
-      // jamais par utilisateur.
+      // sont plus, et les lecteurs en retard sont notifiés. Requêtes
+      // ensemblistes par série dont le total a monté, jamais par utilisateur.
       if (Number(result?.affected ?? 0) > 0) {
-        statusFlips += await this.readingStatusAutoUpdate.flipCaughtUpToReading(
+        statusFlips +=
+          await this.readingStatusAutoUpdate.onTotalChaptersIncreased(
+            update.muId,
+            previousTotal,
+          );
+        previousTotals.set(
           update.muId,
+          Math.max(previousTotal, update.chapter),
         );
       }
     }

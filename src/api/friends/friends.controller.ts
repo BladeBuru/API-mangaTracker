@@ -39,7 +39,12 @@ export class FriendsController {
   @ApiResponse({ status: 201, type: FriendshipDto })
   @ApiResponse({
     status: 400,
-    description: 'Relation déjà existante / self-add',
+    description: 'Auto-ajout ou cible manquante',
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      "Relation déjà existante : « Demande d'amitié déjà envoyée » ou « Vous êtes déjà amis »",
   })
   @ApiResponse({ status: 403, description: 'Relation bloquée' })
   @ApiResponse({ status: 404, description: 'Utilisateur introuvable' })
@@ -68,7 +73,19 @@ export class FriendsController {
     return this.service.listPendingReceived(user.id);
   }
 
-  @ApiOperation({ summary: "Recherche d'utilisateurs pour autocomplete" })
+  @ApiOperation({
+    summary: 'Demandes envoyées en attente (autre utilisateur = destinataire)',
+  })
+  @ApiResponse({ status: 200, type: [FriendshipDto] })
+  @Get('sent')
+  async listSent(@UserDecorator() user: any): Promise<FriendshipDto[]> {
+    return this.service.listPendingSent(user.id);
+  }
+
+  @ApiOperation({
+    summary:
+      "Recherche d'utilisateurs (username ou nom affiché, sans casse ni accents) avec l'état de la relation",
+  })
   @ApiResponse({ status: 200, type: [UserSearchResultDto] })
   @Get('search')
   async search(
@@ -104,8 +121,13 @@ export class FriendsController {
     return this.service.updateStatus(user.id, id, body.status);
   }
 
-  @ApiOperation({ summary: 'Supprimer une amitié' })
-  @ApiResponse({ status: 200 })
+  @ApiOperation({
+    summary:
+      'Supprimer une amitié, annuler sa demande envoyée ou refuser une demande reçue',
+  })
+  @ApiResponse({ status: 200, description: '{ deleted: true }' })
+  @ApiResponse({ status: 403, description: 'Pas dans cette relation' })
+  @ApiResponse({ status: 404, description: 'Relation introuvable' })
   @Delete(':id')
   async delete(
     @Param('id', ParseIntPipe) id: number,

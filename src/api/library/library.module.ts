@@ -21,6 +21,7 @@ import { ReadingStatusAutoUpdateService } from './reading-status-auto-update.ser
 import { ReadingPositionController } from './reading-position.controller';
 import { ReadingPositionService } from './reading-position.service';
 import { ReadingPositionThrottlerGuard } from './reading-position-throttler.guard';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -29,6 +30,9 @@ import { ReadingPositionThrottlerGuard } from './reading-position-throttler.guar
     // mutation de sa bibliothèque (hotfix-v0-10-1 US-4). Module autonome
     // sans dépendance → pas de cycle library → recommendations.
     RecoCacheModule,
+    // Notifications « nouveaux chapitres » (ReadingStatusAutoUpdateService).
+    // Module feuille, sans dépendance métier → pas de cycle.
+    NotificationsModule,
     HttpModule,
     TypeOrmModule.forFeature([
       Manga,

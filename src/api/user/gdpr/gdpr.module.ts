@@ -4,6 +4,7 @@ import User from '@/api/user/user.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import { UserSession } from '@/api/user/auth/user-session.entity';
 import { UserMangaRecommendation } from '@/api/community/user-manga-recommendation.entity';
+import { Notification } from '@/api/notifications/notification.entity';
 import { GdprController } from './gdpr.controller';
 import { GdprService } from './gdpr.service';
 
@@ -21,6 +22,7 @@ import { GdprService } from './gdpr.service';
       UserManga,
       UserSession,
       UserMangaRecommendation,
+      Notification,
     ]),
   ],
   controllers: [GdprController],

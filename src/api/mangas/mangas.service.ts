@@ -205,8 +205,12 @@ export class MangasService {
     // Nouveaux chapitres côté MU → « à jour » n'est plus vrai pour ceux qui
     // n'ont pas lu jusqu'au nouveau total. Couvre aussi `checkManga` (refresh
     // 6h), `UpdateMangaService` et `MangaSyncService`, qui passent tous ici.
+    // Même point d'entrée pour la notification « nouveaux chapitres ».
     if (previousTotal !== null && newTotal > previousTotal) {
-      await this.readingStatusAutoUpdate.flipCaughtUpToReading(muId);
+      await this.readingStatusAutoUpdate.onTotalChaptersIncreased(
+        muId,
+        previousTotal,
+      );
     }
 
     // Graphe de voisinage MU en arrière-plan (fire-and-forget) — **coût

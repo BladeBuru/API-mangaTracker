@@ -10,11 +10,10 @@ import { In, IsNull, Repository } from 'typeorm';
 import { MangaShare } from './manga-share.entity';
 import { Manga } from '@/api/mangas/manga.entity';
 import User from '@/api/user/user.entity';
-import {
-  FriendshipStatus,
-  UserFriendship,
-} from '../friends/user-friendship.entity';
+import { UserFriendship } from '../friends/user-friendship.entity';
+import { filterAcceptedFriendIds } from '../friends/accepted-friends.query';
 import { ShareMangaDto, MangaShareDto } from './dto/share.dto';
+import { NotificationProducerService } from '@/api/notifications/notification-producer.service';
 
 /**
  * Service de partage de manga entre amis (Phase 8).
@@ -36,6 +35,7 @@ export class SharingService {
     private readonly mangaRepo: Repository<Manga>,
     @InjectRepository(UserFriendship)
     private readonly friendshipRepo: Repository<UserFriendship>,
+    private readonly notifications: NotificationProducerService,
   ) {}
 
   async shareWithFriends(
@@ -51,30 +51,10 @@ export class SharingService {
     if (!manga) throw new NotFoundException('Manga not found');
 
     // Vérifier l'amitié pour chaque addressee.
-    const friendships = await this.friendshipRepo.find({
-      where: [
-        {
-          requester: { id: senderId },
-          addressee: { id: In(body.friendIds) },
-          status: FriendshipStatus.Accepted,
-        },
-        {
-          requester: { id: In(body.friendIds) },
-          addressee: { id: senderId },
-          status: FriendshipStatus.Accepted,
-        },
-      ],
-      relations: ['requester', 'addressee'],
-    });
-    const acceptedIds = new Set<number>();
-    for (const f of friendships) {
-      const other =
-        f.requester.id === senderId ? f.addressee.id : f.requester.id;
-      acceptedIds.add(other);
-    }
-
-    const validAddresseeIds = body.friendIds.filter((id) =>
-      acceptedIds.has(id),
+    const validAddresseeIds = await filterAcceptedFriendIds(
+      this.friendshipRepo,
+      senderId,
+      body.friendIds,
     );
     if (validAddresseeIds.length === 0) {
       throw new ForbiddenException(
@@ -106,6 +86,17 @@ export class SharingService {
       created.push(saved);
     }
 
+    // Une notification par partage RÉELLEMENT créé (pas pour les doublons
+    // non vus ignorés ci-dessus).
+    await this.notifications.mangaShared(
+      senderId,
+      manga.mu_id,
+      created.map((share) => ({
+        id: share.id,
+        addresseeId: share.addressee.id,
+      })),
+    );
+
     // Re-fetch with relations pour mapper en DTO.
     if (created.length === 0) return [];
     const full = await this.shareRepo.find({
@@ -126,7 +117,10 @@ export class SharingService {
     return rows.map((s) => MangaShareDto.fromEntity(s));
   }
 
-  /** Marque tous les shares non-vus d'un user comme vus (badge à 0). */
+  /**
+   * Marque tous les shares non-vus d'un user comme vus (badge à 0), ainsi
+   * que ses notifications `manga_share` : les deux badges restent d'accord.
+   */
   async markAllSeen(userId: number): Promise<{ updated: number }> {
     const res = await this.shareRepo
       .createQueryBuilder()
@@ -135,6 +129,7 @@ export class SharingService {
       .where('addressee_id = :userId', { userId })
       .andWhere('seenAt IS NULL')
       .execute();
+    await this.notifications.mangaSharesSeen(userId);
     return { updated: res.affected ?? 0 };
   }
 

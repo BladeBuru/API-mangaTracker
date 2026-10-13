@@ -11,14 +11,13 @@ import { ReadingGroup, ReadingGroupMember } from './reading-group.entity';
 import { Manga } from '@/api/mangas/manga.entity';
 import { UserManga } from '@/api/mangas/user-manga.entity';
 import User from '@/api/user/user.entity';
-import {
-  FriendshipStatus,
-  UserFriendship,
-} from '../friends/user-friendship.entity';
+import { UserFriendship } from '../friends/user-friendship.entity';
+import { filterAcceptedFriendIds } from '../friends/accepted-friends.query';
 import {
   CreateReadingGroupDto,
   ReadingGroupDto,
 } from './dto/reading-group.dto';
+import { NotificationProducerService } from '@/api/notifications/notification-producer.service';
 
 /**
  * Service "lecture à deux" (Phase 8.3).
@@ -47,6 +46,7 @@ export class ReadingGroupsService {
     private readonly userMangaRepo: Repository<UserManga>,
     @InjectRepository(UserFriendship)
     private readonly friendshipRepo: Repository<UserFriendship>,
+    private readonly notifications: NotificationProducerService,
   ) {}
 
   /**
@@ -81,7 +81,8 @@ export class ReadingGroupsService {
     if (!manga) throw new NotFoundException('Manga not found');
 
     // Vérifie l'amitié pour chaque invité.
-    const validInviteIds = await this.filterAcceptedFriendIds(
+    const validInviteIds = await filterAcceptedFriendIds(
+      this.friendshipRepo,
       ownerId,
       inviteIds,
     );
@@ -122,6 +123,12 @@ export class ReadingGroupsService {
         });
         await this.memberRepo.save(newMembers);
       }
+      await this.notifications.readingGroupInvites(
+        ownerId,
+        existing.id,
+        manga.mu_id,
+        newMemberIds,
+      );
       return this.getGroup(ownerId, existing.id);
     }
 
@@ -146,6 +153,12 @@ export class ReadingGroupsService {
       return m;
     });
     await this.memberRepo.save(members);
+    await this.notifications.readingGroupInvites(
+      ownerId,
+      savedGroup.id,
+      manga.mu_id,
+      validInviteIds,
+    );
 
     return this.getGroup(ownerId, savedGroup.id);
   }
@@ -210,7 +223,7 @@ export class ReadingGroupsService {
   ): Promise<ReadingGroupDto> {
     const group = await this.groupRepo.findOne({
       where: { id: groupId },
-      relations: ['owner', 'members', 'members.user'],
+      relations: ['owner', 'manga', 'members', 'members.user'],
     });
     if (!group) throw new NotFoundException('Group not found');
     if (group.owner.id !== currentUserId) {
@@ -227,9 +240,11 @@ export class ReadingGroupsService {
       throw new BadRequestException('Cet utilisateur est déjà dans le groupe');
     }
 
-    const accepted = await this.filterAcceptedFriendIds(currentUserId, [
-      friendId,
-    ]);
+    const accepted = await filterAcceptedFriendIds(
+      this.friendshipRepo,
+      currentUserId,
+      [friendId],
+    );
     if (accepted.length === 0) {
       throw new ForbiddenException("Cette personne n'est pas votre ami");
     }
@@ -238,6 +253,12 @@ export class ReadingGroupsService {
     member.group = group;
     member.user = { id: friendId } as User;
     await this.memberRepo.save(member);
+    await this.notifications.readingGroupInvites(
+      currentUserId,
+      groupId,
+      group.manga.mu_id,
+      [friendId],
+    );
 
     return this.getGroup(currentUserId, groupId);
   }
@@ -303,16 +324,11 @@ export class ReadingGroupsService {
   }
 
   /**
-   * Pour chaque membre du groupe, lookup sa progression sur le manga
-   * depuis `user_manga`. Retourne un map `{userId: chapterCount | null}`.
+   * Retourne progression + custom_link pour chaque membre du groupe, lus
+   * depuis `user_manga` (`{userId: chapterCount | null}`).
    *
    * **Bug fix 2026-05-18** : Postgres lowercase les alias non-quotés
-   * (`AS userId` → `AS userid` dans le résultat). On utilise donc des
-   * alias lowercase + cast explicite du manga_id pour éviter les
-   * mismatches bigint/string.
-   */
-  /**
-   * Retourne progression + custom_link pour chaque membre du groupe.
+   * (`AS userId` → `AS userid`) → alias lowercase explicites.
    *
    * **2026-05-19** : ajout du `custom_link` (URL de lecture du membre) pour
    * permettre la feature "copier le lien de chapitre d'un ami" côté Flutter.
@@ -354,40 +370,5 @@ export class ReadingGroupsService {
       customLinks[uid] = link && link.length > 0 ? link : null;
     }
     return { progress, customLinks };
-  }
-
-  /**
-   * Garde uniquement les ids qui sont des amis acceptés de `userId`.
-   * Sécurité critique : empêche d'inviter quelqu'un qui n'est pas ami
-   * (spam).
-   */
-  private async filterAcceptedFriendIds(
-    userId: number,
-    candidateIds: number[],
-  ): Promise<number[]> {
-    if (candidateIds.length === 0) return [];
-
-    const friendships = await this.friendshipRepo.find({
-      where: [
-        {
-          requester: { id: userId },
-          addressee: { id: In(candidateIds) },
-          status: FriendshipStatus.Accepted,
-        },
-        {
-          requester: { id: In(candidateIds) },
-          addressee: { id: userId },
-          status: FriendshipStatus.Accepted,
-        },
-      ],
-      relations: ['requester', 'addressee'],
-    });
-
-    const acceptedIds = new Set<number>();
-    for (const f of friendships) {
-      const other = f.requester.id === userId ? f.addressee.id : f.requester.id;
-      acceptedIds.add(other);
-    }
-    return candidateIds.filter((id) => acceptedIds.has(id));
   }
 }
