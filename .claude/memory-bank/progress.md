@@ -40,9 +40,10 @@ Branche `fix/lot-octobre-api` (pendant Flutter développé en parallèle —
   compilée (codes, contrat JSON, 429 par utilisateur).
 
 **Reste à faire / à surveiller après déploiement** :
-1. Vérifier en prod que `CF-Connecting-IP` arrive bien jusqu'au conteneur
-   (en-têtes `X-RateLimit-*` qui décroissent par client, pas globalement) ;
-   restreindre NPMplus aux IP Cloudflare (cf. known-issues.md).
+1. Vérifier en prod que NPMplus ajoute bien l'edge Cloudflare en DERNIER
+   élément de `X-Forwarded-For` (`$proxy_add_x_forwarded_for`, défaut NPM) :
+   `X-RateLimit-Remaining` doit décroître par client, pas globalement. Option
+   réseau : n'accepter sur NPMplus que les plages Cloudflare (cf. known-issues.md).
 2. Premier cron 02:00 : logs `notification(s) « nouveaux chapitres »` et
    `basculée(s) en « en cours »` (première bascule réelle depuis 2026-09-05).
 3. Collection Postman distante : adapter les assertions 400 → 409 (doublons)

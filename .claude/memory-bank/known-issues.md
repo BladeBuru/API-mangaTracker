@@ -25,23 +25,33 @@ du mot de passe de la base s'il a déjà été utilisé dans une URL.
 
 ---
 
-### Rate limiting : confiance dans `CF-Connecting-IP` / `X-Forwarded-For`
+### Rate limiting : en-têtes d'IP falsifiables (origine joignable sans Cloudflare)
 - **Module** : shared/throttling (`client-ip.util.ts`)
 - **Sévérité** : 🟡 Moyenne
 - **Découvert le** : 2026-10-13
-- **Statut** : Actif (risque résiduel documenté)
+- **Statut** : Corrigé côté API le 2026-10-13 — durcissement réseau
+  recommandé (optionnel)
 
-**Description** : le tracker global lit l'IP client dans `CF-Connecting-IP`
-(posé par Cloudflare), sinon dans le 1er élément de `X-Forwarded-For`. Ces
-en-têtes sont fournis par le client si l'origine (NPMplus) est joignable SANS
-passer par Cloudflare : un attaquant peut alors changer d'en-tête à chaque
-requête et contourner les quotas par IP (auth, email). Le 1er élément de
-`X-Forwarded-For` est de toute façon falsifiable (le client peut en envoyer un).
+**Constat** : l'origine est joignable SANS Cloudflare (`bladeburu.com`
+résout directement l'IP du NAS — le SSH :2222 l'utilise). Un attaquant peut
+donc écrire lui-même `CF-Connecting-IP` et `X-Forwarded-For` ; la première
+version du tracker les croyait et permettait de contourner les quotas par IP
+(login, register, email) en changeant d'en-tête à chaque requête.
 
-**Solution** : n'accepter sur NPMplus que les plages IP Cloudflare (ou un
-tunnel Cloudflare) ; à défaut, ne lire `CF-Connecting-IP` que si `req.ip`
-appartient aux plages Cloudflare. Les quotas des écritures sociales sont,
-eux, par utilisateur et ne dépendent pas de ces en-têtes.
+**Correction** (`extractClientIp`) : le pair = DERNIER élément de
+`X-Forwarded-For` (ajouté par NPMplus via `$proxy_add_x_forwarded_for`, non
+falsifiable), sinon `req.ip`, normalisé (`::ffff:`, port). `CF-Connecting-IP`
+n'est lu que si ce pair appartient aux plages Cloudflare publiées (codées en
+dur, relevées le 2026-10-13, `net.BlockList`) ; sinon le pair lui-même est le
+client. Juste aussi si NPMplus active `real_ip` (le dernier saut est alors le
+vrai client, hors plages Cloudflare).
+
+**Reste (réseau, hors code)** : n'accepter sur NPMplus (443) que les plages
+Cloudflare limiterait encore l'exposition. À revérifier si Cloudflare publie
+de nouvelles plages (un oubli n'ouvre pas de faille : le trafic concerné est
+compté par IP d'edge, donc plus sévèrement). Hypothèse : NPMplus reste le
+SEUL proxy devant le conteneur ; un proxy supplémentaire décalerait le
+« dernier saut ».
 
 ---
 
@@ -143,9 +153,10 @@ eux, par utilisateur et ne dépendent pas de ces en-têtes.
   du reverse proxy (Cloudflare → NPMplus) pour tout le monde : 100 req/min et
   les `@Throttle()` (5 demandes d'ami/min, 10 commentaires/h…) étaient un
   budget global.
-- **Solution** : `ClientIpThrottlerGuard` (CF-Connecting-IP → 1er
-  X-Forwarded-For → req.ip) en APP_GUARD ; écritures sociales sur des gardes
-  par utilisateur (`UserScopedThrottlerGuard`).
+- **Solution** : `ClientIpThrottlerGuard` en APP_GUARD (pair = dernier saut
+  de X-Forwarded-For, `CF-Connecting-IP` cru seulement depuis un edge
+  Cloudflare) ; écritures sociales sur des gardes par utilisateur
+  (`UserScopedThrottlerGuard`).
 
 ### `PUT /library/chapter` en 503/500 quand MangaUpdates est indisponible
 - **Module** : library / mangas

@@ -12,7 +12,11 @@ import { ClientIpRequest, extractClientIp } from './client-ip.util';
  * étaient partagées par l'ensemble des utilisateurs — un seul client
  * bavard faisait répondre 429 à tout le monde.
  *
- * Mêmes throttlers, mêmes limites : seule la clé de comptage change.
+ * Mêmes throttlers, mêmes limites : seule la clé de comptage change. Elle
+ * ne fait jamais confiance à un en-tête fourni par le client : le pair est
+ * le dernier saut de `X-Forwarded-For` (posé par NPMplus) et
+ * `CF-Connecting-IP` n'est lu que si ce pair est un edge Cloudflare (cf.
+ * `extractClientIp`).
  * Les routes d'écriture authentifiées utilisent en plus un quota PAR
  * UTILISATEUR (sous-classes de `UserScopedThrottlerGuard`).
  */

@@ -162,7 +162,7 @@ NotificationDto {
 - `POST /library/save` sur un manga déjà présent : **409** (400 avant).
 - `PUT /library/chapter` : `total_chapters = 0` signifie « inconnu » → plus de 406, statut `reading` ; `readChapters` ≤ 100 000.
 - `MangaQuickViewDto.rating` de `GET /library/all` (et bibliothèque d'un ami) : **nombre** (`7.5`), plus la chaîne décimale `"7.50"` ; `null` conservé.
-- Rate limiting : le quota global (100/min) et les `@Throttle()` des routes publiques (auth, email) sont comptés par **IP client réelle** (`CF-Connecting-IP`, sinon 1er `X-Forwarded-For`) ; demande d'ami (5/min), commentaires / réponses / signalements (10/h), groupes de lecture (10/min), partage (30/min) sont comptés **par utilisateur**. En-têtes `X-RateLimit-*-<nom>` pour ces quotas nommés.
+- Rate limiting : le quota global (100/min) et les `@Throttle()` des routes publiques (auth, email) sont comptés par **IP client réelle** (dernier saut de `X-Forwarded-For` posé par NPMplus ; `CF-Connecting-IP` seulement si ce saut est un edge Cloudflare — en-têtes forgés ignorés) ; demande d'ami (5/min), commentaires / réponses / signalements (10/h), groupes de lecture (10/min), partage (30/min) sont comptés **par utilisateur**. En-têtes `X-RateLimit-*-<nom>` pour ces quotas nommés.
 
 ---
 

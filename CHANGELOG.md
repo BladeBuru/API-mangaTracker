@@ -18,7 +18,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 - **Recherche d'amis** — nom affiché en plus de l'identifiant, sans casse ni accents ; les personnes déjà en relation sont renvoyées avec leur état (`relation`) au lieu d'être masquées.
 - **Codes HTTP** — 409 pour une demande d'ami déjà envoyée / déjà amis (messages distincts) et pour un manga déjà dans la bibliothèque (400 avant) ; 200 pour `POST /sharing/inbox/mark-seen` et `POST /mangas/comments/:id/report` (201 avant).
-- **Rate limiting** — quotas comptés par IP client réelle (Cloudflare `CF-Connecting-IP`, sinon `X-Forwarded-For`) au lieu de l'adresse du proxy, et par utilisateur pour les écritures sociales (demande d'ami, commentaires, signalements, groupes de lecture, partages).
+- **Rate limiting** — quotas comptés par IP client réelle (dernier saut de `X-Forwarded-For` ; `CF-Connecting-IP` seulement depuis un edge Cloudflare, en-têtes forgés ignorés) au lieu de l'adresse du proxy, et par utilisateur pour les écritures sociales (demande d'ami, commentaires, signalements, groupes de lecture, partages).
 
 ### Fixed
 

@@ -68,7 +68,7 @@ src/
 - **Rôle** : centre de notifications in-app (amitié, partages, groupes de lecture, nouveaux chapitres). Module FEUILLE (entités seules) : Friends, Sharing, Library et Mangas l'importent sans cycle. Les hausses de `total_chapters` passent par `ReadingStatusAutoUpdateService.onTotalChaptersIncreased` (bascule + notification).
 
 ### Rate limiting (`src/shared/throttling/`)
-- `ClientIpThrottlerGuard` (APP_GUARD) : quotas comptés par IP client réelle (`CF-Connecting-IP` → `X-Forwarded-For` → `req.ip`).
+- `ClientIpThrottlerGuard` (APP_GUARD) : quotas comptés par IP client réelle — pair = dernier saut de `X-Forwarded-For` (NPMplus) sinon `req.ip` ; `CF-Connecting-IP` cru seulement si ce pair est un edge Cloudflare (plages codées en dur dans `client-ip.util.ts`).
 - Quotas par utilisateur : sous-classes de `library/user-scoped-throttler.guard.ts` (report-chapters, reading-position, community, authors, friend-request, comment-write, reading-group-write, manga-share). À placer APRÈS `JwtAuthGuard`.
 
 ### `user`

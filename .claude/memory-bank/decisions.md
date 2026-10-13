@@ -215,8 +215,11 @@ branches.
 
 ### Rate limiting : IP client réelle en global, utilisateur pour les écritures sociales
 **Décision** : l'APP_GUARD est `ClientIpThrottlerGuard` (mêmes throttlers et
-limites que l'ancien `ThrottlerGuard`), dont la clé est l'IP client lue dans
-`CF-Connecting-IP`, sinon le 1er élément de `X-Forwarded-For`, sinon `req.ip`.
+limites que l'ancien `ThrottlerGuard`), dont la clé est l'IP client : le pair
+= DERNIER élément de `X-Forwarded-For` (posé par NPMplus), sinon `req.ip` ;
+`CF-Connecting-IP` n'est cru que si ce pair est dans les plages Cloudflare
+publiées (codées en dur, `net.BlockList`). Aucun en-tête fourni par un pair
+non Cloudflare n'est jamais lu.
 Les écritures sociales authentifiées (demande d'ami, commentaires / réponses /
 signalements, groupes de lecture, partages) ont en plus un quota PAR
 UTILISATEUR (sous-classes de `UserScopedThrottlerGuard`, mêmes quotas qu'avant).
@@ -227,8 +230,13 @@ NPMplus : `req.ip` valait l'adresse du proxy pour tout le monde, chaque quota
 partout (`@Ip()` des emails, journaux) sans dire combien de sauts croire ; lire
 l'en-tête de Cloudflare dans le seul tracker est local et explicite. Un quota
 par IP reste nécessaire pour les routes sans utilisateur (login, register).
-**Impact** : la protection par IP suppose que l'origine n'est joignable que via
-Cloudflare (sinon en-têtes falsifiables — cf. known-issues.md). Plusieurs
+**Pourquoi pas « 1er élément de X-Forwarded-For » ni « CF-Connecting-IP
+brut »** : l'origine est joignable sans Cloudflare (le domaine résout l'IP du
+NAS), et ces valeurs sont écrites par le client : un attaquant contournerait
+les quotas de login/register en en changeant à chaque requête.
+**Impact** : suppose que NPMplus reste le SEUL proxy devant le conteneur (un
+proxy de plus décalerait le dernier saut) et que la liste Cloudflare est tenue
+à jour (un oubli = comptage par IP d'edge, plus sévère, pas une faille). Plusieurs
 utilisateurs derrière une même IP (CGNAT, foyer) partagent encore le global
 100/min, pas les quotas sociaux.
 **Date** : 2026-10-13

@@ -71,9 +71,13 @@ describe.each(CASES)('%s', (_name, GuardCls, ttl, limit) => {
   });
 
   it('should fall back to the real client IP when no user is set', async () => {
+    // Arrivée par Cloudflare : edge (162.158.0.0/15) ajouté par NPMplus.
     await expect(
       guard.getTracker({
-        headers: { 'cf-connecting-ip': '203.0.113.5' },
+        headers: {
+          'cf-connecting-ip': '203.0.113.5',
+          'x-forwarded-for': '203.0.113.5, 162.158.1.2',
+        },
         ip: '172.18.0.2',
       }),
     ).resolves.toBe('203.0.113.5');
