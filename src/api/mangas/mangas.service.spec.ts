@@ -5,7 +5,9 @@ import { MangasService } from './mangas.service';
 import { HttpModule, HttpService } from '@nestjs/axios';
 import { HelperService } from './helper.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
+import { AxiosError, AxiosResponse } from 'axios';
+import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Manga } from './manga.entity';
 import { MangaRecommendation } from './manga-recommendation.entity';
 import { UserManga } from './user-manga.entity';
@@ -285,6 +287,41 @@ describe('MangasService — getMangaDetails : UPDATE null-safe', () => {
       await service.getMangaDetails(123);
 
       expect(flip).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('erreurs MangaUpdates', () => {
+    it('lève 503 (et non un TypeError → 500) quand MU ne répond pas du tout (timeout)', async () => {
+      // Timeout / coupure réseau : AxiosError SANS `response`.
+      getMock.mockReturnValue(
+        throwError(
+          () => new AxiosError('timeout of 8000ms exceeded', 'ECONNABORTED'),
+        ),
+      );
+
+      await expect(service.getMangaDetails(123)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+    });
+
+    it('lève 404 quand MU répond 404', async () => {
+      const response = { status: 404, data: {} } as AxiosResponse;
+      getMock.mockReturnValue(
+        throwError(
+          () =>
+            new AxiosError(
+              'Not Found',
+              'ERR_BAD_REQUEST',
+              undefined,
+              undefined,
+              response,
+            ),
+        ),
+      );
+
+      await expect(service.getMangaDetails(123)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 

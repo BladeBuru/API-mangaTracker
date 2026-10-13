@@ -16,6 +16,7 @@ import { LibraryModule } from '../library/library.module';
 import { LibraryService } from '../library/library.service';
 import { ChapterLogService } from '../library/chapter-log.service';
 import { ChapterReportService } from '../library/chapter-report.service';
+import { LibraryMangaResolverService } from '../library/library-manga-resolver.service';
 import { ReadingStatusAutoUpdateService } from '../library/reading-status-auto-update.service';
 import { UserMangaChapterLog } from '../library/user-manga-chapter-log.entity';
 import { MangaChapterReport } from '../library/manga-chapter-report.entity';
@@ -80,6 +81,8 @@ import { GtxProvider } from './translation/gtx.provider';
     LibraryService,
     ChapterLogService,
     ChapterReportService,
+    // Fiche locale des écritures de bibliothèque (tolère une panne MU).
+    LibraryMangaResolverService,
     // Même doctrine que ChapterReportService : re-déclaré ici pour être
     // résolu dans CE contexte (MangasService, CatalogReleasesService et
     // ChapterReportService en dépendent). Stateless → deux instances OK.

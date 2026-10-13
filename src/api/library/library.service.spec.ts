@@ -1,3 +1,4 @@
+import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { LibraryService } from './library.service';
@@ -7,6 +8,7 @@ import { UpdateMangaService } from '@/api/mangas/update-manga.service';
 import { RecoCacheService } from '@/api/recommendations/reco-cache.service';
 import { ChapterLogService } from './chapter-log.service';
 import { ChapterReportService } from './chapter-report.service';
+import { LibraryMangaResolverService } from './library-manga-resolver.service';
 import { ChapterException } from './exceptions/chapter.exception';
 import { ReadingStatus } from './reading-status.enum';
 import User from '@/api/user/user.entity';
@@ -108,6 +110,7 @@ describe('LibraryService — updateChapter (chantiers A & B)', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LibraryService,
+        LibraryMangaResolverService,
         { provide: UserService, useValue: {} },
         { provide: MangasService, useValue: mangasService },
         { provide: UpdateMangaService, useValue: updateMangaService },
@@ -141,6 +144,36 @@ describe('LibraryService — updateChapter (chantiers A & B)', () => {
     );
     expect(dataSource.transaction).not.toHaveBeenCalled();
     expect(repoQb.execute).not.toHaveBeenCalled();
+  });
+
+  it('should NOT cap progress when the total is unknown (0) and keep the entry Reading', async () => {
+    givenUserWithEntry(10, 0);
+    mangasService.returnMangaIfExist.mockResolvedValue(freshManga(0, true));
+    chapterReportService.getEffectiveTotal.mockResolvedValue(0);
+
+    // Avant : 406 « 15 is above 0 » → aucune progression possible.
+    await expect(service.updateChapter(1, 42, 15)).resolves.toBe(true);
+    const fields = managerQb.set.mock.calls[0][0];
+    expect(fields.user_read_chapters).toBe(15);
+    // Total inconnu : impossible d'affirmer « à jour » ou « terminé ».
+    expect(fields.readingStatus).toBe(ReadingStatus.Reading);
+  });
+
+  it('should keep accepting chapter writes when the MangaUpdates refresh fails (local row fallback)', async () => {
+    givenUserWithEntry(90);
+    // Ligne locale périmée (> 6 h) → refresh MU… qui échoue.
+    mangasService.returnMangaIfExist.mockResolvedValue({
+      ...freshManga(100),
+      updated_at: new Date(Date.now() - 7 * 3600 * 1000),
+    });
+    mangasService.getMangaDetails.mockRejectedValue(
+      new ServiceUnavailableException('MU down'),
+    );
+    chapterReportService.getEffectiveTotal.mockResolvedValue(100);
+
+    await expect(service.updateChapter(1, 42, 95)).resolves.toBe(true);
+    expect(managerQb.set.mock.calls[0][0].user_read_chapters).toBe(95);
+    expect(mangaRepo.createQueryBuilder).not.toHaveBeenCalled();
   });
 
   it('should accept a progression between the official total and the reported one', async () => {
@@ -311,6 +344,7 @@ describe('LibraryService — checkManga (A-5 GREATEST)', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LibraryService,
+        LibraryMangaResolverService,
         { provide: UserService, useValue: {} },
         { provide: MangasService, useValue: mangasService },
         { provide: UpdateMangaService, useValue: {} },
@@ -359,6 +393,85 @@ describe('LibraryService — checkManga (A-5 GREATEST)', () => {
     // completed reste écrasé par la valeur MU (design A-5).
     expect(setArg.completed).toBe(true);
   });
+
+  it('should fall back to the local row (no throw) when the MangaUpdates refresh fails', async () => {
+    const staleManga = {
+      mu_id: '42',
+      total_chapters: 100,
+      completed: false,
+      updated_at: new Date(Date.now() - 7 * 3600 * 1000),
+    };
+    mangasService.returnMangaIfExist.mockResolvedValue(staleManga);
+    mangasService.getMangaDetails.mockRejectedValue(
+      new ServiceUnavailableException('MU down'),
+    );
+
+    await expect(service.checkManga(42)).resolves.toBe(staleManga);
+    expect(updateQb.execute).not.toHaveBeenCalled();
+  });
+
+  it('should still fail when there is NO local row and MangaUpdates is down', async () => {
+    mangasService.returnMangaIfExist.mockResolvedValue(null);
+    mangasService.getMangaDetails.mockRejectedValue(
+      new ServiceUnavailableException('MU down'),
+    );
+
+    await expect(service.checkManga(42)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(mangaRepo.save).not.toHaveBeenCalled();
+  });
+});
+
+describe('LibraryService — saveManga', () => {
+  it('should answer 409 Conflict (not 400) when the manga is already in the library', async () => {
+    const userMangaQb = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({ id: 7 }),
+    };
+    const userMangaRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue(userMangaQb),
+      save: jest.fn(),
+    };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        LibraryService,
+        LibraryMangaResolverService,
+        { provide: UserService, useValue: {} },
+        {
+          provide: MangasService,
+          useValue: {
+            returnMangaIfExist: jest.fn().mockResolvedValue({
+              mu_id: '42',
+              completed: false,
+              updated_at: new Date(),
+            }),
+            getMangaDetails: jest.fn(),
+          },
+        },
+        { provide: UpdateMangaService, useValue: {} },
+        { provide: RecoCacheService, useValue: { invalidateUser: jest.fn() } },
+        { provide: ChapterLogService, useValue: {} },
+        { provide: ChapterReportService, useValue: {} },
+        { provide: getDataSourceToken(), useValue: { transaction: jest.fn() } },
+        {
+          provide: getRepositoryToken(User),
+          useValue: {
+            findOne: jest.fn().mockResolvedValue({ id: 1, user_mangas: [] }),
+          },
+        },
+        { provide: getRepositoryToken(Manga), useValue: {} },
+        { provide: getRepositoryToken(UserManga), useValue: userMangaRepo },
+      ],
+    }).compile();
+    const service = module.get(LibraryService);
+
+    await expect(service.saveManga(42, 1)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(userMangaRepo.save).not.toHaveBeenCalled();
+  });
 });
 
 describe('LibraryService — getMangas (exposition des reports)', () => {
@@ -375,6 +488,7 @@ describe('LibraryService — getMangas (exposition des reports)', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LibraryService,
+        LibraryMangaResolverService,
         { provide: UserService, useValue: {} },
         { provide: MangasService, useValue: {} },
         {

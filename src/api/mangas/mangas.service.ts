@@ -139,8 +139,15 @@ export class MangasService {
     const { data } = await firstValueFrom(
       this.httpService.get<any>(url).pipe(
         catchError((error: AxiosError) => {
-          this.logger.error(`${error.response.status}: ${error.response.data}`);
-          if (error.response.status === 404) {
+          // Pas de `response` sur un timeout ou une coupure réseau : lire
+          // `error.response.status` sans garde levait un TypeError → 500.
+          const status = error.response?.status;
+          this.logger.error(
+            `Détails MU ${muId} : ${status ?? error.code ?? 'sans réponse'} ${
+              error.message
+            }`,
+          );
+          if (status === 404) {
             throw new NotFoundException(
               `Manga with id ${muId} cannot be found`,
             );

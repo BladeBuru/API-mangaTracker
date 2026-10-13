@@ -202,7 +202,12 @@ export class MangaQuickViewDto {
     // qu'on veut servir comme image principale (la `small`/`thumb` rend flou).
     dto.mediumCoverUrl = userManga.manga.medium_cover_url;
     dto.largeCoverUrl = userManga.manga.medium_cover_url;
-    dto.rating = userManga.manga.rating;
+    // `decimal` Postgres → chaîne ("7.50") côté driver : on renvoie un nombre,
+    // comme `fromCatalog`. Null conservé (note inconnue).
+    dto.rating =
+      userManga.manga.rating !== null && userManga.manga.rating !== undefined
+        ? Number(userManga.manga.rating)
+        : null;
     dto.readChapters = userManga.user_read_chapters;
     dto.totalChapters = Math.max(
       userManga.manga.total_chapters ?? 0,
