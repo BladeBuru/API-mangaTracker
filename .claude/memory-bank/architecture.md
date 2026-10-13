@@ -62,6 +62,15 @@ src/
 - **Exceptions** : `ChapterException`, `ReadingStatusException`
 - **Rôle** : Bibliothèque utilisateur — CRUD, statuts, progression
 
+### `notifications` (2026-10-13)
+- **Entité** : `Notification` (table `notification`, migration `1788912000000`)
+- **Services** : `NotificationsService` (lecture, pagination `before`, acquittements), `NotificationProducerService` (seul point d'écriture, best-effort, exporté), `NotificationRetentionService` (purge 03:15)
+- **Rôle** : centre de notifications in-app (amitié, partages, groupes de lecture, nouveaux chapitres). Module FEUILLE (entités seules) : Friends, Sharing, Library et Mangas l'importent sans cycle. Les hausses de `total_chapters` passent par `ReadingStatusAutoUpdateService.onTotalChaptersIncreased` (bascule + notification).
+
+### Rate limiting (`src/shared/throttling/`)
+- `ClientIpThrottlerGuard` (APP_GUARD) : quotas comptés par IP client réelle (`CF-Connecting-IP` → `X-Forwarded-For` → `req.ip`).
+- Quotas par utilisateur : sous-classes de `library/user-scoped-throttler.guard.ts` (report-chapters, reading-position, community, authors, friend-request, comment-write, reading-group-write, manga-share). À placer APRÈS `JwtAuthGuard`.
+
 ### `user`
 - **Entités** : `UserEntity`
 - **Services** : `UserService`

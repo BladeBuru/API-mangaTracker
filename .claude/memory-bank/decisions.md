@@ -1,6 +1,6 @@
 # Décisions Architecturales — Manga Tracker API
 
-**Dernière mise à jour :** Septembre 2026
+**Dernière mise à jour :** Octobre 2026
 
 ---
 
@@ -213,12 +213,60 @@ branches.
 
 ---
 
+### Rate limiting : IP client réelle en global, utilisateur pour les écritures sociales
+**Décision** : l'APP_GUARD est `ClientIpThrottlerGuard` (mêmes throttlers et
+limites que l'ancien `ThrottlerGuard`), dont la clé est l'IP client lue dans
+`CF-Connecting-IP`, sinon le 1er élément de `X-Forwarded-For`, sinon `req.ip`.
+Les écritures sociales authentifiées (demande d'ami, commentaires / réponses /
+signalements, groupes de lecture, partages) ont en plus un quota PAR
+UTILISATEUR (sous-classes de `UserScopedThrottlerGuard`, mêmes quotas qu'avant).
+Les routes publiques (auth, email) restent sur l'IP.
+**Raison** : `trust proxy` n'est pas activé et l'API est derrière Cloudflare →
+NPMplus : `req.ip` valait l'adresse du proxy pour tout le monde, chaque quota
+était partagé par toute la base. Activer `trust proxy` aurait changé `req.ip`
+partout (`@Ip()` des emails, journaux) sans dire combien de sauts croire ; lire
+l'en-tête de Cloudflare dans le seul tracker est local et explicite. Un quota
+par IP reste nécessaire pour les routes sans utilisateur (login, register).
+**Impact** : la protection par IP suppose que l'origine n'est joignable que via
+Cloudflare (sinon en-têtes falsifiables — cf. known-issues.md). Plusieurs
+utilisateurs derrière une même IP (CGNAT, foyer) partagent encore le global
+100/min, pas les quotas sociaux.
+**Date** : 2026-10-13
+
+---
+
+### Notifications in-app : une table unifiée, des producteurs best-effort, des textes relus en direct
+**Décision** : toutes les notifications (amitié, partage, groupe de lecture,
+nouveaux chapitres) vont dans UNE table `notification` (`type` + `data` jsonb),
+écrite par un seul service exporté (`NotificationProducerService`) depuis un
+module feuille. Les écritures sont best-effort (erreur journalisée, jamais
+propagée). `data` ne contient que des identifiants et compteurs : le message
+d'un partage et le nom d'un groupe sont relus en direct à l'affichage.
+Les nouveaux chapitres passent par un point d'entrée unique
+(`ReadingStatusAutoUpdateService.onTotalChaptersIncreased`) et un upsert
+ensembliste `ON CONFLICT` sur un index unique partiel (au plus une non lue par
+utilisateur et manga, `previousTotal` d'origine conservé).
+**Raison** : un seul flux paginé / un seul badge côté app plutôt que N
+endpoints à agréger ; un module feuille (entités seules) évite tout cycle avec
+Friends / Sharing / Library / Mangas. Best-effort : une notification est un
+effet secondaire, elle ne doit pas faire échouer une demande d'ami ni le job
+des sorties. Relecture en direct : quand l'auteur supprime son compte (RGPD
+art. 17) ou son partage, son texte ne survit pas chez autrui ; l'acteur passe
+à NULL (`SET NULL`). L'index partiel garantit la déduplication même en cas
+d'appels concurrents (job + rafraîchissement de fiche), sans verrou.
+**Impact** : pas de push (FCM) à ce stade — l'app interroge `unread-count`.
+`created_at` en `timestamptz(3)` : la pagination par date ISO (ms) ne saute
+aucune ligne. Rétention : lues 30 j, toutes 90 j (purge 03:15, sans verrou MU).
+**Date** : 2026-10-13
+
+---
+
 ## Décisions Futures à Prendre
 
 | Sujet | Contexte | Deadline | Options |
 |-------|----------|----------|---------|
 | Cache Redis | Réduire les appels MangaUpdates API | v0.2 | Redis + BullMQ vs simple TTL en mémoire |
-| Notifications push | Alertes nouvelles sorties | v0.3 | Firebase FCM vs OneSignal vs auto-hébergé |
+| Notifications push | Alertes nouvelles sorties — le centre in-app existe (2026-10-13), le push s'appuierait sur `NotificationProducerService` | v0.3 | Firebase FCM vs OneSignal vs auto-hébergé |
 | Google OAuth2 | Connexion simplifiée | v0.3 | Passport Google vs implémentation manuelle |
 | Proxy images | Éviter les restrictions CORS MangaUpdates | Court terme | Endpoint proxy NestJS vs CDN |
 | Versioning API | Si rupture de contrat future | v1.0 | Préfixe `/v1/` dès maintenant ou au premier breaking change |

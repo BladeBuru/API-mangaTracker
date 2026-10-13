@@ -4,8 +4,8 @@
 |-------|--------|
 | SGBD | PostgreSQL 16 |
 | ORM | TypeORM 0.3 |
-| Dernière MAJ | 2026-09-30 |
-| Migration la plus récente | `1788739200000-CreateUserMangaRecommendation` |
+| Dernière MAJ | 2026-10-13 |
+| Migration la plus récente | `1788912000000-CreateNotification` |
 
 > Ce fichier est maintenu par `update-writer-after-implement` après chaque
 > migration. Les tables sont groupées par module. Les specs de module contiennent
@@ -34,10 +34,34 @@
 | `user_manga_dismissal` | recommendations | `UserMangaDismissal` | `1788048000000-CreateUserMangaDismissal` |
 | `reading_groups` | sharing | `ReadingGroup` | `1746231400000-CreateSharing` |
 | `user_manga_recommendation` | community | `UserMangaRecommendation` | `1788739200000-CreateUserMangaRecommendation` |
+| `notification` | notifications | `Notification` | `1788912000000-CreateNotification` |
 
 ---
 
 ## Détail des tables modifiées récemment
+
+### Table `notification` (ajoutée 2026-10-13)
+
+Centre de notifications in-app unifié. Migration `1788912000000-CreateNotification`
+(additive, idempotente, `CREATE … IF NOT EXISTS`).
+
+| Colonne | Type | Rôle |
+|---|---|---|
+| `id` | `uuid` PK, `gen_random_uuid()` | Identifiant exposé au client |
+| `user_id` | `int NOT NULL` → `user.id` **CASCADE** | Destinataire (RGPD art. 17) |
+| `type` | `varchar(32)` | `friend_request`, `friend_accepted`, `manga_share`, `reading_group_invite`, `new_chapters` |
+| `actor_id` | `int NULL` → `user.id` **SET NULL** | Auteur de l'événement ; NULL = système ou compte supprimé |
+| `mu_id` | `bigint NULL` → `manga.mu_id` **CASCADE** | Manga concerné |
+| `data` | `jsonb` (défaut `{}`) | Identifiants / compteurs du type (jamais de texte d'un tiers) |
+| `created_at` | `timestamptz(3)` (défaut `now()`) | Curseur de pagination (précision ms = précision ISO du client) |
+| `read_at` | `timestamptz(3) NULL` | NULL = non lue |
+
+Index : `IDX_notification_user_read_created (user_id, read_at, created_at)`,
+`IDX_notification_actor (actor_id)`, `IDX_notification_mu_id (mu_id)`, et
+**unique partiel** `UQ_notification_new_chapters_unread (user_id, mu_id) WHERE
+type = 'new_chapters' AND read_at IS NULL` — cible de l'`ON CONFLICT` de
+l'upsert ensembliste des nouveaux chapitres. Purge nocturne (lues > 30 j,
+toutes > 90 j).
 
 ### Table `user_session` — rotation (2026-10-06)
 

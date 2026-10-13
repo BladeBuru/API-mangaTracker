@@ -5,6 +5,34 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/) · Versioning 
 
 ---
 
+## [Unreleased] — lot d'octobre (API, branche `fix/lot-octobre-api`)
+
+> **Déployer l'API AVANT l'app** : l'app (développée en parallèle) consomme `/notifications`, `/friends/sent` et le champ `relation`.
+
+### Added
+
+- **Centre de notifications** — table `notification` (migration `1788912000000`), `GET /notifications` (pagination `before`), `GET /notifications/unread-count`, `POST /notifications/:id/read`, `POST /notifications/read-all`. Demandes et acceptations d'amitié, partages, invitations aux groupes de lecture, nouveaux chapitres (une notification non lue par lecteur et par manga, mise à jour à chaque hausse). Purge nocturne (lues > 30 j, toutes > 90 j). Incluses dans l'export et le résumé RGPD.
+- **`GET /friends/sent`** — demandes d'amitié envoyées en attente.
+
+### Changed
+
+- **Recherche d'amis** — nom affiché en plus de l'identifiant, sans casse ni accents ; les personnes déjà en relation sont renvoyées avec leur état (`relation`) au lieu d'être masquées.
+- **Codes HTTP** — 409 pour une demande d'ami déjà envoyée / déjà amis (messages distincts) et pour un manga déjà dans la bibliothèque (400 avant) ; 200 pour `POST /sharing/inbox/mark-seen` et `POST /mangas/comments/:id/report` (201 avant).
+- **Rate limiting** — quotas comptés par IP client réelle (Cloudflare `CF-Connecting-IP`, sinon `X-Forwarded-For`) au lieu de l'adresse du proxy, et par utilisateur pour les écritures sociales (demande d'ami, commentaires, signalements, groupes de lecture, partages).
+
+### Fixed
+
+- **Statut « à jour » → « en cours »** — la bascule automatique échouait en silence depuis sa mise en service (requête réécrite par TypeORM : `relation "manga_id" does not exist`).
+- **Progression refusée quand MangaUpdates est indisponible** — si la fiche locale existe, l'enregistrement d'un chapitre ne dépend plus du rafraîchissement MU ; un timeout MU donne 503 et non 500.
+- **Total de chapitres inconnu (0)** — la progression n'est plus bloquée par un plafond à 0.
+- **Note de la bibliothèque** renvoyée en nombre (`7.5`) et non en texte (`"7.50"`).
+
+### Tests
+
+- `npm test` : **792 tests verts** avec PostgreSQL (703 avant), dont 11 d'intégration sur les notifications, la recherche d'amis et les cascades RGPD.
+
+---
+
 ## [Unreleased] — retours utilisateurs d'octobre
 
 ### Fixed

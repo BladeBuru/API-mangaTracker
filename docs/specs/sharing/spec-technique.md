@@ -102,19 +102,19 @@ Contrainte unique : `UQ_reading_group_member_group_user` sur `(group_id, user_id
 
 | Méthode | Route | Description | Auth | Throttle |
 |---------|-------|-------------|------|----------|
-| `POST` | `/sharing/manga/:muId` | Partager un manga avec des amis | JWT | 30/min |
+| `POST` | `/sharing/manga/:muId` | Partager un manga avec des amis — notification `manga_share` par partage réellement créé | JWT | 30/min **par utilisateur** |
 | `GET` | `/sharing/inbox` | Inbox des shares reçus (max 100, tri desc) | JWT | global |
-| `POST` | `/sharing/inbox/mark-seen` | Marquer tous les shares comme vus | JWT | global |
+| `POST` | `/sharing/inbox/mark-seen` | Marquer tous les shares comme vus (**200**) — marque aussi les notifications `manga_share` lues | JWT | global |
 | `GET` | `/sharing/inbox/unseen-count` | Compteur shares non-vus (badge) | JWT | global |
 
 ### ReadingGroupsController — `/reading-groups`
 
 | Méthode | Route | Description | Auth | Throttle |
 |---------|-------|-------------|------|----------|
-| `POST` | `/reading-groups` | Créer un groupe de lecture | JWT | 10/min |
+| `POST` | `/reading-groups` | Créer un groupe de lecture — notification `reading_group_invite` par invité ajouté | JWT | 10/min **par utilisateur** |
 | `GET` | `/reading-groups` | Lister mes groupes | JWT | global |
 | `GET` | `/reading-groups/:id` | Détail d'un groupe avec progression | JWT | global |
-| `POST` | `/reading-groups/:id/invite` | Inviter un ami (owner uniquement) | JWT | 10/min |
+| `POST` | `/reading-groups/:id/invite` | Inviter un ami (owner uniquement) — notification `reading_group_invite` | JWT | 10/min **par utilisateur** |
 | `DELETE` | `/reading-groups/:id/leave` | Quitter le groupe | JWT | global |
 | `DELETE` | `/reading-groups/:id` | Supprimer le groupe (owner uniquement) | JWT | global |
 
@@ -147,7 +147,7 @@ La synchronisation de la progression dans un groupe de lecture repose sur un pol
 
 ### Vérification d'amitié réimplémentée localement
 
-Les deux services (`SharingService` et `ReadingGroupsService`) implémentent leur propre requête de vérification d'amitié sur `UserFriendship` au lieu d'injecter `FriendsService`. Ce choix évite une dépendance circulaire entre modules mais crée une duplication logique.
+Les deux services (`SharingService` et `ReadingGroupsService`) vérifient l'amitié directement sur `UserFriendship` au lieu d'injecter `FriendsService` (pas de dépendance circulaire entre modules). Depuis le 2026-10-13, la requête est factorisée dans `src/api/friends/accepted-friends.query.ts` (`filterAcceptedFriendIds`) : plus de duplication.
 
 ### Absence d'endpoint PATCH pour les groupes
 
